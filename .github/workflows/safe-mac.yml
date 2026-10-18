@@ -1,0 +1,165 @@
+name: Safe Telegram Mac build
+
+# Builds the locked Telegram Desktop for Zach's Mac on GitHub's macOS machines.
+# Two jobs so each gets its own 6 hours: the libraries (Qt, ffmpeg, WebRTC, ...) build
+# once and live in the Actions cache; later runs only rebuild the app.
+# The finished Telegram.app is encrypted with ARTIFACT_KEY before upload, because the
+# binary carries the api_id/api_hash and this repo is public.
+
+on:
+  push:
+    branches: [safe]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - 'snap/**'
+      - 'Telegram/build/docker/**'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/Resources/winrc/**'
+      - 'Telegram/SourceFiles/platform/win/**'
+      - 'Telegram/SourceFiles/platform/linux/**'
+      - 'Telegram/configure.bat'
+  workflow_dispatch:
+
+concurrency:
+  group: safe-mac
+  cancel-in-progress: true
+
+env:
+  PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+
+jobs:
+
+  libraries:
+    name: Libraries
+    runs-on: macos-latest
+    timeout-minutes: 355
+    steps:
+      - name: Get repository name.
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.REPO_NAME }}
+
+      - name: First set up.
+        run: |
+          sudo chown -R `whoami`:admin /usr/local/share
+          brew update
+          brew upgrade || true
+          brew install automake libtool meson nasm ninja pkg-config
+          sudo mdutil -a -i off
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sudo sed -i '' '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/ -g//' /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake
+
+      - name: Restore libraries cache.
+        id: restore-libs
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            Libraries
+            ThirdParty
+          key: safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-${{ github.run_id }}
+          restore-keys: |
+            safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-
+            safe-libs-
+
+      - name: Library state before.
+        run: echo "LIBS_BEFORE=$(ls -R Libraries/cache_keys 2>/dev/null | shasum | cut -c1-16)" >> $GITHUB_ENV
+
+      # Stops short of the job limit so a partial build still gets cached and the next
+      # run picks up where this one stopped.
+      - name: Libraries.
+        id: libs
+        timeout-minutes: 320
+        run: ./$REPO_NAME/Telegram/build/prepare/mac.sh silent
+
+      - name: Free up some disk space.
+        if: always()
+        run: find Libraries '(' '(' ! '(' -name '*.a' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -perm +111 ')' -type f ')' -o -empty ')' -delete || true
+
+      - name: Library state after.
+        if: always()
+        run: echo "LIBS_AFTER=$(ls -R Libraries/cache_keys 2>/dev/null | shasum | cut -c1-16)" >> $GITHUB_ENV
+
+      - name: Save libraries cache.
+        if: always() && env.LIBS_AFTER != env.LIBS_BEFORE
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            Libraries
+            ThirdParty
+          key: safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-${{ github.run_id }}
+
+  app:
+    name: Telegram Desktop
+    needs: libraries
+    runs-on: macos-latest
+    timeout-minutes: 355
+    steps:
+      - name: Get repository name.
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.REPO_NAME }}
+
+      - name: First set up.
+        run: |
+          sudo chown -R `whoami`:admin /usr/local/share
+          brew update
+          brew upgrade || true
+          brew install automake libtool meson nasm ninja pkg-config
+          sudo mdutil -a -i off
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sudo sed -i '' '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/ -g//' /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake
+
+      - name: Restore libraries cache.
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            Libraries
+            ThirdParty
+          key: safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-${{ github.run_id }}
+          restore-keys: |
+            safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-
+          fail-on-cache-miss: true
+
+      - name: Build.
+        timeout-minutes: 330
+        env:
+          TDESKTOP_API_ID: ${{ secrets.TDESKTOP_API_ID }}
+          TDESKTOP_API_HASH: ${{ secrets.TDESKTOP_API_HASH }}
+        run: |
+          cd $REPO_NAME/Telegram
+          ./configure.sh \
+            -D CMAKE_CONFIGURATION_TYPES=Release \
+            -D CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -D TDESKTOP_API_ID="$TDESKTOP_API_ID" \
+            -D TDESKTOP_API_HASH="$TDESKTOP_API_HASH" \
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          cmake --build ../out --config Release --parallel
+
+      - name: Encrypt.
+        env:
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
+        run: |
+          cd $REPO_NAME/out/Release
+          tar -czf - Telegram.app | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -pass env:ARTIFACT_KEY -out "$GITHUB_WORKSPACE/safe-telegram-mac.tgz.enc"
+          shasum -a 256 "$GITHUB_WORKSPACE/safe-telegram-mac.tgz.enc"
+
+      - name: Upload.
+        uses: actions/upload-artifact@v7
+        with:
+          name: safe-telegram-mac
+          path: safe-telegram-mac.tgz.enc
+          retention-days: 3
