@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_chat_invite.h"
+#include "safe/safe_gate.h"
 
 #include "apiwrap.h"
 #include "api/api_credits.h"
@@ -131,6 +132,7 @@ void SubmitChatInvite(
 			result,
 			[=](const MTPUpdates &updates) {
 				session->api().applyUpdates(updates);
+				Safe::BindInviteJoin(session, hash, updates);
 				if (!strongController) {
 					return;
 				}
@@ -690,6 +692,14 @@ void CheckChatInvite(
 			}
 		};
 		result.match([=](const MTPDchatInvite &data) {
+			if (Safe::RefuseChatInvite(
+					strong,
+					hash,
+					qs(data.vtitle()),
+					data.is_broadcast(),
+					invitePeekChannel)) {
+				return;
+			}
 			const auto isGroup = !data.is_broadcast();
 			const auto hasPricing = !!data.vsubscription_pricing();
 			const auto canRefulfill = data.is_can_refulfill_subscription();
@@ -727,6 +737,9 @@ void CheckChatInvite(
 			}
 		}, [=](const MTPDchatInviteAlready &data) {
 			if (const auto chat = session->data().processChat(data.vchat())) {
+				if (Safe::RefuseInvitedChat(strong, chat)) {
+					return;
+				}
 				if (const auto channel = chat->asChannel()) {
 					channel->clearInvitePeek();
 				}
@@ -734,6 +747,9 @@ void CheckChatInvite(
 			}
 		}, [=](const MTPDchatInvitePeek &data) {
 			if (const auto chat = session->data().processChat(data.vchat())) {
+				if (Safe::RefuseInvitedChat(strong, chat)) {
+					return;
+				}
 				if (const auto channel = chat->asChannel()) {
 					channel->setInvitePeek(hash, data.vexpires().v);
 					show(chat);

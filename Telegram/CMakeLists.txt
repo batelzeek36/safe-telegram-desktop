@@ -1855,6 +1855,8 @@ PRIVATE
     safe/safe_ask.h
     safe/safe_discovery.cpp
     safe/safe_discovery.h
+    safe/safe_gate.cpp
+    safe/safe_gate.h
     safe/safe_identity.cpp
     safe/safe_identity.h
     safe/safe_links.cpp

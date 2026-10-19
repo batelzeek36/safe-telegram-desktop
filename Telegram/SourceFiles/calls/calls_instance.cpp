@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/calls_instance.h"
+#include "safe/safe_gate.h"
 
 #include "calls/calls_call.h"
 #include "calls/group/calls_group_common.h"
@@ -203,6 +204,9 @@ Instance::~Instance() {
 void Instance::startOutgoingCall(
 		not_null<UserData*> user,
 		StartOutgoingCallArgs args) {
+	if (Safe::RefuseCall(user)) {
+		return;
+	}
 	if (activateCurrentCall()
 		|| (!args.isConfirmed && activateUnconfirmedCall(user))) {
 		return;
@@ -229,6 +233,9 @@ void Instance::startOrJoinGroupCall(
 		std::shared_ptr<Ui::Show> show,
 		not_null<PeerData*> peer,
 		StartGroupCallArgs args) {
+	if (Safe::RefuseCall(show, peer)) {
+		return;
+	}
 	confirmLeaveCurrent(show, peer, args, [=](StartGroupCallArgs args) {
 		using JoinConfirm = Calls::StartGroupCallArgs::JoinConfirm;
 		const auto context = (args.confirm == JoinConfirm::Always)
@@ -253,6 +260,9 @@ void Instance::startOrJoinGroupCall(
 
 void Instance::startOrJoinConferenceCall(StartConferenceInfo args) {
 	Expects(args.call || args.show);
+	if (Safe::RefuseCallInvites(args.invite)) {
+		return;
+	}
 
 	const auto migrationInfo = (args.migrating
 		&& args.call

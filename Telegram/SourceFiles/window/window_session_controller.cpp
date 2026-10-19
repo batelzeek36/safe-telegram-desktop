@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_session_controller.h"
+#include "safe/safe_gate.h"
 
 #include "apiwrap.h"
 #include "api/api_cloud_password.h"
@@ -439,7 +440,9 @@ void SessionNavigation::showPeerByLink(const PeerByLinkInfo &info) {
 		});
 	} else if (const auto name = std::get_if<QString>(&info.usernameOrId)) {
 		resolveUsername(*name, [=](not_null<PeerData*> peer) {
-			if (info.startAutoSubmit) {
+			if (Safe::RefuseLink(uiShow(), peer, info)) {
+				return;
+			} else if (info.startAutoSubmit) {
 				peer->session().api().blockedPeers().unblock(
 					peer,
 					[=](bool) { showPeerByLinkResolved(peer, info); },
@@ -621,6 +624,9 @@ void SessionNavigation::showMessageByLinkResolved(
 void SessionNavigation::showPeerByLinkResolved(
 		not_null<PeerData*> peer,
 		const PeerByLinkInfo &info) {
+	if (Safe::RefuseLink(uiShow(), peer, info)) {
+		return;
+	}
 	auto params = SectionShow{
 		SectionShow::Way::Forward
 	};
@@ -1004,6 +1010,9 @@ void SessionNavigation::resolveConferenceCall(
 				data.vid().v,
 				data.vaccess_hash().v);
 			call->processFullCall(result);
+			if (Safe::RefuseConferenceCall(uiShow(), call.get())) {
+				return;
+			}
 			const auto join = [=](Fn<void()> close) {
 				const auto &appConfig = call->session().appConfig();
 				const auto conferenceLimit = appConfig.confcallSizeLimit();
