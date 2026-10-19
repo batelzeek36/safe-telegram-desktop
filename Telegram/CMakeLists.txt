@@ -1876,6 +1876,13 @@ PRIVATE
     safe/safe_links.cpp
     safe/safe_links.h
     safe/safe_media.h
+    safe/safe_media_covers.cpp
+    safe/safe_media_covers.h
+    safe/safe_media_gate.cpp
+    safe/safe_media_gate.h
+    safe/safe_media_live.h
+    safe/safe_media_paint.cpp
+    safe/safe_media_paint.h
     safe/safe_notices.cpp
     safe/safe_notices.h
     safe/safe_off.cpp

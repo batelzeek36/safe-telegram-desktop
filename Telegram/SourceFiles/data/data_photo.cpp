@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_photo.h"
+#include "safe/safe_media_gate.h"
 
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -268,6 +269,9 @@ Image *PhotoData::getReplyPreview(
 }
 
 Image *PhotoData::getReplyPreview(not_null<HistoryItem*> item) {
+	if (Safe::Holds(item, this)) {
+		return nullptr;
+	}
 	const auto media = item->media();
 	const auto spoiler = (media && media->hasSpoilerForPreview());
 	return getReplyPreview(item->fullId(), item->history()->peer, spoiler);

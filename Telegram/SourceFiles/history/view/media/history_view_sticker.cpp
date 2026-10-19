@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_sticker.h"
+#include "safe/safe_media_gate.h"
 
 #include "base/options.h"
 #include "boxes/sticker_set_box.h"
@@ -99,7 +100,7 @@ Sticker::Sticker(
 , _sensitiveBlurred(parent->data()->isMediaSensitive()) {
 	if ((_dataMedia = _data->activeMediaView())) {
 		dataMediaCreated();
-	} else {
+	} else if (!Safe::HidesItem(parent->data())) {
 		_data->loadThumbnail(parent->data()->fullId());
 		if (hasPremiumEffect()) {
 			_data->loadVideoThumbnail(parent->data()->fullId());
@@ -243,6 +244,15 @@ void Sticker::draw(
 		_parent->clearCustomEmojiRepaint();
 	}
 
+	if (Safe::PaintHeldSticker(
+			p,
+			_parent->data(),
+			_data,
+			r,
+			customEmojiPart(),
+			emojiSticker())) {
+		return;
+	}
 	ensureDataMediaCreated();
 	if (readyToDrawAnimationFrame()) {
 		paintAnimationFrame(p, context, r);

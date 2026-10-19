@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_element.h"
+#include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
 #include "api/api_transcribes.h"
@@ -2279,10 +2280,10 @@ void Element::validateText() {
 void Element::setTextWithLinks(
 		const TextWithEntities &text,
 		const std::vector<ClickHandlerPtr> &links) {
-	const auto context = Core::TextContext({
+	const auto context = Safe::GateCustomEmoji(data(), Core::TextContext({
 		.session = &history()->session(),
 		.repaint = [=] { customEmojiRepaint(); },
-	});
+	}));
 	if (_flags & Flag::ServiceMessage) {
 		const auto &options = Ui::ItemTextServiceOptions();
 		_text.setMarkedText(st::serviceTextStyle, text, options, context);

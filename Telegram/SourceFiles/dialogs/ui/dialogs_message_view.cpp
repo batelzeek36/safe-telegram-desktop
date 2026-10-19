@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_message_view.h"
+#include "safe/safe_media_gate.h"
 
 #include "history/history.h"
 #include "history/history_item.h"
@@ -310,7 +311,7 @@ void MessageView::prepare(
 		st::dialogsTextStyle,
 		std::move(textToCache),
 		DialogTextOptions(),
-		std::move(context));
+		Safe::GateCustomEmoji(item, std::move(context)));
 	_textCachedFor = item;
 	_unreadMedia = item->isUnreadMedia();
 	_imagesCache = std::move(preview.images);

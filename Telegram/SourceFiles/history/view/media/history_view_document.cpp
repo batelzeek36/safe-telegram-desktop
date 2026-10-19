@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_document.h"
+#include "safe/safe_media_gate.h"
 
 #include "base/random.h"
 #include "lang/lang_keys.h"
@@ -452,7 +453,9 @@ void Document::createComponents() {
 	} else {
 		mask |= HistoryDocumentNamed::Bit();
 		if (_data->hasThumbnail() && !_data->isSong()) {
-			_data->loadThumbnail(_realParent->fullId());
+			if (!Safe::HidesItem(_realParent)) {
+				_data->loadThumbnail(_realParent->fullId());
+			}
 			mask |= HistoryDocumentThumbed::Bit();
 		} else if (_data->isSvgImage()) {
 			mask |= HistoryDocumentThumbed::Bit();
@@ -729,7 +732,7 @@ void Document::draw(
 	const auto cornerDownload = downloadInCorner();
 	const auto mediaEditor = (_parent->context() == Context::MediaEditor);
 
-	if (!_dataMedia->canBePlayed()) {
+	if (!_dataMedia->canBePlayed() && !Safe::HidesItem(_realParent)) {
 		_dataMedia->automaticLoad(_realParent->fullId(), _realParent);
 	}
 	bool loaded = dataLoaded(), displayLoading = _data->displayLoading();
@@ -764,8 +767,15 @@ void Document::draw(
 	const auto radialOpacity = radial ? _animation->radial.opacity() : 1.;
 	if (thumbed) {
 		const auto rounding = thumbRounding(mode, outsideRounding);
-		validateThumbnail(thumbed, st.thumbSize, rounding);
-		p.drawImage(rthumb, thumbed->thumbnail);
+		if (!Safe::PaintHeld(
+				p,
+				_realParent,
+				_data,
+				rthumb,
+				Safe::HoldShape::Bubble(rounding))) {
+			validateThumbnail(thumbed, st.thumbSize, rounding);
+			p.drawImage(rthumb, thumbed->thumbnail);
+		}
 		if (context.selected()) {
 			FillThumbnailOverlay(p, rthumb, rounding, context);
 		}

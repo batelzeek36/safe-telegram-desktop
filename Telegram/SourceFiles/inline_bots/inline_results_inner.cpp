@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/inline_results_inner.h"
+#include "safe/safe_media_gate.h"
 
 #include "api/api_common.h"
 #include "chat_helpers/gifs_list_widget.h" // ChatHelpers::AddGifAction
@@ -240,10 +241,15 @@ void Inner::paintInlineItems(Painter &p, const QRect &r) {
 
 	auto paintItem = [&](not_null<const ItemBase*> item, QPoint point) {
 		p.translate(point.x(), point.y());
-		item->paint(
-			p,
-			r.translated(-point),
-			&context);
+		if (!Safe::PaintHeldInlineResult(
+				p,
+				_inlineBot,
+				QRect(0, 0, item->width(), item->height()))) {
+			item->paint(
+				p,
+				r.translated(-point),
+				&context);
+		}
 		p.translate(-point.x(), -point.y());
 	};
 	_mosaic.paint(std::move(paintItem), r);
@@ -484,6 +490,9 @@ void Inner::deleteUnusedInlineLayouts() {
 }
 
 void Inner::preloadImages() {
+	if (Safe::HoldsInlineResults(_inlineBot)) {
+		return;
+	}
 	_mosaic.forEach([](not_null<const ItemBase*> item) {
 		item->preload();
 	});
@@ -688,7 +697,7 @@ void Inner::updateSelected() {
 }
 
 void Inner::showPreview() {
-	if (_pressed < 0) {
+	if (_pressed < 0 || Safe::HoldsInlineResults(_inlineBot)) {
 		return;
 	}
 

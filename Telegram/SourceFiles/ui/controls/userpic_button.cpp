@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/controls/userpic_button.h"
+#include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
 #include "api/api_peer_photo.h"
@@ -922,7 +923,9 @@ void UserpicButton::updateVideo() {
 		return;
 	}
 	const auto photo = _peer->owner().photo(id);
-	if (!photo->date() || !photo->videoCanBePlayed()) {
+	if (!photo->date()
+		|| !photo->videoCanBePlayed()
+		|| Safe::HoldsUserpic(_peer)) {
 		clearStreaming();
 		return;
 	} else if (_streamed && _streamedPhoto == photo) {

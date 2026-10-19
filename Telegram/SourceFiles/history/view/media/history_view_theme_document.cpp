@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_theme_document.h"
+#include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
 #include "base/unixtime.h"
@@ -225,6 +226,14 @@ QSize ThemeDocument::countCurrentSize(int newWidth) {
 
 void ThemeDocument::draw(Painter &p, const PaintContext &context) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) return;
+	if (_data && Safe::PaintHeld(
+			p,
+			_realParent,
+			_data,
+			QRect(0, 0, width(), height()),
+			Safe::HoldShape::Small())) {
+		return;
+	}
 
 	ensureDataMediaCreated();
 

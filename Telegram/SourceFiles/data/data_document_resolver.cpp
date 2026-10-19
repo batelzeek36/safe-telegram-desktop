@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_document_resolver.h"
+#include "safe/safe_media_gate.h"
 
 #include "base/platform/base_platform_info.h"
 #include "boxes/abstract_box.h" // Ui::show().
@@ -284,6 +285,9 @@ void ResolveDocument(
 			return;
 		}
 		const auto path = document->filepath(true);
+		if (Safe::RefusesLaunch(document, item, path)) {
+			return;
+		}
 		if (!path.isEmpty()) {
 			auto context = QVariant();
 			if (item) {

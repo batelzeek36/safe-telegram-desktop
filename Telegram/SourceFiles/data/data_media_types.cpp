@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_media_types.h"
+#include "safe/safe_media_gate.h"
 
 #include "base/random.h"
 #include "boxes/send_credits_box.h" // CreditsEmoji.
@@ -209,6 +210,13 @@ template <typename MediaType>
 		const std::shared_ptr<PhotoMedia> &media,
 		ImageRoundRadius radius,
 		bool spoiler) {
+	if (Safe::Holds(item, media->owner())) {
+		const auto ellipse = (radius == ImageRoundRadius::Ellipse);
+		return {
+			Safe::HeldPreviewImage(st::dialogsMiniPreview, ellipse),
+			Safe::HeldPreviewCacheKey(ellipse),
+		};
+	}
 	const auto photo = media->owner();
 	const auto counted = CountCacheKey(photo, radius, spoiler);
 	if (const auto small = media->image(PhotoSize::Small)) {
@@ -238,6 +246,13 @@ template <typename MediaType>
 		bool spoiler) {
 	Expects(media->owner()->hasThumbnail());
 
+	if (Safe::Holds(item, media->owner())) {
+		const auto ellipse = (radius == ImageRoundRadius::Ellipse);
+		return {
+			Safe::HeldPreviewImage(st::dialogsMiniPreview, ellipse),
+			Safe::HeldPreviewCacheKey(ellipse),
+		};
+	}
 	const auto document = media->owner();
 	if (const auto thumbnail = media->thumbnail()) {
 		const auto readyCacheKey = CountCacheKey(document, radius, spoiler);
