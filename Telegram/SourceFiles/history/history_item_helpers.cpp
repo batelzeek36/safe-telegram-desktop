@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item_helpers.h"
+#include "safe/safe_notices.h"
+#include "safe/safe_policy.h"
 
 #include "api/api_reactions_notify_settings.h"
 #include "api/api_text_entities.h"
@@ -1445,6 +1447,9 @@ bool CanHoldItemNotification(not_null<const HistoryItem*> item) {
 }
 
 [[nodiscard]] TextWithEntities UnsupportedMessageText() {
+	if (!Safe::OfficialUpdatesAllowed()) {
+		return Safe::UnsupportedMessageText();
+	}
 	const auto siteLink = u"https://desktop.telegram.org"_q;
 	auto result = TextWithEntities{
 		tr::lng_message_unsupported(tr::now, lt_link, siteLink)

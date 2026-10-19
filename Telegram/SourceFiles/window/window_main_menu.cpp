@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_main_menu.h"
+#include "safe/safe_identity.h"
 
 #include "apiwrap.h"
 #include "base/event_filter.h"
@@ -391,6 +392,7 @@ MainMenu::MainMenu(
 		u"Telegram Desktop"_q,
 		u"https://desktop.telegram.org"_q));
 	_telegram->setLinksTrusted();
+	_telegram->setMarkedText(TextWithEntities{ Safe::AppName() });
 	// The canary version is too long for the "Version {version}" form.
 	_version->setMarkedText(
 		tr::link(

@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/about_box.h"
+#include "safe/safe_identity.h"
+#include "safe/safe_notices.h"
 
 #include "base/platform/base_platform_info.h"
 #include "core/application.h"
@@ -65,7 +67,7 @@ rpl::producer<TextWithEntities> Text3() {
 } // namespace
 
 void AboutBox(not_null<Ui::GenericBox*> box) {
-	box->setTitle(u"Telegram Desktop"_q);
+	box->setTitle(Safe::AppName());
 
 	auto layout = box->verticalLayout();
 
@@ -124,7 +126,7 @@ void AboutBox(not_null<Ui::GenericBox*> box) {
 		Ui::AddSkip(layout, st::aboutSkip);
 	};
 
-	addText(Text1());
+	addText(Safe::AboutIntro());
 	addText(Text2());
 	addText(Text3());
 
@@ -174,6 +176,7 @@ namespace {
 		&& Core::CanaryCommitHash[0] != '\0') {
 		result += u" \u00B7 "_q + QLatin1String(Core::CanaryCommitHash);
 	}
+	result += Safe::VersionLabelSuffix();
 	return result;
 }
 

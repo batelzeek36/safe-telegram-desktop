@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/update_checker.h"
+#include "safe/safe_notices.h"
 
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
@@ -2175,6 +2176,9 @@ bool checkReadyUpdate() {
 }
 
 void UpdateApplication() {
+	if (Safe::RefuseOfficialUpdate()) {
+		return;
+	}
 	if (UpdaterDisabled()) {
 		const auto url = [&] {
 #ifdef OS_WIN_STORE

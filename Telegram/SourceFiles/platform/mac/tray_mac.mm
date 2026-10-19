@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/mac/tray_mac.h"
+#include "safe/safe_identity.h"
 
 #include "base/platform/mac/base_utilities_mac.h"
 #include "core/application.h"
@@ -309,7 +310,7 @@ NativeIcon::NativeIcon()
 
 	_status.button.target = buttonCallback;
 	_status.button.action = @selector(invoke);
-	_status.button.toolTip = Q2NSString(AppName.utf16());
+	_status.button.toolTip = Q2NSString(Safe::AppName());
 }
 
 NativeIcon::~NativeIcon() {

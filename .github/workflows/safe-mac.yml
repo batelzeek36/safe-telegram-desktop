@@ -3,7 +3,7 @@ name: Safe Telegram Mac build
 # Builds the locked Telegram Desktop for Zach's Mac on GitHub's macOS machines.
 # Two jobs so each gets its own 6 hours: the libraries (Qt, ffmpeg, WebRTC, ...) build
 # once and live in the Actions cache; later runs only rebuild the app.
-# The finished Telegram.app is encrypted with ARTIFACT_KEY before upload, because the
+# The finished Safe Telegram.app is encrypted with ARTIFACT_KEY before upload, because the
 # binary carries the api_id/api_hash and this repo is public.
 
 on:
@@ -160,12 +160,21 @@ jobs:
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
           cmake --build ../out --config Release --parallel
 
+      # Same as the official release script: strip the executable (1.7 GB with symbols).
+      - name: Strip.
+        run: |
+          cd "$REPO_NAME/out/Release"
+          du -sh "Safe Telegram.app"
+          strip "Safe Telegram.app/Contents/MacOS/Safe Telegram"
+          du -sh "Safe Telegram.app"
+          lipo -archs "Safe Telegram.app/Contents/MacOS/Safe Telegram"
+
       - name: Encrypt.
         env:
           ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
         run: |
           cd $REPO_NAME/out/Release
-          tar -czf - Telegram.app | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+          tar -czf - "Safe Telegram.app" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
             -pass env:ARTIFACT_KEY -out "$GITHUB_WORKSPACE/safe-telegram-mac.tgz.enc"
           shasum -a 256 "$GITHUB_WORKSPACE/safe-telegram-mac.tgz.enc"
 

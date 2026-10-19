@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/mac/specific_mac_p.h"
+#include "safe/safe_identity.h"
 
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -314,7 +315,7 @@ QString objc_documentsPath() {
 QString objc_appDataPath() {
 	NSURL *url = [[NSFileManager defaultManager] URLForDirectory:NSApplicationSupportDirectory inDomain:NSUserDomainMask appropriateForURL:nil create:YES error:nil];
 	if (url) {
-		return QString::fromUtf8([[url path] fileSystemRepresentation]) + '/' + AppName.utf16() + '/';
+		return QString::fromUtf8([[url path] fileSystemRepresentation]) + '/' + Safe::DataFolderName() + '/';
 	}
 	return QString();
 }

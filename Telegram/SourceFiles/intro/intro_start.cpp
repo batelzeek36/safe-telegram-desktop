@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "intro/intro_start.h"
+#include "safe/safe_identity.h"
 
 #include "lang/lang_keys.h"
 #include "intro/intro_qr.h"
@@ -26,6 +27,8 @@ StartWidget::StartWidget(
 	setMouseTracking(true);
 	setTitleText(rpl::single(u"Telegram Desktop"_q));
 	setDescriptionText(tr::lng_intro_about());
+	setTitleText(rpl::single(Safe::AppName()));
+	setDescriptionText(rpl::single(Safe::IntroAbout()));
 	show();
 }
 

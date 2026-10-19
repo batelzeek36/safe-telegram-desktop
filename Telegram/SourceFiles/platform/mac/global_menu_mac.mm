@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/mac/global_menu_mac.h"
+#include "safe/safe_identity.h"
 
 #include "core/application.h"
 #include "core/sandbox.h"
@@ -599,7 +600,7 @@ void Manager::buildWindowMenu(QMenu *window) {
 }
 
 void Manager::buildMenu() {
-	buildAppleMenu(_menuBar->addMenu(u"Telegram"_q));
+	buildAppleMenu(_menuBar->addMenu(Safe::AppName()));
 	buildFileMenu(_menuBar->addMenu(u"File"_q));
 	buildEditMenu(_menuBar->addMenu(u"Edit"_q));
 	buildWindowMenu(_menuBar->addMenu(u"Window"_q));

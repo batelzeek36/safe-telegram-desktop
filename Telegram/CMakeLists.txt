@@ -1851,6 +1851,11 @@ PRIVATE
     profile/profile_block_widget.h
     profile/profile_cover_drop_area.cpp
     profile/profile_cover_drop_area.h
+    safe/safe_identity.cpp
+    safe/safe_identity.h
+    safe/safe_notices.cpp
+    safe/safe_notices.h
+    safe/safe_policy.h
     settings/business/settings_away_message.cpp
     settings/business/settings_away_message.h
     settings/business/settings_shortcut_messages.cpp
@@ -2558,6 +2563,7 @@ else()
     set(bundle_entitlements "Telegram.entitlements")
     set(output_name "Telegram")
 endif()
+include(cmake/safe_identity.cmake)
 
 if (CMAKE_GENERATOR STREQUAL Xcode)
     set(bundle_identifier_plist "$(PRODUCT_BUNDLE_IDENTIFIER)")

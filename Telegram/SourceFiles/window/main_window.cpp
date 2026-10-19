@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/main_window.h"
+#include "safe/safe_identity.h"
 
 #include "api/api_updates.h"
 #include "storage/localstorage.h"
@@ -914,7 +915,7 @@ void MainWindow::updateTitle() {
 		: Dialogs::Key();
 	const auto thread = key ? key.thread() : nullptr;
 	if (!thread) {
-		setTitle((user.isEmpty() ? u"Telegram"_q : user) + added + suffix);
+		setTitle((user.isEmpty() ? Safe::AppName() : user) + added + suffix);
 		return;
 	}
 	const auto history = thread->owningHistory();

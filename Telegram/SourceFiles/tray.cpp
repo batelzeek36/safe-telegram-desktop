@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "tray.h"
+#include "safe/safe_identity.h"
 #include "tray_accounts_menu.h"
 
 #include "core/application.h"
@@ -22,8 +23,8 @@ namespace Core {
 QString TrayIconToolTip() {
 	const auto counter = Core::App().unreadBadge();
 	return (counter > 0)
-		? u"%1 (%2)"_q.arg(AppName.utf16()).arg(counter)
-		: AppName.utf16();
+		? u"%1 (%2)"_q.arg(Safe::AppName()).arg(counter)
+		: Safe::AppName();
 }
 
 Tray::Tray() {
