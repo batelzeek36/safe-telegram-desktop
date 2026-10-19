@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/gifs_list_widget.h"
+#include "safe/safe_bots.h"
 
 #include "api/api_toggling_media.h" // Api::ToggleSavedGif
 #include "base/const_string.h"
@@ -939,6 +940,10 @@ void GifsListWidget::sendInlineRequest() {
 		}
 	}
 
+	if (!Safe::IsOpenBot(_searchBot)) {
+		_search->setLoading(false);
+		return;
+	}
 	_search->setLoading(true);
 	_inlineRequestId = _api.request(MTPmessages_GetInlineBotResults(
 		MTP_flags(0),

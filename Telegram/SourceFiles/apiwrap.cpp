@@ -87,6 +87,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "main/main_account.h"
+#include "safe/safe_bots.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/boxes/emoji_stake_box.h"
 #include "ui/controls/ton_common.h"
@@ -5074,6 +5075,9 @@ void ApiWrap::sendBotStart(
 		const QString &startTokenForChat) {
 	Expects(bot->isBot());
 
+	if (Safe::RefuseBot(show, bot, u"bot"_q)) {
+		return;
+	}
 	if (chat && chat->isChannel() && !chat->isMegagroup()) {
 		ShowAddParticipantsError(show, "USER_BOT", chat, bot);
 		return;

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peers/edit_participants_box.h"
+#include "safe/safe_bots.h"
 
 #include "api/api_chat_participants.h"
 #include "boxes/peers/edit_participant_box.h"
@@ -97,6 +98,12 @@ void AddChatParticipant(
 		not_null<UserData*> user,
 		Fn<void()> onDone,
 		Fn<void()> onFail) {
+	if (Safe::RefuseAddedBots(show, { user })) {
+		if (onFail) {
+			onFail();
+		}
+		return;
+	}
 	chat->session().api().request(MTPmessages_AddChatUser(
 		chat->inputChat(),
 		user->inputUser(),
@@ -171,6 +178,12 @@ void SaveChannelAdmin(
 		const std::optional<QString> &rank,
 		Fn<void()> onDone,
 		Fn<void()> onFail) {
+	if (!oldRights.flags && Safe::RefuseAddedBots(show, { user })) {
+		if (onFail) {
+			onFail();
+		}
+		return;
+	}
 	using Flag = MTPchannels_editAdmin::Flag;
 	const auto flags = Flag(0)
 		| (rank.has_value() ? Flag::f_rank : Flag(0));

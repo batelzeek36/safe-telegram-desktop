@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "payments/payments_form.h"
+#include "safe/safe_bots.h"
 
 #include "main/main_session.h"
 #include "data/data_channel.h"
@@ -475,6 +476,10 @@ void Form::requestForm() {
 		MTP_dataJSON(MTP_bytes(Window::Theme::WebViewParams().json))
 	)).done([=](const MTPpayments_PaymentForm &result) {
 		hideProgress();
+		if (Safe::RefusePaymentForm(_id, result)) {
+			_updates.fire(Error{ Error::Type::Form, Safe::RefusedError() });
+			return;
+		}
 		result.match([&](const MTPDpayments_paymentForm &data) {
 			processForm(data);
 		}, [&](const MTPDpayments_paymentFormStars &data) {

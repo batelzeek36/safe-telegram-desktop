@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/business/settings_chatbots.h"
+#include "safe/safe_bots.h"
 #include "safe/safe_discovery.h"
 
 #include "apiwrap.h"
@@ -704,7 +705,8 @@ void Chatbots::setupContent() {
 		username->setFocus();
 	};
 	const auto addBot = [=](UserData *resolved) {
-		if (!resolved) {
+		if (!resolved
+			|| Safe::RefuseBot(controller()->uiShow(), resolved, u"bot"_q)) {
 			return;
 		}
 		_committedRecipients = _recipients.current();

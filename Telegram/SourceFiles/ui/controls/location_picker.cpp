@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/controls/location_picker.h"
+#include "safe/safe_bots.h"
 
 #include "apiwrap.h"
 #include "base/platform/base_platform_info.h"
@@ -1227,6 +1228,9 @@ void LocationPicker::venuesSendRequest() {
 	Expects(_venuesBot != nullptr);
 
 	if (_venuesRequestId || !_venuesRequestLocation) {
+		return;
+	} else if (!Safe::IsOpenBot(_venuesBot)) {
+		venuesApplyResults({});
 		return;
 	}
 	_venuesRequestId = _api.request(MTPmessages_GetInlineBotResults(

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_widget.h"
+#include "safe/safe_bots.h"
 
 #include "api/api_compose_with_ai.h"
 #include "api/api_editing.h"
@@ -2116,6 +2117,7 @@ void HistoryWidget::updateInlineBotQuery() {
 }
 
 void HistoryWidget::applyInlineBotQuery(UserData *bot, const QString &query) {
+	bot = Safe::OpenInlineBot(controller()->uiShow(), bot);
 	if (bot) {
 		if (_inlineBot != bot) {
 			_inlineBot = bot;

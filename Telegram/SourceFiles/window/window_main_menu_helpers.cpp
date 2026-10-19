@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_main_menu_helpers.h"
+#include "safe/safe_bots.h"
+#include "safe/safe_trust.h"
 
 #include "apiwrap.h"
 #include "base/platform/base_platform_info.h"
@@ -291,14 +293,16 @@ void SetupMenuBots(
 
 	rpl::single(
 		rpl::empty
-	) | rpl::then(
-		bots->attachBotsUpdates()
-	) | rpl::on_next([=] {
+	) | rpl::then(rpl::merge(
+		bots->attachBotsUpdates(),
+		Safe::Changes()
+	)) | rpl::on_next([=] {
 		const auto width = container->widthNoMargins();
 		wrap->clear();
 		for (const auto &bot : bots->attachBots()) {
 			const auto user = bot.user;
-			if (!bot.inMainMenu || !bot.media || user->isOldWalletBot()) {
+			if (!bot.inMainMenu || !bot.media || user->isOldWalletBot()
+				|| !Safe::IsOpenBot(user)) {
 				continue;
 			} else if (const auto media = bot.media; !media->loaded()) {
 				if (!*iconLoadLifetime) {

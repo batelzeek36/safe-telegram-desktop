@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_bot.h"
+#include "safe/safe_bots.h"
 
 #include "apiwrap.h"
 #include "api/api_cloud_password.h"
@@ -322,6 +323,8 @@ void ActivateBotButton(ClickHandlerContext context, BotButtonLookup lookup) {
 	}
 	const auto button = lookup();
 	if (!button) {
+		return;
+	} else if (Safe::RefuseBotButton(controller->uiShow(), item, *button)) {
 		return;
 	}
 

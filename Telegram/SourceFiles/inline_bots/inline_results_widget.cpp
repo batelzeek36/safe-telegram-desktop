@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/inline_results_widget.h"
+#include "safe/safe_bots.h"
 
 #include "data/data_user.h"
 #include "data/data_session.h"
@@ -457,6 +458,7 @@ void Widget::queryInlineBot(UserData *bot, PeerData *peer, QString query) {
 
 void Widget::onInlineRequest() {
 	if (_inlineRequestId || !_inlineBot || !_inlineQueryPeer) return;
+	if (!Safe::IsOpenBot(_inlineBot)) return;
 	_inlineQuery = _inlineNextQuery;
 
 	QString nextOffset;

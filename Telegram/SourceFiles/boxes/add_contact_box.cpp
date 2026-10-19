@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/add_contact_box.h"
+#include "safe/safe_bots.h"
 
 #include "lang/lang_keys.h"
 #include "base/call_delayed.h"
@@ -725,6 +726,8 @@ void GroupInfoBox::createGroup(
 		const QString &title,
 		const std::vector<not_null<PeerData*>> &users) {
 	if (_creationRequestId) {
+		return;
+	} else if (Safe::RefuseAddedPeers(uiShow(), users)) {
 		return;
 	}
 	using TLUsers = MTPInputUser;
