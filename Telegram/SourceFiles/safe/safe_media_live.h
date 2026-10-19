@@ -11,10 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Safe {
 
-// A video chat / live stream tile's frame: only a Trusted person's video is
-// handed to the renderer. Anyone else gets "no frame", which every renderer
-// draws as the person's blurred userpic, and that userpic is foggy glass for
-// anyone who is not Trusted. Audio is a separate path and is untouched.
+// A video chat / live stream tile's frame, through ShowsLiveVideo (which shows
+// everyone since 2026-10-19). A refused tile gets "no frame", which every
+// renderer draws as the person's blurred userpic. Audio is untouched.
 [[nodiscard]] inline Webrtc::FrameWithInfo LiveFrame(
 		not_null<PeerData*> peer,
 		not_null<Webrtc::VideoTrack*> track,

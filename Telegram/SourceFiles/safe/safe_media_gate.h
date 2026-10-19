@@ -82,7 +82,8 @@ namespace Safe {
 // A sticker or emoji set that is not installed: its previews are foggy glass.
 [[nodiscard]] bool HidesStickerSetPreview(bool notInstalled);
 
-// Live video (calls, video chats, live streams): Trusted people only.
+// Live video (calls, video chats, live streams): always shown (Zach,
+// 2026-10-19); the hooks stay so the rule can change in one place.
 [[nodiscard]] bool ShowsLiveVideo(not_null<const PeerData*> peer);
 
 // A wallpaper, chat theme or emoji status someone set: Trusted only.

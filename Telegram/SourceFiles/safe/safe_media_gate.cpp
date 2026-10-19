@@ -279,7 +279,11 @@ bool HidesStickerSetPreview(bool notInstalled) {
 }
 
 bool ShowsLiveVideo(not_null<const PeerData*> peer) {
-	return Trusted(peer);
+	// Zach, 2026-10-19: "live videos dont need to be hidden. if someone is
+	// doing a live call with me it means i trust them anyway." Calls from Off
+	// people are still ignored before they ring (IgnoreCallFrom).
+	(void)peer;
+	return true;
 }
 
 bool ShowsPeerLook(not_null<const PeerData*> peer) {
