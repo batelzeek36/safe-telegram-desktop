@@ -1861,8 +1861,21 @@ PRIVATE
     safe/safe_gate.h
     safe/safe_identity.cpp
     safe/safe_identity.h
+    safe/safe_judge.cpp
+    safe/safe_judge_book.cpp
+    safe/safe_judge_book.h
+    safe/safe_judge_client.cpp
+    safe/safe_judge_client.h
+    safe/safe_judge_image.cpp
+    safe/safe_judge_image.h
+    safe/safe_judge_json.cpp
+    safe/safe_judge_json.h
+    safe/safe_judge_protocol.cpp
+    safe/safe_judge_protocol.h
+    safe/safe_judge_rubric.h
     safe/safe_links.cpp
     safe/safe_links.h
+    safe/safe_media.h
     safe/safe_notices.cpp
     safe/safe_notices.h
     safe/safe_off.cpp
