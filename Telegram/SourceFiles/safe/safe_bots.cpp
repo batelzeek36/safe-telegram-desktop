@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_bots.h"
 
 #include "base/flat_map.h"
+#include "core/click_handler_types.h"
 #include "data/data_media_types.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
@@ -196,11 +197,18 @@ QString RefusedError() {
 }
 
 bool RefuseUrlAuth(
-		std::shared_ptr<Ui::Show> show,
 		not_null<Main::Session*> session,
-		const MTPDurlAuthResultRequest &request) {
+		const MTPDurlAuthResultRequest &request,
+		const QString &url,
+		QVariant context) {
 	const auto bot = session->data().processUser(request.vbot());
-	return RefuseBot(std::move(show), bot, BotReason());
+	if (IsOpen(bot)) {
+		return false;
+	}
+	if (!url.isEmpty()) {
+		UrlClickHandler::Open(url, std::move(context));
+	}
+	return true;
 }
 
 UserData *OpenInlineBot(std::shared_ptr<Ui::Show> show, UserData *bot) {

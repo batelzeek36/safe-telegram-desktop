@@ -323,7 +323,7 @@ void RequestButton(
 	const auto buttonId = button->buttonId;
 	const auto url = QString::fromUtf8(button->data);
 
-	if (Safe::RefuseUrlAuth(show, session, request)) {
+	if (Safe::RefuseUrlAuth(session, request, url, QVariant())) {
 		return;
 	}
 	const auto bot = request.is_request_write_access()
@@ -409,7 +409,7 @@ void RequestUrl(
 		not_null<Main::Session*> session,
 		const QString &url,
 		QVariant context) {
-	if (Safe::RefuseUrlAuth(show, session, request)) {
+	if (Safe::RefuseUrlAuth(session, request, url, context)) {
 		return;
 	}
 	struct State {

@@ -80,11 +80,13 @@ bool RefusePaymentForm(
 [[nodiscard]] QString RefusedError();
 
 // "Log in with Telegram" on a website (a login button or a login URL): the
-// bot that would receive the login must be open.
+// bot that would receive the login must be open. Otherwise the plain `url`
+// opens in the browser without logging in (what declining does), and true.
 bool RefuseUrlAuth(
-	std::shared_ptr<Ui::Show> show,
 	not_null<Main::Session*> session,
-	const MTPDurlAuthResultRequest &request);
+	const MTPDurlAuthResultRequest &request,
+	const QString &url,
+	QVariant context);
 
 // Inline mode in the message field ("@bot query"): returns `bot` when it is
 // open, else nullptr (no query is sent, no results show). Runs on every
