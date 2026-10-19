@@ -83,6 +83,8 @@ jobs:
             -D CMAKE_OBJC_COMPILER="$(xcrun -f clang)" \
             -D CMAKE_OBJCXX_COMPILER="$(xcrun -f clang++)" \
             -D CMAKE_Swift_COMPILER="$(xcrun -f swiftc)" \
+            -D CMAKE_OSX_ARCHITECTURES=arm64 \
+            -D DESKTOP_APP_MAC_ARCH=arm64 \
             -D TDESKTOP_API_TEST=ON \
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
