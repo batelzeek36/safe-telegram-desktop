@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
+#include "safe/look_archive.h"
+#include "safe/look_dialogs.h"
 #include "safe/safe_off.h"
 #include "safe/safe_policy.h"
 
@@ -666,7 +668,8 @@ void InnerWidget::refreshWithCollapsedRows(bool toTop) {
 		? _shownList->begin()->get()->folder()
 		: nullptr;
 	const auto inMainMenu = session().settings().archiveInMainMenu();
-	if (archive && (session().settings().archiveCollapsed() || inMainMenu)) {
+	if (archive && (Safe::Look::ArchiveCollapsed(
+			session().settings().archiveCollapsed()) || inMainMenu)) {
 		if (_selected && _selected->folder() == archive) {
 			_selected = nullptr;
 		}
@@ -1240,6 +1243,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		} else {
 			Ui::RowPainter::Paint(p, row, videoUserpic, context);
 		}
+		Safe::Look::PaintRowSeparator(p, context, row->height());
 		if (context.quickActionContext) {
 			context.quickActionContext = nullptr;
 		}
@@ -4878,7 +4882,8 @@ bool InnerWidget::needCollapsedRowsRefresh() const {
 	const auto collapsedHasArchive = !_collapsedRows.empty()
 		&& (_collapsedRows.back()->folder != nullptr);
 	const auto archiveIsCollapsed = (archive != nullptr)
-		&& session().settings().archiveCollapsed();
+		&& Safe::Look::ArchiveCollapsed(
+			session().settings().archiveCollapsed());
 	const auto archiveIsInMainMenu = (archive != nullptr)
 		&& session().settings().archiveInMainMenu();
 	return archiveIsInMainMenu

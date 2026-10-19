@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_media_grouped.h"
+#include "safe/look_media.h"
 
 #include "history/history_item_components.h"
 #include "history/history_item.h"
@@ -443,6 +444,22 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 	auto highlight = context.highlight.range;
 	const auto tagged = lookupSpoilerTagMedia();
 	auto fullRect = QRect();
+	const auto lookFramed = Safe::Look::FrameAlbum(
+		p,
+		context,
+		QRect(
+			0,
+			groupPadding.top(),
+			width(),
+			height() - groupPadding.top() - groupPadding.bottom()),
+		rounding,
+		{
+			.bubble = _parent->hasBubble(),
+			.skip = (_mode != Mode::Grid)
+				|| inWebPage
+				|| IsHostedInstantViewMedia(_parent)
+				|| (_parent->context() == Context::MediaEditor),
+		});
 	const auto subpartHighlight = IsSubGroupSelection(highlight);
 	for (auto i = 0, count = int(_parts.size()); i != count; ++i) {
 		const auto &part = _parts[i];
@@ -473,7 +490,11 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 		part.content->drawGrouped(
 			p,
 			partContext,
-			part.geometry.translated(0, groupPadding.top()),
+			(lookFramed
+				? Safe::Look::InsetGroupedPart(
+					part.geometry.translated(0, groupPadding.top()),
+					part.sides)
+				: part.geometry.translated(0, groupPadding.top())),
 			part.sides,
 			applyRoundingSides(rounding, part.sides),
 			highlightOpacity,

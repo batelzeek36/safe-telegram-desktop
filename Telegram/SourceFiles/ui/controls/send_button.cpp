@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/controls/send_button.h"
+#include "safe/look_tint.h"
 
 #include "lang/lang_tag.h"
 #include "lottie/lottie_icon.h"
@@ -263,9 +264,9 @@ void SendButton::paintLottieIcon(QPainter &p, int index, bool over) {
 	} else if (!_voiceRoundAnimating && icon->frameIndex() != 0) {
 		icon->jumpTo(0, [=] { update(); });
 	}
-	const auto color = (isDisabled() || !over)
-		? st::historyRecordVoiceFg->c
-		: st::historyRecordVoiceFgOver->c;
+	const auto color = Safe::Look::PillColor((isDisabled() || !over)
+		? st::historyRecordVoiceFg
+		: st::historyRecordVoiceFgOver)->c;
 	icon->paintInCenter(p, rect(), color);
 }
 
@@ -578,9 +579,9 @@ void SendButton::paintVoiceRoundIcon(QPainter &p, bool over) {
 	if (_state.forbidden) {
 		p.setOpacity(kForbiddenOpacity);
 	}
-	const auto color = (isDisabled() || !over)
-		? st::historyRecordVoiceFg->c
-		: st::historyRecordVoiceFgOver->c;
+	const auto color = Safe::Look::PillColor((isDisabled() || !over)
+		? st::historyRecordVoiceFg
+		: st::historyRecordVoiceFgOver)->c;
 	const auto toVideo = (_state.type == Type::Round);
 	const auto index = toVideo ? kVoiceToRoundIndex : kRoundToVoiceIndex;
 	_voiceRoundIcons[index]->paintInCenter(p, rect(), color);

@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
+#include "safe/look_top.h"
+#include "safe/look_tabs.h"
 #include "safe/safe_policy.h"
 
 #include "base/call_delayed.h"
@@ -410,7 +412,10 @@ Widget::Widget(
 	.under = object_ptr<MenuUnderButton>(_searchControls),
 })
 , _searchForNarrowLayout(_searchControls, st::dialogsSearchForNarrowFilters)
-, _search(_searchControls, st::dialogsFilter, tr::lng_dlg_filter())
+, _search(
+	_searchControls,
+	Safe::Look::SearchFieldStyle(),
+	Safe::Look::SearchPlaceholder())
 , _chooseFromUser(
 	_searchControls,
 	object_ptr<Ui::IconButton>(this, st::dialogsSearchFrom))
@@ -4551,17 +4556,24 @@ void Widget::updateControlsGeometry() {
 	const auto narrowRatio = (ratiow < smallw)
 		? ((smallw - ratiow) / float64(smallw - _narrowWidth))
 		: 0.;
+	const auto lookTitle = Safe::Look::TitleHeight(
+		(_layout == Layout::Main)
+			&& !_openedFolder
+			&& !_openedForum
+			&& !_openedCommunity,
+		narrowRatio);
 
 	auto filterLeft = (controller()->filtersWidth()
 		? st::dialogsFilterSkip
 		: (st::dialogsFilterPadding.x() + _mainMenu.toggle->width()))
 		+ st::dialogsFilterPadding.x();
+	filterLeft = Safe::Look::SearchLeft(filterLeft, lookTitle);
 	const auto filterRight = st::dialogsFilterSkip
 		+ st::dialogsFilterPadding.x();
 	const auto filterWidth = std::max(ratiow, smallw)
 		- filterLeft
 		- filterRight;
-	const auto filterAreaHeight = st::topBarHeight;
+	const auto filterAreaHeight = st::topBarHeight + lookTitle;
 	_searchControls->setGeometry(0, filterAreaTop, ratiow, filterAreaHeight);
 	if (_subsectionTopBar) {
 		_subsectionTopBar->setGeometryWithNarrowRatio(
@@ -4571,6 +4583,11 @@ void Widget::updateControlsGeometry() {
 	}
 
 	auto filterTop = (filterAreaHeight - _search->height()) / 2;
+	filterTop = Safe::Look::SearchTop(
+		filterTop,
+		filterAreaHeight,
+		_search->height(),
+		lookTitle);
 	filterLeft = anim::interpolate(filterLeft, _narrowWidth, narrowRatio);
 	_search->setGeometryToLeft(
 		filterLeft,
@@ -4609,7 +4626,7 @@ void Widget::updateControlsGeometry() {
 	const auto expandedStoriesTop = filterAreaTop + filterAreaHeight;
 	const auto storiesHeight = 2 * st::dialogsStories.photoTop
 		+ st::dialogsStories.photo;
-	const auto added = (st::dialogsFilter.heightMin - storiesHeight) / 2;
+	const auto added = (_search->height() - storiesHeight) / 2;
 	if (_stories) {
 		const auto inFolderTitle = _openedFolder && _subsectionTopBar;
 		const auto storiesLeft = inFolderTitle
@@ -4634,8 +4651,19 @@ void Widget::updateControlsGeometry() {
 	}
 
 	updateLockUnlockPosition();
+	Safe::Look::PlaceTitle(
+		_searchControls.data(),
+		controller(),
+		_search.data(),
+		_lockUnlock.data(),
+		lookTitle);
 
-	auto bottomSkip = 0;
+	auto bottomSkip = Safe::Look::PlaceTabBar(
+		this,
+		controller(),
+		(_layout == Layout::Main),
+		barw,
+		narrowRatio);
 	const auto putBottomButton = [&](auto &button) {
 		if (button && !button->isHidden()) {
 			const auto buttonHeight = button->height();

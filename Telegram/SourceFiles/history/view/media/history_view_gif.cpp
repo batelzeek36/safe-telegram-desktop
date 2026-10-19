@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_gif.h"
+#include "safe/look_media.h"
 #include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
@@ -652,7 +653,7 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 
 	const auto inWebPageWithoutOwnRounding = inWebPage
 		&& bubbleRounding() == Ui::BubbleRounding();
-	const auto rounding = (inWebPageWithoutOwnRounding && !hostedInstantView)
+	const auto outerRounding = (inWebPageWithoutOwnRounding && !hostedInstantView)
 		? std::optional<Ui::BubbleRounding>()
 		: std::optional<Ui::BubbleRounding>(adjustedBubbleRounding());
 
@@ -678,6 +679,21 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 	if (rtl()) usex = width() - usex - usew;
 
 	QRect rthumb(style::rtlrect(usex + paintx, painty, usew, painth, width()));
+	const auto lookFrame = Safe::Look::FrameMedia(
+		p,
+		context,
+		rthumb,
+		outerRounding,
+		{
+			.bubble = bubble,
+			.skip = isRound
+				|| unwrapped
+				|| inWebPage
+				|| hostedInstantView
+				|| mediaEditor,
+		});
+	rthumb = lookFrame.inner;
+	const auto rounding = lookFrame.innerRounding;
 	if (Safe::PaintHeld(
 			p,
 			_realParent,
@@ -741,8 +757,12 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 		|| (streamedForWaiting && streamedForWaiting->waitingShown());
 
 	if (!bubble && !unwrapped && !hostedInstantView) {
-		Assert(rounding.has_value());
-		fillImageShadow(p, rthumb, *rounding, context);
+		Assert(lookFrame.outerRounding.has_value());
+		fillImageShadow(
+			p,
+			lookFrame.outer,
+			*lookFrame.outerRounding,
+			context);
 	}
 
 	const auto skipDrawingContent = context.skipDrawingParts
@@ -757,7 +777,7 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 		auto paused = context.paused || !shouldBePlaying;
 		auto request = ::Media::Streaming::FrameRequest{
 			.outer = (ScaledInstantViewMediaSize(
-				QSize(usew, painth),
+				rthumb.size(),
 				HostedInstantViewMediaPixelScale(_parent))
 				* style::DevicePixelRatio()),
 			.blurredBackground = true,
@@ -805,7 +825,7 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 		p.drawImage(rthumb, _seekLastFrame);
 	} else if (!skipDrawingContent && !fullHiddenBySpoiler) {
 		ensureDataMediaCreated();
-		validateThumbCache({ usew, painth }, isRound, rounding);
+		validateThumbCache(rthumb.size(), isRound, rounding);
 		p.drawImage(rthumb, _thumbCache);
 	}
 	if (isRound && !mediaEditor) {

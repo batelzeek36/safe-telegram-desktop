@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_widget.h"
+#include "safe/look_chat.h"
+#include "safe/look_tint.h"
 #include "safe/safe_bots.h"
 
 #include "api/api_compose_with_ai.h"
@@ -311,7 +313,7 @@ HistoryWidget::HistoryWidget(
 	st::historyComposeButton)
 , _reportMessages(this, QString(), st::historyComposeButton)
 , _attachToggle(this, st::historyAttach)
-, _tabbedSelectorToggle(this, st::historyAttachEmoji)
+, _tabbedSelectorToggle(this, Safe::Look::EmojiToggleStyle())
 , _botKeyboardShow(this, st::historyBotKeyboardShow)
 , _botKeyboardHide(this, st::historyBotKeyboardHide)
 , _botCommandStart(this, st::historyBotCommandStart)
@@ -323,7 +325,7 @@ HistoryWidget::HistoryWidget(
 , _forwardPanel(std::make_unique<ForwardPanel>([=] { updateField(); }))
 , _field(
 	this,
-	st::historyComposeField,
+	Safe::Look::ComposeFieldStyle(),
 	Ui::InputField::Mode::MultiLine,
 	tr::lng_message_ph())
 , _richDraftPreview(std::make_unique<HistoryView::Controls::RichDraftPreview>(
@@ -662,6 +664,12 @@ HistoryWidget::HistoryWidget(
 	_botKeyboardShow->hide();
 	_botKeyboardHide->hide();
 	_botCommandStart->hide();
+	Safe::Look::WhitenPillIcons(this, {
+		_attachToggle.data(),
+		_botKeyboardShow.data(),
+		_botKeyboardHide.data(),
+		_botCommandStart.data(),
+	});
 
 	session().attachWebView().requestBots();
 	rpl::merge(
@@ -8353,7 +8361,7 @@ void HistoryWidget::updateControlsGeometry() {
 	_topShadow->setGeometryToLeft(
 		topShadowLeft,
 		_topBar->bottomNoMargins(),
-		width - topShadowLeft - topShadowRight,
+		Safe::Look::TopShadowWidth(width - topShadowLeft - topShadowRight),
 		st::lineWidth);
 }
 
@@ -11289,7 +11297,13 @@ void HistoryWidget::drawField(Painter &p, const QRect &rect) {
 	}
 	p.setInactive(
 		controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Any));
-	p.fillRect(myrtlrect(0, backy, width(), backh), st::historyReplyBg);
+	Safe::Look::PaintComposeBack(
+		p,
+		myrtlrect(0, backy, width(), backh),
+		backh - fieldHeight() - 2 * st::historySendPadding,
+		_attachToggle.data(),
+		_field.data(),
+		_send.get());
 
 	const auto media = (!_previewDrawPreview && drawMsgText)
 		? drawMsgText->media()

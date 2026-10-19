@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_top_bar_widget.h"
+#include "safe/look_chat.h"
+#include "safe/look_tint.h"
 
 #include "history/history.h"
 #include "history/view/history_view_send_action.h"
@@ -130,7 +132,16 @@ TopBarWidget::TopBarWidget(
 , _menuToggle(this, st::topBarMenuToggle)
 , _titlePeerText(st::windowMinWidth / 3)
 , _onlineUpdater([=] { updateOnlineDisplay(); }) {
-	setAttribute(Qt::WA_OpaquePaintEvent);
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!Safe::Look::FloatingChatBars());
+	Safe::Look::WhitenPillIcons(this, {
+		_back.data(),
+		_call.data(),
+		_groupCall.data(),
+		_search.data(),
+		_menuToggle.data(),
+	}, [=] { updateInfoToggleActive(); });
 
 	_clear->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 	_forward->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
@@ -534,7 +545,16 @@ void TopBarWidget::paintEvent(QPaintEvent *e) {
 		: -st::topBarHeight;
 	const auto slidingTop = std::max(selectedButtonsTop, searchFieldTop);
 
-	p.fillRect(QRect(0, 0, width(), st::topBarHeight), st::topBarBg);
+	if (!Safe::Look::PaintTopBarPills(
+			p,
+			this,
+			((_activeChat.section != Section::ChatsList)
+				&& (slidingTop <= -st::topBarHeight)),
+			_back.data(),
+			_info.data(),
+			_rightTaken)) {
+		p.fillRect(QRect(0, 0, width(), st::topBarHeight), st::topBarBg);
+	}
 	if (slidingTop < 0) {
 		p.translate(0, slidingTop + st::topBarHeight);
 		paintTopBar(p);
@@ -1059,9 +1079,9 @@ bool TopBarWidget::communityUserpicShown() const {
 }
 
 const style::UserpicButton &TopBarWidget::infoButtonStyle() const {
-	return communityChatsListBar()
+	return Safe::Look::TopBarInfoStyle(communityChatsListBar()
 		? st::topBarCommunityInfoButton
-		: st::topBarInfoButton;
+		: st::topBarInfoButton);
 }
 
 void TopBarWidget::refreshInfoButton() {
@@ -1269,7 +1289,9 @@ void TopBarWidget::updateControlsGeometry() {
 		updateSearchJumpToDateVisibility();
 	}
 
-	_rightTaken = 0;
+	_rightTaken = (_activeChat.section != Section::ChatsList)
+		? Safe::Look::TopBarRightInset()
+		: 0;
 	if (rootChatsListBar() && _activeChat.key.folder()) {
 		const auto &toggle = st::topBarMenuToggle;
 		const auto narrowLeft = (_narrowWidth - toggle.icon.width()) / 2
@@ -1293,14 +1315,19 @@ void TopBarWidget::updateControlsGeometry() {
 		_infoToggle->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _infoToggle->width();
 	}
+	_search->moveToRight(_rightTaken, otherButtonsTop);
+	if (!_search->isHidden()) {
+		_rightTaken += _search->width();
+	}
 	if (!_call->isHidden() || !_groupCall->isHidden()) {
 		_call->moveToRight(_rightTaken, otherButtonsTop);
 		_groupCall->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _call->width();
 	}
-	_search->moveToRight(_rightTaken, otherButtonsTop);
-	if (!_search->isHidden()) {
-		_rightTaken += _search->width() + st::topBarCallSkip;
+	if (!_search->isHidden()
+		|| !_call->isHidden()
+		|| !_groupCall->isHidden()) {
+		_rightTaken += st::topBarCallSkip;
 	}
 
 	updateMembersShowArea();
@@ -1315,7 +1342,9 @@ void TopBarWidget::finishAnimating() {
 void TopBarWidget::setAnimatingMode(bool enabled) {
 	if (_animatingMode != enabled) {
 		_animatingMode = enabled;
-		setAttribute(Qt::WA_OpaquePaintEvent, !_animatingMode);
+		setAttribute(
+			Qt::WA_OpaquePaintEvent,
+			!_animatingMode && !Safe::Look::FloatingChatBars());
 		finishAnimating();
 	} else if (!enabled) {
 		finishAnimating();
@@ -1854,6 +1883,8 @@ void TopBarWidget::updateInfoToggleActive() {
 		: nullptr;
 	_infoToggle->setIconOverride(iconOverride, iconOverride);
 	_infoToggle->setRippleColorOverride(rippleOverride);
+	_infoToggle->setIconColorOverride(
+		Safe::Look::PillIconColor(!infoThirdActive));
 }
 
 void TopBarWidget::setupDragOnBackButton() {
