@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "iv/iv_instance.h"
+#include "safe/safe_links.h"
+#include "safe/safe_notices.h"
 
 #include "apiwrap.h"
 #include "base/platform/base_platform_info.h"
@@ -739,6 +741,9 @@ void Instance::showOpenedPage(
 		not_null<Data*> data,
 		QString hash,
 		bool requestFullOnOpen) {
+	if (Safe::OpenPageOutside(data->id(), hash)) {
+		return;
+	}
 	if (Platform::IsMac()) {
 		// Otherwise IV is not visible under the media viewer.
 		Core::App().hideMediaView();
@@ -1109,6 +1114,9 @@ void Instance::openWithIvPreferred(
 		not_null<Main::Session*> session,
 		QString uri,
 		QVariant context) {
+	if (Safe::OpenWebOutside(uri, context)) {
+		return;
+	}
 	const auto openExternal = [=] {
 		auto my = context.value<ClickHandlerContext>();
 		my.ignoreIv = true;
@@ -1172,6 +1180,9 @@ void Instance::openWithIvPreferred(
 void Instance::showTonSite(
 		const QString &uri,
 		QVariant context) {
+	if (Safe::RefuseTonSite(context)) {
+		return;
+	}
 	if (!Controller::IsGoodTonSiteUrl(uri)) {
 		Ui::Toast::Show(tr::lng_iv_not_supported(tr::now));
 		return;
@@ -1523,6 +1534,9 @@ void Instance::showRichMessage(
 bool Instance::showMarkdown(
 		const QString &path,
 		QVariant context) {
+	if (!Safe::WebPagesInside()) {
+		return false;
+	}
 	const auto target = ParseLocalMarkdownTarget(path);
 	const auto messageContext = ExtractMarkdownMessageContext(context);
 	const auto session = messageContext
