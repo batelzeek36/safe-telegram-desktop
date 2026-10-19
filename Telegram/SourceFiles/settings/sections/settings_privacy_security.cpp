@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_privacy_security.h"
+#include "safe/safe_policy.h"
 
 #include "settings/settings_common_session.h"
 
@@ -260,6 +261,9 @@ void SetupSensitiveContent(
 		not_null<Ui::VerticalLayout*> container,
 		rpl::producer<> updateTrigger,
 		HighlightRegistry *highlights) {
+	if (Safe::SensitiveLocked()) {
+		return;
+	}
 	using namespace rpl::mappers;
 
 	const auto wrap = container->add(

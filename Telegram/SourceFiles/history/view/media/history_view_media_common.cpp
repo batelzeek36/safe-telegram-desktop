@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_media_common.h"
+#include "safe/safe_sensitive.h"
 
 #include "api/api_sensitive_content.h"
 #include "api/api_views.h"
@@ -657,6 +658,9 @@ void ShowSensitiveConfirm(
 ClickHandlerPtr MakeSensitiveMediaLink(
 		ClickHandlerPtr reveal,
 		not_null<HistoryItem*> item) {
+	if (Safe::SensitiveLocked()) {
+		return Safe::MakeSensitiveRefusedLink();
+	}
 	const auto session = &item->history()->session();
 	session->api().sensitiveContent().preload();
 

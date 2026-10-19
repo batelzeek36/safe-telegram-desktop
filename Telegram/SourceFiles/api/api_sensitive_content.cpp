@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_sensitive_content.h"
+#include "safe/safe_policy.h"
 
 #include "apiwrap.h"
 #include "main/main_session.h"
@@ -41,7 +42,8 @@ void SensitiveContent::reload(bool force) {
 	)).done([=](const MTPaccount_ContentSettings &result) {
 		_loadRequestId = 0;
 		const auto &data = result.data();
-		const auto enabled = data.is_sensitive_enabled();
+		const auto enabled = data.is_sensitive_enabled()
+			&& !Safe::SensitiveLocked();
 		const auto canChange = data.is_sensitive_can_change();
 		const auto changed = (_enabled.current() != enabled)
 			|| (_canChange.current() != canChange);
@@ -55,6 +57,9 @@ void SensitiveContent::reload(bool force) {
 		}
 		if (base::take(_appConfigReloadForce) || changed) {
 			_appConfigReloadTimer.callOnce(kRefreshAppConfigTimeout);
+		}
+		if (Safe::SensitiveLocked() && data.is_sensitive_enabled()) {
+			update(false);
 		}
 		if (base::take(_loadPending)) {
 			reload();
@@ -94,6 +99,9 @@ rpl::producer<bool> SensitiveContent::canChange() const {
 }
 
 void SensitiveContent::update(bool enabled) {
+	if (Safe::SensitiveLocked()) {
+		enabled = false;
+	}
 	if (!_canChange.current()) {
 		return;
 	}

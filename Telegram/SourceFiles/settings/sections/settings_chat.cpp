@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_chat.h"
+#include "safe/safe_policy.h"
 
 #include "settings/settings_common_session.h"
 
@@ -1096,6 +1097,9 @@ void BuildMessagesSection(SectionBuilder &builder) {
 }
 
 void BuildSensitiveContentSection(SectionBuilder &builder) {
+	if (Safe::SensitiveLocked()) {
+		return;
+	}
 	const auto controller = builder.controller();
 	const auto highlights = builder.highlights();
 

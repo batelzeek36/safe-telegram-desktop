@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_peer.h"
+#include "safe/safe_policy.h"
 
 #include "api/api_sensitive_content.h"
 #include "data/data_user.h"
@@ -64,6 +65,10 @@ using UpdateFlag = Data::PeerUpdate::Flag;
 
 [[nodiscard]] const std::vector<QString> &IgnoredReasons(
 		not_null<Main::Session*> session) {
+	if (Safe::SensitiveLocked()) {
+		static const auto kNone = std::vector<QString>();
+		return kNone;
+	}
 	return session->appConfig().ignoredRestrictionReasons();
 }
 

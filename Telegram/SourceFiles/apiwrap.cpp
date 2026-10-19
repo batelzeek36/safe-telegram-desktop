@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include "safe/safe_sensitive.h"
 
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
@@ -246,6 +247,7 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 
 		_reactionsNotifySettings->reload();
 		setupSupportMode();
+		Safe::WatchSensitiveContent(_session);
 	});
 }
 
