@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_saved_sublist.h"
+#include "safe/safe_off.h"
 
 #include "api/api_unread_things.h"
 #include "apiwrap.h"
@@ -903,6 +904,9 @@ int SavedSublist::fixedOnTopIndex() const {
 }
 
 bool SavedSublist::shouldBeInChatList() const {
+	if (Safe::IsOffSublistPeer(sublistPeer())) {
+		return false;
+	}
 	const auto monoforum = _parent->parentChat();
 	if (monoforum && (monoforum == sublistPeer())) {
 		return false;

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/notifications_manager.h"
 #include "safe/safe_identity.h"
+#include "safe/safe_off.h"
 
 #include "base/options.h"
 #include "base/platform/base_platform_info.h"
@@ -330,6 +331,11 @@ System::SkipState System::skipNotification(
 
 System::SkipState System::computeSkipState(
 		Data::ItemNotification notification) const {
+	if (Safe::SkipOffNotification(
+			notification.item,
+			notification.reactionOrVoteSender)) {
+		return { .value = SkipState::Skip, .silent = true };
+	}
 	const auto type = notification.type;
 	const auto item = notification.item;
 	const auto thread = item->notificationThread();

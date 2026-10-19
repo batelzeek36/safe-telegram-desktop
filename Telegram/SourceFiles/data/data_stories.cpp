@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_stories.h"
+#include "safe/safe_off.h"
 
 #include "base/unixtime.h"
 #include "apiwrap.h"
@@ -507,7 +508,8 @@ void Stories::parseAndApply(
 		}
 		return false;
 	};
-	if (appendToStrip(result.peer, source)) {
+	if (Safe::KeepStoriesInStrip(result.peer)
+		&& appendToStrip(result.peer, source)) {
 		if (source == ParseSource::MyStrip
 			&& !appendToStrip(result.peer, ParseSource::DirectRequest)) {
 			result.peer->asUser()->setStoriesCorrespondent(true);

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_main_list.h"
+#include "safe/safe_off.h"
 
 #include "data/data_changes.h"
 #include "data/data_session.h"
@@ -194,7 +195,8 @@ void MainList::finalizeCloudUnread() {
 }
 
 UnreadState MainList::unreadState() const {
-	const auto useCloudState = _cloudUnreadState.known && !loaded();
+	const auto useCloudState = _cloudUnreadState.known && !loaded()
+		&& Safe::CloudUnreadCountsAllowed();
 	auto result = useCloudState ? _cloudUnreadState : _unreadState;
 
 	// We don't know the real value of marked chats counts in cloud unread.

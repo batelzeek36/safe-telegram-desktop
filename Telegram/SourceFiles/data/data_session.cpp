@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
+#include "safe/safe_off.h"
 
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -1912,7 +1913,7 @@ void Session::setupUserIsContactViewer() {
 				"userIsContactChanged() called for a not loaded user!"));
 			return;
 		}
-		if (user->isContact()) {
+		if (user->isContact() && !Safe::IsOff(user)) {
 			const auto history = this->history(user->id);
 			_contactsList.addByName(history);
 			if (!history->inChatList()) {

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_forum_topic.h"
+#include "safe/safe_off.h"
 
 #include "data/data_channel.h"
 #include "data/data_changes.h"
@@ -736,6 +737,9 @@ int ForumTopic::fixedOnTopIndex() const {
 }
 
 bool ForumTopic::shouldBeInChatList() const {
+	if (Safe::IsOff(peer())) {
+		return false;
+	}
 	return isPinnedDialog(FilterId())
 		|| !lastMessageKnown()
 		|| (lastMessage() != nullptr);

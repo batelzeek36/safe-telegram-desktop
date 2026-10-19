@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/share_box.h"
 #include "safe/safe_discovery.h"
+#include "safe/safe_off.h"
 
 #include "api/api_premium.h"
 #include "base/call_delayed.h"
@@ -1714,7 +1715,9 @@ void ShareBox::Inner::peopleReceived(
 					peerFromMTP(data))) {
 				const auto history = _descriptor.session->data().history(
 					peer);
-				if (!history->asForum()
+				if (Safe::IsOff(peer)) {
+					continue;
+				} else if (!history->asForum()
 					&& !JoinedCommunityChats(peer)
 					&& !_descriptor.filterCallback(history)) {
 					continue;

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_chat_preview.h"
+#include "safe/safe_off.h"
 
 #include "menu/menu_mark_as_read.h"
 #include "data/data_channel.h"
@@ -53,7 +54,8 @@ bool ChatPreviewManager::show(
 	} else if (!row.key) {
 		return false;
 	}
-	if (SkipChatPreviewFor(row.key)) {
+	if (SkipChatPreviewFor(row.key)
+		|| Safe::IsOffEntry(row.key.entry())) {
 		return false;
 	}
 
@@ -127,7 +129,8 @@ bool ChatPreviewManager::schedule(
 	} else if (!row.key.history()) {
 		return false;
 	}
-	if (SkipChatPreviewFor(row.key)) {
+	if (SkipChatPreviewFor(row.key)
+		|| Safe::IsOffEntry(row.key.entry())) {
 		return false;
 	}
 	_scheduled = std::move(row);

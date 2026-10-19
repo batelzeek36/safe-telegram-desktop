@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_controller.h"
+#include "safe/safe_off.h"
 
 #include "ui/search_field_controller.h"
 #include "history/history.h"
@@ -527,6 +528,9 @@ void Controller::saveSearchState(not_null<ContentMemento*> memento) {
 void Controller::showSection(
 		std::shared_ptr<Window::SectionMemento> memento,
 		const Window::SectionShow &params) {
+	if (Safe::RefuseOffSection(memento.get(), this)) {
+		return;
+	}
 	if (!_widget->showInternal(memento.get(), params)) {
 		AbstractController::showSection(std::move(memento), params);
 	}

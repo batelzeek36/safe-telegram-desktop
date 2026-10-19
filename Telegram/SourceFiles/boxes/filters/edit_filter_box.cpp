@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/filters/edit_filter_box.h"
+#include "safe/safe_off.h"
 
 #include "apiwrap.h"
 #include "base/event_filter.h"
@@ -173,6 +174,9 @@ void EditExceptions(
 				histories.begin(),
 				histories.end()
 			};
+			Safe::KeepOff(
+				changed,
+				include ? rules.always() : rules.never());
 			auto removeFrom = include ? rules.never() : rules.always();
 			for (const auto &history : changed) {
 				removeFrom.remove(history);

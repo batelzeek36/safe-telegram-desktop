@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
+#include "safe/safe_off.h"
 #include "safe/safe_policy.h"
 
 #include "dialogs/dialogs_three_state_icon.h"
@@ -4746,6 +4747,7 @@ void InnerWidget::searchReceived(
 		HistoryItem *inject,
 		SearchRequestType type,
 		int fullCount) {
+	Safe::DropOffItems(messages, inject);
 	_searchWaiting = false;
 	_searchLoading = false;
 
@@ -4813,6 +4815,8 @@ void InnerWidget::searchReceived(
 }
 
 void InnerWidget::peerSearchReceived(Api::PeerSearchResult result) {
+	Safe::DropOffPeers(result.my);
+	Safe::DropOffPeers(result.peers);
 	if (_state != WidgetState::Filtered) {
 		return;
 	}

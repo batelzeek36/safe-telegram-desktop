@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/calls_instance.h"
+#include "safe/safe_off.h"
 
 #include "calls/calls_call.h"
 #include "calls/group/calls_group_common.h"
@@ -203,6 +204,9 @@ Instance::~Instance() {
 void Instance::startOutgoingCall(
 		not_null<UserData*> user,
 		StartOutgoingCallArgs args) {
+	if (Safe::RefuseOff(user)) {
+		return;
+	}
 	if (activateCurrentCall()
 		|| (!args.isConfirmed && activateUnconfirmedCall(user))) {
 		return;
@@ -713,6 +717,8 @@ void Instance::handleCallUpdate(
 				MTP_phoneCallDiscardReasonBusy(),
 				MTP_long(0)
 			)).send();
+		} else if (Safe::IgnoreCallFrom(user)) {
+			// Off: no ringing, no call window.
 		} else if (phoneCall.vdate().v + (config.callRingTimeoutMs / 1000)
 			< base::unixtime::now()) {
 			LOG(("Ignoring too old call."));
@@ -1181,6 +1187,7 @@ void Instance::showConferenceInvite(
 	if (!conferenceId
 		|| call->state != Data::CallState::Invitation
 		|| user->isSelf()
+		|| Safe::IgnoreCallFrom(user)
 		|| user->session().appConfig().callsDisabledForSession()) {
 		return;
 	} else if (_currentCall

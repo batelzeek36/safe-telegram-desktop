@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/components/top_peers.h"
+#include "safe/safe_off.h"
 
 #include "api/api_hash.h"
 #include "apiwrap.h"
@@ -121,9 +122,9 @@ TopPeers::~TopPeers() = default;
 std::vector<not_null<PeerData*>> TopPeers::list() const {
 	_session->local().readSearchSuggestions();
 
-	return _list
+	return Safe::WithoutOff(_list
 		| ranges::view::transform(&TopPeer::peer)
-		| ranges::to_vector;
+		| ranges::to_vector);
 }
 
 bool TopPeers::disabled() const {

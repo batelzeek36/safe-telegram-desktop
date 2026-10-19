@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_session.h"
+#include "safe/safe_off.h"
 
 #include "apiwrap.h"
 #include "api/api_peer_colors.h"
@@ -271,6 +272,7 @@ Session::Session(
 	_api->requestNotifySettings(MTP_inputNotifyBroadcasts());
 
 	Core::App().downloadManager().trackSession(this);
+	Safe::WatchOff(this);
 
 	appConfig().value(
 	) | rpl::on_next([=] {

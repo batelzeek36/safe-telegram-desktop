@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peer_list_box.h"
+#include "safe/safe_off.h"
 
 #include "boxes/peer_list_section_headers.h"
 #include "boxes/peer_list_section_index.h"
@@ -475,6 +476,8 @@ void PeerListController::peerListSearchAddRow(not_null<PeerData*> peer) {
 	if (auto row = delegate()->peerListFindRow(peer->id.value)) {
 		Assert(row->id() == row->peer()->id.value);
 		delegate()->peerListAppendFoundRow(row);
+	} else if (Safe::IsOff(peer)) {
+		return;
 	} else if (auto row = createSearchRow(peer)) {
 		Assert(row->id() == row->peer()->id.value);
 		delegate()->peerListAppendSearchRow(std::move(row));
