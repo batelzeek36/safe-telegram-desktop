@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include "safe/safe_gate.h"
 #include "safe/safe_sensitive.h"
 
 #include "api/api_authorizations.h"
@@ -1893,7 +1894,8 @@ void ApiWrap::joinChannel(not_null<ChannelData*> channel) {
 		session().changes().peerUpdated(
 			channel,
 			Data::PeerUpdate::Flag::ChannelAmIn);
-	} else if (!_channelAmInRequests.contains(channel)) {
+	} else if (!_channelAmInRequests.contains(channel)
+		&& !Safe::RefuseJoin(channel)) {
 		const auto requestId = request(MTPchannels_JoinChannel(
 			channel->inputChannel()
 		)).done([=](const MTPmessages_ChatInviteJoinResult &result) {

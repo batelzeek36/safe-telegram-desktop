@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/group/calls_group_call.h"
+#include "safe/safe_gate.h"
 
 #include "calls/group/calls_group_common.h"
 #include "calls/group/calls_group_messages.h"
@@ -4092,7 +4093,8 @@ void GroupCall::inviteUsers(
 		const std::vector<InviteRequest> &requests,
 		Fn<void(InviteResult)> done) {
 	const auto real = lookupReal();
-	if (!real) {
+	if (!real
+		|| (_sharedCall && Safe::RefuseCallInvites(requests))) {
 		if (done) {
 			done({});
 		}

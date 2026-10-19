@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_chat_filters.h"
+#include "safe/safe_gate.h"
 
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
@@ -751,6 +752,8 @@ void ProcessFilterInvite(
 	Core::App().hideMediaView();
 	if (peers.empty() && !filterId) {
 		strong->showToast(tr::lng_group_invite_bad_link(tr::now));
+		return;
+	} else if (Safe::RefuseFolderChats(strong, peers)) {
 		return;
 	}
 	const auto fullyAdded = (peers.empty() && filterId);
