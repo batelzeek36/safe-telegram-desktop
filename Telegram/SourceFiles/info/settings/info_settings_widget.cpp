@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/settings/info_settings_widget.h"
+#include "safe/look_tabs.h"
 
 #include "info/info_memento.h"
 #include "settings/sections/settings_main.h"
@@ -63,6 +64,7 @@ Widget::Widget(
 		}))
 , _pinnedToTop(_inner->createPinnedToTop(this))
 , _pinnedToBottom(_inner->createPinnedToBottom(this)) {
+	Safe::Look::TrackSettingsShown(this, controller->parentController());
 	_inner->sectionShowOther(
 	) | rpl::on_next([=](Type type) {
 		controller->showSettings(type);

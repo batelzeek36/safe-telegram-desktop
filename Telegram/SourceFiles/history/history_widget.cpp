@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_widget.h"
 #include "safe/look_chat.h"
+#include "safe/look_tint.h"
 #include "safe/safe_bots.h"
 
 #include "api/api_compose_with_ai.h"
@@ -663,6 +664,12 @@ HistoryWidget::HistoryWidget(
 	_botKeyboardShow->hide();
 	_botKeyboardHide->hide();
 	_botCommandStart->hide();
+	Safe::Look::WhitenPillIcons(this, {
+		_attachToggle.data(),
+		_botKeyboardShow.data(),
+		_botKeyboardHide.data(),
+		_botCommandStart.data(),
+	});
 
 	session().attachWebView().requestBots();
 	rpl::merge(

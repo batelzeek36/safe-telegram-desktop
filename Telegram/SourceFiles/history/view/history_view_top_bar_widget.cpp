@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_top_bar_widget.h"
 #include "safe/look_chat.h"
+#include "safe/look_tint.h"
 
 #include "history/history.h"
 #include "history/view/history_view_send_action.h"
@@ -134,6 +135,13 @@ TopBarWidget::TopBarWidget(
 	setAttribute(
 		Qt::WA_OpaquePaintEvent,
 		!Safe::Look::FloatingChatBars());
+	Safe::Look::WhitenPillIcons(this, {
+		_back.data(),
+		_call.data(),
+		_groupCall.data(),
+		_search.data(),
+		_menuToggle.data(),
+	}, [=] { updateInfoToggleActive(); });
 
 	_clear->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 	_forward->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
@@ -1307,14 +1315,19 @@ void TopBarWidget::updateControlsGeometry() {
 		_infoToggle->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _infoToggle->width();
 	}
+	_search->moveToRight(_rightTaken, otherButtonsTop);
+	if (!_search->isHidden()) {
+		_rightTaken += _search->width();
+	}
 	if (!_call->isHidden() || !_groupCall->isHidden()) {
 		_call->moveToRight(_rightTaken, otherButtonsTop);
 		_groupCall->moveToRight(_rightTaken, otherButtonsTop);
 		_rightTaken += _call->width();
 	}
-	_search->moveToRight(_rightTaken, otherButtonsTop);
-	if (!_search->isHidden()) {
-		_rightTaken += _search->width() + st::topBarCallSkip;
+	if (!_search->isHidden()
+		|| !_call->isHidden()
+		|| !_groupCall->isHidden()) {
+		_rightTaken += st::topBarCallSkip;
 	}
 
 	updateMembersShowArea();
@@ -1870,6 +1883,8 @@ void TopBarWidget::updateInfoToggleActive() {
 		: nullptr;
 	_infoToggle->setIconOverride(iconOverride, iconOverride);
 	_infoToggle->setRippleColorOverride(rippleOverride);
+	_infoToggle->setIconColorOverride(
+		Safe::Look::PillIconColor(!infoThirdActive));
 }
 
 void TopBarWidget::setupDragOnBackButton() {

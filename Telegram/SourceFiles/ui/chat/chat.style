@@ -697,9 +697,9 @@ reactionsTabs: MultiSelect(defaultMultiSelect) {
 }
 reactionsTabIconSkip: 3px;
 
-reactionInlinePadding: margins(5px, 2px, 7px, 2px);
-reactionInlineSize: 18px;
-reactionInlineImage: 32px;
+reactionInlinePadding: margins(6px, 2px, 8px, 2px);
+reactionInlineSize: 20px;
+reactionInlineImage: 36px;
 reactionInlineSkip: 3px;
 reactionInlineTagSkip: 6px;
 reactionInlineTagLeftRadius: 6px;
@@ -709,11 +709,11 @@ reactionInlineTagDot: 5px;
 reactionInlineTagDotSkip: 2px;
 reactionInlineEmptySkip: 2px;
 reactionInlineTagFont: font(12px);
-reactionInlineTagNamePosition: point(26px, 2px);
-reactionInlineTagPromoPosition: point(20px, 2px);
+reactionInlineTagNamePosition: point(29px, 3px);
+reactionInlineTagPromoPosition: point(22px, 3px);
 reactionInlineBetween: 4px;
 reactionInlineInBubbleLeft: -3px;
-reactionInlineUserpicsPadding: margins(1px, 1px, 1px, 1px);
+reactionInlineUserpicsPadding: margins(2px, 2px, 2px, 2px);
 reactionInlineUserpics: GroupCallUserpics {
 	size: 20px;
 	shift: 7px;

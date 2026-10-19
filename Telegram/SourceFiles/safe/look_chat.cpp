@@ -6,6 +6,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "safe/look_chat.h"
 
+#include "safe/look_style.h"
+#include "safe/look_tint.h"
 #include "ui/painter.h"
 #include "ui/rp_widget.h"
 #include "ui/style/style_core_scale.h"
@@ -192,6 +194,9 @@ const style::InputField &ComposeFieldStyle() {
 	static const auto result = [] {
 		auto result = st::historyComposeField;
 		result.textBg = st::transparent;
+		// The native placeholder grey (lighter than Telegram Desktop's).
+		result.placeholderFg = PlaceholderFg();
+		result.placeholderFgActive = PlaceholderFg();
 		// The field starts at the attach button's right edge; the pill
 		// starts a gap after the attach circle (centered in that button).
 		const auto pillLeft = st::historyAttach.width / 2
@@ -216,6 +221,12 @@ const style::EmojiButton &EmojiToggleStyle() {
 	static const auto result = [] {
 		auto result = st::historyAttachEmoji;
 		result.bg = st::transparent;
+		// White face and circle on a dark theme, like the native app.
+		result.lineFg = PillColor(st::historyAttachEmoji.lineFg);
+		result.lineFgOver = PillColor(st::historyAttachEmoji.lineFgOver);
+		result.inner.icon = PillIcon(st::historyAttachEmoji.inner.icon);
+		result.inner.iconOver = PillIcon(
+			st::historyAttachEmoji.inner.iconOver);
 		return result;
 	}();
 	return result;

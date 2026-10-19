@@ -70,11 +70,12 @@ void PlacePinnedBar(not_null<Ui::RpWidget*> bar, QWidget *right, int width);
 
 // --- Composer (HistoryWidget) ---
 
-// The message field: transparent behind the text (the pill shows) and the
-// text moved in from the pill's rounded end.
+// The message field: transparent behind the text (the pill shows), the
+// text moved in from the pill's rounded end, the native placeholder grey.
 [[nodiscard]] const style::InputField &ComposeFieldStyle();
 
-// The emoji button with no fill of its own (it sits inside the pill).
+// The emoji button with no fill of its own (it sits inside the pill), its
+// face and circle in the pill icon color (white on a dark theme).
 [[nodiscard]] const style::EmojiButton &EmojiToggleStyle();
 
 // HistoryWidget::drawField: paints the attach and send circles and the field

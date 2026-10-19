@@ -1867,6 +1867,8 @@ PRIVATE
     safe/look_top.h
     safe/look_chat.cpp
     safe/look_chat.h
+    safe/look_tint.cpp
+    safe/look_tint.h
     safe/look_reactions.cpp
     safe/look_reactions.h
     safe/safe_ask.cpp

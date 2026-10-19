@@ -14,6 +14,10 @@ namespace Window {
 class SessionController;
 } // namespace Window
 
+namespace Ui {
+class RpWidget;
+} // namespace Ui
+
 namespace Safe::Look {
 
 // The native app's bottom tab bar under the chat list: Contacts, Calls,
@@ -29,5 +33,12 @@ namespace Safe::Look {
 	bool mainList,
 	int width,
 	float64 narrowRatio);
+
+// Called by every Settings page (Info::Settings::Widget) when it is created:
+// while at least one is alive in a window, that window's tab bar shows the
+// Settings tab selected instead of Chats, and Chats closes the Settings pages.
+void TrackSettingsShown(
+	not_null<Ui::RpWidget*> page,
+	not_null<Window::SessionController*> controller);
 
 } // namespace Safe::Look

@@ -51,6 +51,15 @@ QColor GlyphColor() {
 		Push(sub.blue(), fg.blue(), amount));
 }
 
+const style::color &PlaceholderFg() {
+	static const auto result = style::complex_color([] {
+		return (st::dialogsBg->c.lightnessF() < 0.5)
+			? GlyphColor()
+			: st::placeholderFg->c;
+	});
+	return result.color();
+}
+
 QString ChatsTitle() {
 	return u"Chats"_q;
 }

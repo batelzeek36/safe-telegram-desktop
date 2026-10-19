@@ -325,6 +325,9 @@ const style::InputField &SearchFieldStyle() {
 		st.borderDenominator = 2;
 		st.textBg = st::dialogsBg;
 		st.borderFg = st::dialogsBgOver;
+		// The native placeholder grey (also the magnifier's color).
+		st.placeholderFg = PlaceholderFg();
+		st.placeholderFgActive = PlaceholderFg();
 		// Keep the text where Telegram Desktop has it, 5pt less padding.
 		const auto shrink = st::dialogsFilter.heightMin - height;
 		const auto top = std::max(

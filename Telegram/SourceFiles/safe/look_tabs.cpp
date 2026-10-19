@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/look_style.h"
 #include "ui/abstract_button.h"
 #include "ui/painter.h"
+#include "ui/rp_widget.h"
 #include "ui/style/style_core_scale.h"
 #include "window/window_session_controller.h"
 
@@ -27,8 +28,10 @@ namespace {
 
 // Measured on the native app: a 50pt bar (hairline included), 28pt glyphs
 // centered 26pt below the hairline, the count badge up and to the right.
+// The chats glyph is drawn 10% larger (its bubbles span ~27pt there).
 constexpr auto kBarHeight = 50;
 constexpr auto kGlyphSize = 28;
+constexpr auto kChatsGlyphSize = 31;
 constexpr auto kGlyphCenter = 26;
 constexpr auto kBadgeShiftX = 11;
 constexpr auto kBadgeShiftY = -12;
@@ -38,11 +41,35 @@ constexpr auto kPressedOpacity = 0.55;
 	return u"safe_look_tab_bar"_q;
 }
 
+// How many Settings pages each window shows right now (a section, a layer),
+// and a ping for a window whose count changed.
+struct SettingsShownState {
+	base::flat_map<not_null<Window::SessionController*>, int> counts;
+	rpl::event_stream<not_null<Window::SessionController*>> changes;
+};
+
+[[nodiscard]] SettingsShownState &SettingsShown() {
+	static auto result = SettingsShownState();
+	return result;
+}
+
+[[nodiscard]] bool SettingsShownIn(
+		not_null<Window::SessionController*> controller) {
+	return SettingsShown().counts.contains(controller);
+}
+
+[[nodiscard]] int GlyphSize(Glyph glyph) {
+	return style::ConvertScale((glyph == Glyph::Chats)
+		? kChatsGlyphSize
+		: kGlyphSize);
+}
+
 class Tab final : public Ui::AbstractButton {
 public:
 	Tab(QWidget *parent, Glyph glyph, QString name, bool selected);
 
 	void setBadge(int count, bool muted);
+	void setSelected(bool selected);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -54,7 +81,7 @@ private:
 
 	const Glyph _glyph;
 	const QString _name;
-	const bool _selected = false;
+	bool _selected = false;
 	int _badge = 0;
 	bool _badgeMuted = false;
 
@@ -74,10 +101,13 @@ private:
 	void setupTabs();
 	void layoutTabs(int width);
 	void showChats();
+	void updateSelected();
 
 	const not_null<Dialogs::Widget*> _list;
 	const not_null<Window::SessionController*> _controller;
 	std::vector<not_null<Tab*>> _tabs;
+	Tab *_chats = nullptr;
+	Tab *_settings = nullptr;
 
 };
 
@@ -98,6 +128,14 @@ void Tab::setBadge(int count, bool muted) {
 	update();
 }
 
+void Tab::setSelected(bool selected) {
+	if (_selected == selected) {
+		return;
+	}
+	_selected = selected;
+	update();
+}
+
 void Tab::onStateChanged(State was, StateChangeSource source) {
 	update();
 }
@@ -113,7 +151,7 @@ void Tab::paintEvent(QPaintEvent *e) {
 	if (isDown()) {
 		p.setOpacity(kPressedOpacity);
 	}
-	const auto size = style::ConvertScale(kGlyphSize);
+	const auto size = GlyphSize(_glyph);
 	const auto center = QPoint(
 		width() / 2,
 		style::ConvertScale(kGlyphCenter));
@@ -200,9 +238,24 @@ void TabBar::setupTabs() {
 	const auto chats = add(Glyph::Chats, ChatsTitle(), true, [=] {
 		showChats();
 	});
-	add(Glyph::Settings, tr::lng_menu_settings(tr::now), false, [=] {
-		controller->showSettings();
-	});
+	_chats = chats;
+	_settings = add(
+		Glyph::Settings,
+		tr::lng_menu_settings(tr::now),
+		false,
+		[=] { controller->showSettings(); });
+
+	// Settings is the selected tab while a Settings page is shown in this
+	// window, Chats otherwise (the native app's tabs work that way).
+	rpl::single(
+		controller
+	) | rpl::then(
+		SettingsShown().changes.events()
+	) | rpl::filter([=](not_null<Window::SessionController*> which) {
+		return (which == controller);
+	}) | rpl::on_next([=] {
+		updateSelected();
+	}, lifetime());
 
 	const auto data = &controller->session().data();
 	rpl::single(rpl::empty) | rpl::then(
@@ -229,8 +282,17 @@ void TabBar::layoutTabs(int width) {
 	}
 }
 
+void TabBar::updateSelected() {
+	const auto settings = SettingsShownIn(_controller);
+	_settings->setSelected(settings);
+	_chats->setSelected(!settings);
+}
+
 void TabBar::showChats() {
-	if (_controller->shownForum().current()) {
+	if (SettingsShownIn(_controller)) {
+		// Back to the chats: close the Settings pages in the main column.
+		_controller->clearSectionStack();
+	} else if (_controller->shownForum().current()) {
 		_controller->closeForum();
 	} else if (_controller->openedFolder().current()) {
 		_controller->closeFolder();
@@ -246,6 +308,24 @@ void TabBar::paintEvent(QPaintEvent *e) {
 }
 
 } // namespace
+
+void TrackSettingsShown(
+		not_null<Ui::RpWidget*> page,
+		not_null<Window::SessionController*> controller) {
+	auto &state = SettingsShown();
+	++state.counts[controller];
+	state.changes.fire_copy(controller);
+	page->lifetime().add([=] {
+		auto &state = SettingsShown();
+		const auto i = state.counts.find(controller);
+		if (i == end(state.counts)) {
+			return;
+		} else if (--i->second <= 0) {
+			state.counts.erase(i);
+		}
+		state.changes.fire_copy(controller);
+	});
+}
 
 int PlaceTabBar(
 		not_null<Dialogs::Widget*> list,
