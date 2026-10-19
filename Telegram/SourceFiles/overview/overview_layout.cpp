@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "overview/overview_layout.h"
+#include "safe/safe_media_gate.h"
 
 #include "overview/overview_checkbox.h"
 #include "overview/overview_layout_delegate.h"
@@ -412,7 +413,8 @@ Photo::Photo(
 		_link = makeOpenPhotoHandler();
 	}))
 	: makeOpenPhotoHandler()) {
-	if (_data->inlineThumbnailBytes().isEmpty()
+	if (!Safe::HidesItem(parent)
+		&& _data->inlineThumbnailBytes().isEmpty()
 		&& (_data->hasExact(Data::PhotoSize::Small)
 			|| _data->hasExact(Data::PhotoSize::Thumbnail))) {
 		_data->load(Data::PhotoSize::Small, parent->fullId());
@@ -448,6 +450,14 @@ int32 Photo::resizeGetHeight(int32 width) {
 }
 
 void Photo::paint(Painter &p, const QRect &clip, TextSelection selection, const PaintContext *context) {
+	if (Safe::PaintHeld(
+			p,
+			parent(),
+			_data,
+			QRect(0, 0, _width, _height),
+			Safe::HoldShape::Rect())) {
+		return;
+	}
 	const auto selected = (selection == FullSelection);
 	const auto widthChanged = (_pix.width()
 		!= (_width * style::DevicePixelRatio()));
@@ -642,6 +652,9 @@ TextState Photo::getState(
 		QPoint point,
 		StateRequest request) const {
 	if (hasPoint(point)) {
+		if (Safe::Holds(parent(), _data)) {
+			return { parent() };
+		}
 		return { parent(), _link };
 	}
 	return {};
@@ -682,7 +695,8 @@ Video::Video(
 			setDocumentLinks(_data);
 		}));
 	}
-	if (!_videoCover) {
+	if (Safe::HidesItem(parent)) {
+	} else if (!_videoCover) {
 		_data->loadThumbnail(parent->fullId());
 	} else if (_videoCover->inlineThumbnailBytes().isEmpty()
 		&& (_videoCover->hasExact(Data::PhotoSize::Small)
@@ -714,6 +728,14 @@ void Video::paint(
 		const QRect &clip,
 		TextSelection selection,
 		const PaintContext *context) {
+	if (Safe::PaintHeld(
+			p,
+			parent(),
+			_data,
+			QRect(0, 0, _width, _height),
+			Safe::HoldShape::Rect())) {
+		return;
+	}
 	ensureDataMediaCreated();
 
 	const auto selected = (selection == FullSelection);
@@ -969,6 +991,9 @@ TextState Video::getState(
 		QPoint point,
 		StateRequest request) const {
 	if (hasPoint(point)) {
+		if (Safe::Holds(parent(), _data)) {
+			return { parent() };
+		}
 		ensureDataMediaCreated();
 		const auto link = _sensitiveSpoiler
 			? _openl
@@ -1449,7 +1474,9 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 
 	const auto cornerDownload = downloadInCorner();
 
-	_dataMedia->automaticLoad(parent()->fullId(), parent());
+	if (!Safe::HidesItem(parent())) {
+		_dataMedia->automaticLoad(parent()->fullId(), parent());
+	}
 	const auto loaded = dataLoaded();
 	const auto displayLoading = externalLoading().has_value()
 		|| _data->displayLoading();
@@ -1656,6 +1683,15 @@ void Document::paintThumbnail(
 		QRect rthumb,
 		bool wthumb,
 		bool withExt) {
+	if (wthumb
+		&& Safe::PaintHeld(
+			p,
+			parent(),
+			_data,
+			rthumb,
+			Safe::HoldShape::Small())) {
+		return;
+	}
 	if (wthumb) {
 		ensureDataMediaCreated();
 		const auto good = _data->isSvgImage()
@@ -2295,8 +2331,12 @@ void Link::paint(Painter &p, const QRect &clip, TextSelection selection, const P
 	const auto pixLeft = 0;
 	const auto pixTop = st::linksMargin.top() + st::linksBorder;
 	if (clip.intersects(style::rtlrect(0, pixTop, st::linksPhotoSize, st::linksPhotoSize, _width))) {
-		validateThumbnail();
-		if (!_thumbnail.isNull()) {
+		if (Safe::PaintHeldItem(
+				p,
+				parent(),
+				QRect(pixLeft, pixTop, st::linksPhotoSize, st::linksPhotoSize),
+				Safe::HoldShape::Small())) {
+		} else if (validateThumbnail(); !_thumbnail.isNull()) {
 			p.drawPixmap(pixLeft, pixTop, _thumbnail);
 		}
 	}
@@ -2709,6 +2749,14 @@ void Gif::paint(
 		const QRect &clip,
 		TextSelection selection,
 		const PaintContext *context) {
+	if (Safe::PaintHeld(
+			p,
+			parent(),
+			_data,
+			QRect(0, 0, _width, _height),
+			Safe::HoldShape::Rect())) {
+		return;
+	}
 	const auto document = _data;
 	ensureDataMediaCreated();
 	const auto preview = Data::VideoPreviewState(_dataMedia.get());

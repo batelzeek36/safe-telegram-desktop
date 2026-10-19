@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_photo.h"
+#include "safe/safe_media_gate.h"
 
 #include "boxes/send_credits_box.h"
 #include "history/history_item_components.h"
@@ -260,6 +261,7 @@ void Photo::create(FullMsgId contextId, PeerData *chat) {
 			contextId));
 	if ((_dataMedia = _data->activeMediaView())) {
 		dataMediaCreated();
+	} else if (Safe::HidesItem(_realParent)) {
 	} else if (_data->inlineThumbnailBytes().isEmpty()
 		&& (_data->hasExact(PhotoSize::Small)
 			|| _data->hasExact(PhotoSize::Thumbnail))) {
@@ -436,6 +438,19 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) {
 		return;
 	} else if (_storyId && _data->isNull()) {
+		return;
+	}
+	if (Safe::PaintHeld(
+			p,
+			_realParent,
+			_data,
+			QRect(0, 0, width(), height()),
+			((_serviceWidth > 0)
+				? Safe::HoldShape::Ellipse()
+				: Safe::HoldShape::Bubble(((_parent->media() != this)
+					&& !IsHostedInstantViewMedia(_parent))
+					? std::nullopt
+					: std::make_optional(adjustedBubbleRounding()))))) {
 		return;
 	}
 
@@ -844,6 +859,9 @@ QImage Photo::spoilerTagBackground() const {
 
 TextState Photo::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
+	if (Safe::Holds(_realParent, _data)) {
+		return result;
+	}
 
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) {
 		return result;
@@ -921,6 +939,14 @@ void Photo::drawGrouped(
 		float64 highlightOpacity,
 		not_null<uint64*> cacheKey,
 		not_null<QPixmap*> cache) const {
+	if (Safe::PaintHeld(
+			p,
+			_realParent,
+			_data,
+			geometry,
+			Safe::HoldShape::Bubble(rounding))) {
+		return;
+	}
 	ensureDataMediaCreated();
 	_dataMedia->automaticLoad(_realParent->fullId(), _parent->data());
 
@@ -1060,6 +1086,8 @@ TextState Photo::getStateGrouped(
 		StateRequest request) const {
 	if (!geometry.contains(point)) {
 		return {};
+	} else if (Safe::Holds(_realParent, _data)) {
+		return TextState(_parent);
 	}
 	ensureDataMediaCreated();
 	auto link = (_spoiler && !_spoiler->revealed)

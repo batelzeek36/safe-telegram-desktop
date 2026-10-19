@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_gif.h"
+#include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
 #include "api/api_transcribes.h"
@@ -259,6 +260,7 @@ Gif::Gif(
 
 	if ((_dataMedia = _data->activeMediaView())) {
 		dataMediaCreated();
+	} else if (Safe::HidesItem(realParent)) {
 	} else if (_videoCover) {
 		if (_videoCover->inlineThumbnailBytes().isEmpty()
 			&& (_videoCover->hasExact(Data::PhotoSize::Small)
@@ -676,6 +678,16 @@ void Gif::draw(Painter &p, const PaintContext &context) const {
 	if (rtl()) usex = width() - usex - usew;
 
 	QRect rthumb(style::rtlrect(usex + paintx, painty, usew, painth, width()));
+	if (Safe::PaintHeld(
+			p,
+			_realParent,
+			_data,
+			rthumb,
+			isRound
+				? Safe::HoldShape::Ellipse()
+				: Safe::HoldShape::Bubble(rounding))) {
+		return;
+	}
 
 	const auto inTTLViewer = _parent->delegate()->elementContext()
 		== Context::TTLViewer;
@@ -1388,6 +1400,9 @@ TextState Gif::cornerStatusTextState(
 
 TextState Gif::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
+	if (Safe::Holds(_realParent, _data)) {
+		return result;
+	}
 
 	if (width() < st::msgPadding.left() + st::msgPadding.right() + 1) {
 		return result;
@@ -1786,6 +1801,14 @@ void Gif::drawGrouped(
 		float64 highlightOpacity,
 		not_null<uint64*> cacheKey,
 		not_null<QPixmap*> cache) const {
+	if (Safe::PaintHeld(
+			p,
+			_realParent,
+			_data,
+			geometry,
+			Safe::HoldShape::Bubble(rounding))) {
+		return;
+	}
 	ensureDataMediaCreated();
 	const auto item = _parent->data();
 	const auto mediaEditor = (_parent->context() == Context::MediaEditor);
@@ -2003,6 +2026,8 @@ TextState Gif::getStateGrouped(
 		StateRequest request) const {
 	if (!geometry.contains(point)) {
 		return {};
+	} else if (Safe::Holds(_realParent, _data)) {
+		return TextState(_parent);
 	}
 	const auto fullFeatured = fullFeaturedGrouped(sides);
 	if (fullFeatured) {

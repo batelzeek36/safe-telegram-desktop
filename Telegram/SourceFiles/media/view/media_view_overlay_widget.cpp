@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/view/media_view_overlay_widget.h"
+#include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
 #include "api/api_attached_stickers.h"
@@ -4512,6 +4513,14 @@ void OverlayWidget::activate() {
 }
 
 void OverlayWidget::show(OpenRequest request) {
+	if (Safe::ViewerRefuses(
+			request.item(),
+			request.peer(),
+			request.photo(),
+			request.document(),
+			request.story())) {
+		return;
+	}
 	const auto story = request.story();
 	const auto document = story ? story->document() : request.document();
 	const auto photo = story ? story->photo() : request.photo();
@@ -5884,6 +5893,10 @@ void OverlayWidget::storiesJumpTo(
 		return;
 	}
 	const auto story = *maybeStory;
+	if (Safe::HoldsStory(story)) {
+		close();
+		return;
+	}
 	setContext(StoriesContext{
 		story->peer(),
 		story->id(),
@@ -7907,6 +7920,13 @@ bool OverlayWidget::moveToNext(int delta) {
 		return false;
 	}
 	auto newIndex = *_index + delta;
+	while (delta
+		&& Safe::ViewerHolds(
+			entityByIndex(newIndex).item,
+			_peer,
+			entityByIndex(newIndex).data)) {
+		newIndex += delta;
+	}
 	return moveToEntity(entityByIndex(newIndex), delta);
 }
 
@@ -7950,6 +7970,9 @@ void OverlayWidget::preloadData(int delta) {
 	auto documents = base::flat_set<std::shared_ptr<Data::DocumentMedia>>();
 	for (auto index = from; index != till + 1; ++index) {
 		auto entity = entityByIndex(index);
+		if (Safe::ViewerHolds(entity.item, _peer, entity.data)) {
+			continue;
+		}
 		if (auto photo = std::get_if<not_null<PhotoData*>>(&entity.data)) {
 			const auto &[i, ok] = photos.emplace((*photo)->createMediaView());
 			(*i)->wanted(Data::PhotoSize::Small, fileOrigin(entity));

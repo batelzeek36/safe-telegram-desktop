@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_web_page.h"
+#include "safe/safe_media_gate.h"
 
 #include "base/unixtime.h"
 #include "core/application.h"
@@ -946,7 +947,9 @@ void WebPage::ensurePhotoMediaCreated() const {
 	}
 	_photoMedia = _data->photo->createMediaView();
 	const auto contextId = _parent->data()->fullId();
-	_photoMedia->wanted(Data::PhotoSize::Thumbnail, contextId);
+	if (!Safe::HidesItem(_parent->data())) {
+		_photoMedia->wanted(Data::PhotoSize::Thumbnail, contextId);
+	}
 	history()->owner().registerHeavyViewPart(_parent);
 }
 
@@ -1126,7 +1129,13 @@ void WebPage::draw(Painter &p, const PaintContext &context) const {
 			.outer = { pw, ph },
 		};
 		using namespace Data;
-		if (const auto thumbnail = _photoMedia->image(PhotoSize::Thumbnail)) {
+		if (Safe::PaintHeld(
+				p,
+				_parent->data(),
+				_data->photo,
+				style::rtlrect(inner.left() + paintw - pw, tshift, pw, ph, width()),
+				Safe::HoldShape::Small())) {
+		} else if (const auto thumbnail = _photoMedia->image(PhotoSize::Thumbnail)) {
 			pix = thumbnail->pixSingle(size, args);
 		} else if (const auto small = _photoMedia->image(PhotoSize::Small)) {
 			pix = small->pixSingle(size, args.blurred());

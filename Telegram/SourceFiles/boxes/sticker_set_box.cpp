@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/sticker_set_box.h"
+#include "safe/safe_media_gate.h"
 
 #include "api/api_common.h"
 #include "api/api_stickers_creator.h"
@@ -1547,6 +1548,9 @@ void StickerSetBox::Inner::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void StickerSetBox::Inner::showPreviewAt(QPoint globalPos) {
+	if (Safe::HidesStickerSetPreview(notInstalled())) {
+		return;
+	}
 	const auto index = stickerFromGlobalPos(globalPos);
 	const auto document = elementDocument(index);
 	if (document && index != _previewShown) {
@@ -2387,6 +2391,12 @@ void StickerSetBox::Inner::paintSticker(
 		}
 	}
 
+	if (Safe::PaintHeldSetSticker(
+			p,
+			notInstalled(),
+			style::rtlrect(QRect(position, _singleSize), width()))) {
+		return;
+	}
 	const auto hasShake = _shakeAnimation.animating();
 	if (hasShake) {
 		shakeTransform(p, index, position, now);

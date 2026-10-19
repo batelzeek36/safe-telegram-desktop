@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/group/calls_group_viewport_rhi.h"
+#include "safe/safe_media_live.h"
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
 
@@ -789,7 +790,7 @@ void Viewport::RendererRhi::paintTileOffscreen(
 	const auto markGuard = gsl::finally([&] {
 		tile->track()->markFrameShown();
 	});
-	const auto data = track->frameWithInfo(false);
+	const auto data = Safe::LiveFrame(tile->peer(), track, false);
 	_userpicFrame = (data.format == Webrtc::FrameFormat::None);
 	validateUserpicFrame(tile, tileData);
 	const auto frameSize = _userpicFrame
@@ -832,7 +833,10 @@ void Viewport::RendererRhi::paintTileOnscreen(
 		TileData &tileData,
 		float pw,
 		float ph) {
-	const auto data = tile->track()->frameWithInfo(false);
+	const auto data = Safe::LiveFrame(
+		tile->peer(),
+		tile->track(),
+		false);
 	_userpicFrame = (data.format == Webrtc::FrameFormat::None);
 	const auto frameSize = _userpicFrame
 		? tileData.userpicFrame.size()
@@ -1179,7 +1183,10 @@ void Viewport::RendererRhi::drawFramePass(
 	const auto geometry = tile->geometry().translated(
 		_owner->borrowedOrigin());
 
-	const auto data = tile->track()->frameWithInfo(false);
+	const auto data = Safe::LiveFrame(
+		tile->peer(),
+		tile->track(),
+		false);
 	const auto frameSize = _userpicFrame
 		? tileData.userpicFrame.size()
 		: data.yuv420

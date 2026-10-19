@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_peer.h"
+#include "safe/safe_media_gate.h"
 #include "safe/safe_policy.h"
 
 #include "api/api_sensitive_content.h"
@@ -433,6 +434,9 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 }
 
 QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
+	if (const auto held = Safe::HeldUserpic(this, view)) {
+		return held;
+	}
 	if (!_userpic.isCurrentView(view.cloud)) {
 		if (!_userpic.empty()) {
 			view.cloud = _userpic.createView();
@@ -511,7 +515,7 @@ InMemoryKey PeerData::userpicUniqueKey(Ui::PeerUserpicView &view) const {
 	}
 	return useEmptyUserpic(view)
 		? ensureEmptyUserpic()->uniqueKey()
-		: inMemoryKey(_userpic.location());
+		: Safe::UserpicKey(this, inMemoryKey(_userpic.location()));
 }
 
 QImage PeerData::GenerateUserpicImage(
@@ -1516,7 +1520,7 @@ void PeerData::setEmojiStatus(EmojiStatusId emojiStatusId, TimeId until) {
 }
 
 EmojiStatusId PeerData::emojiStatusId() const {
-	return _emojiStatusId;
+	return Safe::ShowsPeerLook(this) ? _emojiStatusId : EmojiStatusId();
 }
 
 bool PeerData::isBot() const {
@@ -1992,7 +1996,8 @@ void PeerData::setThemeToken(const QString &token) {
 }
 
 const QString &PeerData::themeToken() const {
-	return _themeToken;
+	static const auto kNone = QString();
+	return Safe::ShowsPeerLook(this) ? _themeToken : kNone;
 }
 
 void PeerData::setWallPaper(
@@ -2022,7 +2027,7 @@ bool PeerData::wallPaperOverriden() const {
 }
 
 const Data::WallPaper *PeerData::wallPaper() const {
-	return _wallPaper.get();
+	return Safe::ShowsPeerLook(this) ? _wallPaper.get() : nullptr;
 }
 
 bool PeerData::hasActiveStories() const {

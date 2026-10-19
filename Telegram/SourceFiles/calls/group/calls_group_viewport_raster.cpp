@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/group/calls_group_viewport_raster.h"
+#include "safe/safe_media_live.h"
 
 #include "calls/group/calls_group_common.h"
 #include "calls/group/calls_group_viewport_tile.h"
@@ -98,7 +99,7 @@ void Viewport::RendererSW::paintTile(
 	const auto markGuard = gsl::finally([&] {
 		tile->track()->markFrameShown();
 	});
-	const auto data = track->frameWithInfo(true);
+	const auto data = Safe::LiveFrame(tile->peer(), track, true);
 	auto &tileData = _tileData[tile];
 	tileData.stale = false;
 	_userpicFrame = (data.format == Webrtc::FrameFormat::None);

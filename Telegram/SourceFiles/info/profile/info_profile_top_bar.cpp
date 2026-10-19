@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_top_bar.h"
+#include "safe/safe_media_gate.h"
 
 #include "api/api_peer_colors.h"
 #include "api/api_peer_photo.h"
@@ -3189,7 +3190,9 @@ void TopBar::updateVideoUserpic() {
 		return;
 	}
 	const auto photo = _peer->owner().photo(id);
-	if (!photo->date() || !photo->videoCanBePlayed()) {
+	if (!photo->date()
+		|| !photo->videoCanBePlayed()
+		|| Safe::HoldsUserpic(_peer)) {
 		_videoUserpicPlayer = nullptr;
 		return;
 	}

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/calls_panel.h"
+#include "safe/safe_media_gate.h"
 
 #include "boxes/peers/replace_boost_box.h" // CreateUserpicsWithMoreBadge
 #include "calls/calls_panel_background.h"
@@ -637,7 +638,7 @@ void Panel::refreshIncomingGeometry() {
 	Expects(_call != nullptr);
 	Expects(_incoming != nullptr);
 
-	if (_incomingFrameSize.isEmpty()) {
+	if (_incomingFrameSize.isEmpty() || !Safe::ShowsLiveVideo(_user)) {
 		_incoming->widget()->hide();
 		return;
 	}

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/player/media_player_instance.h"
+#include "safe/safe_media_gate.h"
 
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -905,7 +906,7 @@ void Instance::play(
 		const AudioMsgId &audioId,
 		std::optional<PlaylistContext> context) {
 	const auto document = audioId.audio();
-	if (!document) {
+	if (!document || Safe::RefusesPlay(document, audioId.contextId())) {
 		return;
 	}
 	_pendingContext = context;
