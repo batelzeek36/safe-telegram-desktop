@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_photo.h"
+#include "safe/look_media.h"
 #include "safe/safe_media_gate.h"
 
 #include "boxes/send_credits_box.h"
@@ -440,17 +441,28 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	} else if (_storyId && _data->isNull()) {
 		return;
 	}
+	const auto lookFrame = Safe::Look::FrameMedia(
+		p,
+		context,
+		QRect(0, 0, width(), height()),
+		(((_parent->media() != this)
+			&& !IsHostedInstantViewMedia(_parent))
+			? std::nullopt
+			: std::make_optional(adjustedBubbleRounding())),
+		{
+			.bubble = _parent->hasBubble(),
+			.skip = (_serviceWidth > 0)
+				|| IsHostedInstantViewMedia(_parent)
+				|| (_parent->context() == Context::MediaEditor),
+		});
 	if (Safe::PaintHeld(
 			p,
 			_realParent,
 			_data,
-			QRect(0, 0, width(), height()),
+			lookFrame.inner,
 			((_serviceWidth > 0)
 				? Safe::HoldShape::Ellipse()
-				: Safe::HoldShape::Bubble(((_parent->media() != this)
-					&& !IsHostedInstantViewMedia(_parent))
-					? std::nullopt
-					: std::make_optional(adjustedBubbleRounding()))))) {
+				: Safe::HoldShape::Bubble(lookFrame.innerRounding)))) {
 		return;
 	}
 
@@ -477,15 +489,18 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	const auto radial = isRadialAnimation();
 
 	auto rthumb = style::rtlrect(paintx, painty, paintw, painth, width());
+	rthumb = lookFrame.inner;
 	if (_serviceWidth > 0) {
 		paintUserpicFrame(p, context, rthumb.topLeft());
 	} else {
-		const auto rounding = (inWebPage && !hostedInstantView)
-			? std::optional<Ui::BubbleRounding>()
-			: std::optional<Ui::BubbleRounding>(adjustedBubbleRounding());
+		const auto rounding = lookFrame.innerRounding;
 		if (!bubble && !hostedInstantView) {
-			Assert(rounding.has_value());
-			fillImageShadow(p, rthumb, *rounding, context);
+			Assert(lookFrame.outerRounding.has_value());
+			fillImageShadow(
+				p,
+				lookFrame.outer,
+				*lookFrame.outerRounding,
+				context);
 		}
 		const auto revealed = (_spoiler && !mediaEditor)
 			? _spoiler->revealAnimation.value(_spoiler->revealed ? 1. : 0.)
