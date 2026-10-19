@@ -128,6 +128,21 @@ const auto kLaunchRefused = u"This picture or video is held, "
 	}
 }
 
+// Inside a Trusted chat only the sender counts, and only when he listed
+// that person himself.
+[[nodiscard]] MediaOutcome InTrustedChat(
+		const PeerData *sender,
+		not_null<const Main::Session*> session) {
+	if (!sender || sender == session->user().get()) {
+		return MediaOutcome::Show;
+	}
+	switch (StatusOf(Mutable(sender))) {
+	case Status::Allowed: return MediaOutcome::Judge;
+	case Status::OffKnown: return MediaOutcome::Hide;
+	default: return MediaOutcome::Show; // Trusted, never listed, asked.
+	}
+}
+
 } // namespace
 
 MediaOutcome OutcomeOf(not_null<const HistoryItem*> item) {
@@ -135,6 +150,18 @@ MediaOutcome OutcomeOf(not_null<const HistoryItem*> item) {
 	const auto session = &history->session();
 	if (item->isSponsored()) {
 		return MediaOutcome::Hide;
+	}
+	const auto sender = item->out()
+		? static_cast<PeerData*>(session->user().get())
+		: item->from().get();
+	const auto chat = history->peer.get();
+	if (Trusted(chat)) {
+		// A Trusted chat shows everything in it: forwards from anywhere,
+		// inline bot results, shared stories (Zach, 2026-10-19: "if the
+		// group is trusted it shows everything irregardless"). The one
+		// exception is a person he listed himself: Allowed goes through the
+		// picture check, Off stays hidden.
+		return InTrustedChat(sender, session);
 	}
 	if (item->Has<HistoryMessageForwarded>()
 		&& !Trusted(item->originalSender())) {
@@ -154,16 +181,10 @@ MediaOutcome OutcomeOf(not_null<const HistoryItem*> item) {
 			}
 		}
 	}
-	const auto sender = item->out()
-		? static_cast<PeerData*>(session->user().get())
-		: item->from().get();
 	if (Trusted(sender)) {
 		return MediaOutcome::Show; // His own pictures, Amber, his bots.
 	}
-	const auto chat = history->peer.get();
-	if (Trusted(chat)) {
-		return MediaOutcome::Show; // A chat he made: members' pictures too.
-	} else if (Allowed(chat)) {
+	if (Allowed(chat)) {
 		return MediaOutcome::Judge;
 	}
 	return MediaOutcome::Hide;

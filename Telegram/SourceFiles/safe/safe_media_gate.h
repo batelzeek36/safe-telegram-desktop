@@ -36,9 +36,11 @@ namespace Safe {
 
 // ---- Who put a picture there (the phone's SafeMediaPolicy, M3b). ----
 
-// A message's pictures: an untrusted forward origin, inline bot or story
-// owner hides them in any chat; a Trusted sender or a Trusted chat shows
-// them; an Allowed chat judges them; anything else hides them.
+// A message's pictures: in a Trusted chat everything shows (forwards, inline
+// bots and stories included) unless the sender is a person he listed as
+// Allowed (judged) or Off (hidden). Elsewhere an untrusted forward origin,
+// inline bot or story owner hides them; a Trusted sender shows them; an
+// Allowed chat judges them; anything else hides them.
 [[nodiscard]] MediaOutcome OutcomeOf(not_null<const HistoryItem*> item);
 
 // An avatar, profile photo or video, story: its owner decides.
