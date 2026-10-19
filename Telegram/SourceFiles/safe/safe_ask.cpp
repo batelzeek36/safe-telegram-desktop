@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "main/main_session.h"
 #include "safe/safe_trust.h"
+#include "safe/safe_trust_invites.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/layers/generic_box.h"
 #include "ui/layers/show.h"
@@ -248,8 +249,10 @@ void ShowAskInviteBox(
 		const QString &reason) {
 	if (hash.isEmpty() || ShownJustNow(u"invite:"_q + hash)) {
 		return;
-	} else if (!Usable(show)) {
-		Toast(nullptr, NotListedText());
+	}
+	const auto requested = InviteRequested(hash);
+	if (!Usable(show)) {
+		Toast(nullptr, requested ? AlreadyAskedText() : NotListedText());
 		return;
 	}
 	const auto kind = channel ? Kind::Channel : Kind::Group;
@@ -257,6 +260,10 @@ void ShowAskInviteBox(
 		.kind = kind,
 		.title = title.isEmpty() ? DefaultTitle(kind) : title,
 	};
+	if (requested) {
+		ShowAsked(show, described);
+		return;
+	}
 	ShowAskable(show, described, NotListedText(), [=] {
 		return AskInvite(hash, described.title, reason);
 	});

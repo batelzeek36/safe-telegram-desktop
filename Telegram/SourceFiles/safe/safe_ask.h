@@ -49,7 +49,8 @@ void ShowAskBox(not_null<PeerData*> peer, const QString &reason);
 
 // An invite link whose chat Telegram does not name (chatInvite carries a
 // title only): the never-listed box, and Ask to allow queues
-// Safe::AskInvite(hash, title, reason).
+// Safe::AskInvite(hash, title, reason); the already-asked box while that
+// request waits (Safe::InviteRequested, safe_trust_invites.h).
 void ShowAskInviteBox(
 	std::shared_ptr<Ui::Show> show,
 	const QString &hash,
