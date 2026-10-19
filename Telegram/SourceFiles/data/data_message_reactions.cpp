@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_message_reactions.h"
+#include "safe/safe_reactions.h"
 
 #include "api/api_global_privacy.h"
 #include "calls/group/calls_group_call.h"
@@ -1160,6 +1161,7 @@ void Reactions::updateDefault(const MTPDmessages_availableReactions &data) {
 			}
 		}
 	}
+	Safe::PreloadStickerMedia(_iconsCache);
 	if (_waitingForReactions) {
 		_waitingForReactions = false;
 		resolveReactionImages();
@@ -1182,9 +1184,7 @@ void Reactions::updateGeneric(const MTPDmessages_stickerSet &data) {
 	for (const auto &sticker : data.vdocuments().v) {
 		toCache(_owner->processDocument(sticker));
 	}
-	if (!_genericCache.empty()) {
-		_genericCache.front().second->checkStickerLarge();
-	}
+	Safe::PreloadStickerMedia(_genericCache);
 }
 
 void Reactions::updateMyTags(
