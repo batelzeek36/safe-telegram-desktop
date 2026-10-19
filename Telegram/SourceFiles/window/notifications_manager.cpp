@@ -44,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
+#include "safe/safe_bots.h"
 #include "ui/text/text_utilities.h"
 #include "platform/platform_specific.h"
 
@@ -1499,6 +1500,8 @@ void Manager::notificationActionActivated(
 	}
 	using ButtonType = HistoryMessageMarkupButton::Type;
 	if (button->type != ButtonType::Callback) {
+		return;
+	} else if (Safe::RefuseBotButton(nullptr, item, *button)) {
 		return;
 	}
 	auto flags = MTPmessages_GetBotCallbackAnswer::Flags(0);

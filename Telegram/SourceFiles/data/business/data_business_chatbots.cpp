@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/business/data_business_chatbots.h"
+#include "safe/safe_bots.h"
 
 #include "apiwrap.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
@@ -78,6 +79,11 @@ void Chatbots::save(
 		Fn<void(QString)> fail) {
 	const auto was = _settings.current();
 	if (was == settings) {
+		return;
+	} else if (Safe::RefuseBusinessBot(settings.bot)) {
+		if (fail) {
+			fail(Safe::RefusedError());
+		}
 		return;
 	} else if (was.bot || settings.bot) {
 		using Flag = MTPaccount_UpdateConnectedBot::Flag;

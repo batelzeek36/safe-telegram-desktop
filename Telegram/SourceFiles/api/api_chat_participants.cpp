@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_chat_participants.h"
+#include "safe/safe_bots.h"
 #include "safe/safe_policy.h"
 
 #include "apiwrap.h"
@@ -570,6 +571,10 @@ void ChatParticipants::add(
 		const std::vector<not_null<UserData*>> &users,
 		bool passGroupHistory,
 		Fn<void(bool)> done) {
+	if (Safe::RefuseAddedBots(show, users)) {
+		if (done) done(false);
+		return;
+	}
 	if (const auto chat = peer->asChat()) {
 		for (const auto &user : users) {
 			_api.request(MTPmessages_AddChatUser(

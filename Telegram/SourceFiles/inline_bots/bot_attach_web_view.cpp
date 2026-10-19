@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/bot_attach_web_view.h"
+#include "safe/safe_bots.h"
 #include "safe/safe_policy.h"
 
 #include "api/api_blocked_peers.h"
@@ -2784,6 +2785,9 @@ void AttachWebView::resolveUsername(
 }
 
 void AttachWebView::open(WebViewDescriptor &&descriptor) {
+	if (Safe::RefuseMiniApp(descriptor)) {
+		return;
+	}
 	for (const auto &instance : _instances) {
 		if (instance->bot() == descriptor.bot
 			&& instance->source() == descriptor.source) {
@@ -3108,7 +3112,8 @@ std::unique_ptr<Ui::DropdownMenu> MakeAttachBotsMenu(
 		if (!addBots
 			|| !bot.inAttachMenu
 			|| !PeerMatchesTypes(peer, bot.user, bot.types)
-			|| bot.user->isOldWalletBot()) {
+			|| bot.user->isOldWalletBot()
+			|| !Safe::IsOpenBot(bot.user)) {
 			continue;
 		}
 		const auto callback = [=] {

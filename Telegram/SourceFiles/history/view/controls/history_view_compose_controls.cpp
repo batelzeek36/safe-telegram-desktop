@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
+#include "safe/safe_bots.h"
 
 #include "history/view/controls/history_view_bot_menu_button.h"
 
@@ -6462,6 +6463,7 @@ void ComposeControls::applyInlineBotQuery(
 		const QString &query) {
 	Expects(_regularWindow != nullptr);
 
+	bot = Safe::OpenInlineBot(_show, bot);
 	if (_history && bot) {
 		if (_inlineBot != bot) {
 			_inlineBot = bot;

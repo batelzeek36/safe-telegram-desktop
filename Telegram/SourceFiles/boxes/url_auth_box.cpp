@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/url_auth_box.h"
+#include "safe/safe_bots.h"
 
 #include "apiwrap.h"
 #include "boxes/url_auth_box_content.h"
@@ -322,6 +323,9 @@ void RequestButton(
 	const auto buttonId = button->buttonId;
 	const auto url = QString::fromUtf8(button->data);
 
+	if (Safe::RefuseUrlAuth(show, session, request)) {
+		return;
+	}
 	const auto bot = request.is_request_write_access()
 		? session->data().processUser(request.vbot()).get()
 		: nullptr;
@@ -405,6 +409,9 @@ void RequestUrl(
 		not_null<Main::Session*> session,
 		const QString &url,
 		QVariant context) {
+	if (Safe::RefuseUrlAuth(show, session, request)) {
+		return;
+	}
 	struct State {
 		base::weak_qptr<Ui::BoxContent> box;
 		AnotherSessionFactory anotherSession = nullptr;

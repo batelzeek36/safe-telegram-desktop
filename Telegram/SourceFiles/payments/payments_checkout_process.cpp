@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "payments/payments_checkout_process.h"
+#include "safe/safe_bots.h"
 
 #include "payments/payments_form.h"
 #include "payments/ui/payments_panel.h"
@@ -69,6 +70,9 @@ void CheckoutProcess::Start(
 		Mode mode,
 		Fn<void(CheckoutResult)> reactivate,
 		Fn<void(NonPanelPaymentForm)> nonPanelPaymentFormProcess) {
+	if (Safe::RefuseInvoice(item)) {
+		return;
+	}
 	auto &processes = LookupSessionProcesses(&item->history()->session());
 	const auto media = item->media();
 	const auto invoice = media ? media->invoice() : nullptr;
@@ -462,6 +466,10 @@ void CheckoutProcess::handleFormUpdate(const FormUpdate &update) {
 }
 
 void CheckoutProcess::handleError(const Error &error) {
+	if (error.id == Safe::RefusedError()) {
+		closeAndReactivate(CheckoutResult::Cancelled);
+		return;
+	}
 	const auto showToast = [&](TextWithEntities &&text) {
 		_panel->requestActivate();
 		_panel->showToast(std::move(text));
