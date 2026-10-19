@@ -490,6 +490,9 @@ void Inner::deleteUnusedInlineLayouts() {
 }
 
 void Inner::preloadImages() {
+	if (Safe::HoldsInlineResults(_inlineBot)) {
+		return;
+	}
 	_mosaic.forEach([](not_null<const ItemBase*> item) {
 		item->preload();
 	});

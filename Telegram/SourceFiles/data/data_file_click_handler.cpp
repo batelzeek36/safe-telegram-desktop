@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_file_click_handler.h"
+#include "safe/safe_media_gate.h"
 
 #include "core/click_handler_types.h"
 #include "core/file_utilities.h"
@@ -172,6 +173,9 @@ void DocumentOpenWithClickHandler::Open(
 
 	data->saveFromDataSilent();
 	const auto path = data->filepath(true);
+	if (Safe::RefusesLaunch(data, origin, path)) {
+		return;
+	}
 	if (!path.isEmpty()) {
 		File::OpenWith(path);
 	} else {

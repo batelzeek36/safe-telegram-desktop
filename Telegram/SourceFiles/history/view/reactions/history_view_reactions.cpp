@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/reactions/history_view_reactions.h"
+#include "safe/safe_media_gate.h"
 
 #include "history/history_item.h"
 #include "history/history.h"
@@ -914,7 +915,9 @@ InlineListData InlineListDataFromMessage(not_null<Element*> view) {
 	using Flag = InlineListData::Flag;
 	const auto item = view->data();
 	auto result = InlineListData();
-	result.reactions = item->reactionsWithLocal();
+	result.reactions = Safe::GateReactions(
+		item,
+		item->reactionsWithLocal());
 
 	const auto shouldAddEmptyPaidButton = [&] {
 		if (view->context() == Context::ChatPreview) {

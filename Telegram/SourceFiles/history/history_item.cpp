@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
+#include "safe/safe_media_gate.h"
 
 #include "api/api_premium.h"
 #include "api/api_sensitive_content.h"
@@ -3447,7 +3448,7 @@ bool HistoryItem::forbidsForward() const {
 }
 
 bool HistoryItem::forbidsSaving() const {
-	if (forbidsForward()) {
+	if (forbidsForward() || Safe::RefusesSaving(this)) {
 		return true;
 	} else if (_media && _media->ttlSeconds()) {
 		return true;
