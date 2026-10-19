@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/variant.h"
+#include "data/data_message_reaction_id.h"
 #include "data/data_msg_id.h"
 #include "safe/safe_media.h"
 #include "safe/safe_media_paint.h"
@@ -20,6 +21,7 @@ class UserData;
 
 namespace Data {
 class Story;
+struct FileOrigin;
 } // namespace Data
 
 namespace Ui {
@@ -68,7 +70,11 @@ namespace Safe {
 // outside Trusted and Allowed chats (the outcome is Hide).
 [[nodiscard]] bool HidesCustomEmoji(not_null<const HistoryItem*> item);
 
-// Inline-bot results (@gif and the like) show only from a Trusted bot.
+// Inline-bot results (@gif and the like): held for every bot, Trusted bots
+// included (the phone's rule: the results come from the open web through
+// the bot, not from the bot's owner). Held = foggy tiles, no hover
+// preview, no thumbnail preloads. The bot is kept in the signature so the
+// call sites name what they gate.
 [[nodiscard]] bool HoldsInlineResults(const UserData *bot);
 
 // A sticker or emoji set that is not installed: its previews are foggy glass.
@@ -162,5 +168,36 @@ using ViewerData = std::variant<
 [[nodiscard]] bool RefusesPlay(
 	not_null<DocumentData*> document,
 	FullMsgId contextId);
+
+// ---- Leaving the app. ----
+
+// A held picture or video counts as protected content (Telegram's own "no
+// saving" rule): no Save as, Save image, Copy image, Save GIF, download
+// buttons, and the external media viewer option does not take it. Other
+// files (documents, archives, music) are not pictures and stay savable.
+[[nodiscard]] bool RefusesSaving(not_null<const HistoryItem*> item);
+
+// Opening a held picture or video file in another app ("Open with", the
+// system viewer for pictures the in-app viewer cannot show, videos it cannot
+// play). Refused with a notice; no message to say who sent it = refused.
+// `path` is the local file (its extension names pictures and videos that
+// the document's own type does not); unknown kinds count as pictures.
+bool RefusesLaunch(
+	not_null<DocumentData*> document,
+	HistoryItem *item,
+	const QString &path);
+bool RefusesLaunch(
+	not_null<DocumentData*> document,
+	const Data::FileOrigin &origin,
+	const QString &path);
+
+// ---- Reactions. ----
+
+// Custom emoji reactions show in Trusted and Allowed chats (the custom emoji
+// rule). Anywhere else anyone may have set them, so the custom ones he did
+// not pick himself are dropped (not fogged, like emoji statuses).
+[[nodiscard]] std::vector<Data::MessageReaction> GateReactions(
+	not_null<const HistoryItem*> item,
+	std::vector<Data::MessageReaction> reactions);
 
 } // namespace Safe

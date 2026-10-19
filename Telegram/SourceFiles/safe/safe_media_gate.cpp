@@ -7,14 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_media_gate.h"
 
 #include "base/weak_ptr.h"
+#include "core/mime_type.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
+#include "data/data_file_origin.h"
 #include "data/data_media_types.h"
 #include "data/data_peer.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
 #include "data/data_story.h"
+#include "data/stickers/data_custom_emoji.h"
 #include "data/data_user.h"
 #include "data/data_web_page.h"
 #include "history/history.h"
@@ -22,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "main/main_session.h"
 #include "safe/safe_media_covers.h"
+#include "safe/safe_notices.h"
 #include "safe/safe_trust.h"
 #include "ui/text/text.h"
 #include "ui/userpic_view.h"
@@ -31,6 +35,9 @@ namespace {
 
 constexpr auto kHeldUserpicKeyMask = uint64(0x5AFE5AFE5AFE5AFEULL);
 constexpr auto kHeldPreviewCacheKey = uint64(0x5AFE0000ULL);
+
+const auto kLaunchRefused = u"This picture or video is held, "
+	"so it does not open in other apps."_q;
 
 [[nodiscard]] PeerData *Mutable(const PeerData *peer) {
 	return const_cast<PeerData*>(peer);
@@ -90,6 +97,35 @@ constexpr auto kHeldPreviewCacheKey = uint64(0x5AFE0000ULL);
 [[nodiscard]] bool IsDice(not_null<const HistoryItem*> item) {
 	const auto media = item->media();
 	return media && (dynamic_cast<const Data::MediaDice*>(media) != nullptr);
+}
+
+// A picture or a video by what the document says it is, or by the file
+// name. A name of no known kind counts as a picture when `unknownIsPicture`
+// (opening it in another app), and as a plain file otherwise (saving it).
+[[nodiscard]] bool IsPictureOrVideo(
+		not_null<const DocumentData*> document,
+		const QString &path,
+		bool unknownIsPicture) {
+	if (document->isImage()
+		|| document->isVideoFile()
+		|| document->isAnimation()
+		|| document->isGifv()
+		|| document->isVideoMessage()
+		|| document->isSvgImage()
+		|| document->sticker()) {
+		return true;
+	}
+	const auto mime = document->mimeString().toLower();
+	if (mime.startsWith(u"image/"_q) || mime.startsWith(u"video/"_q)) {
+		return true;
+	}
+	const auto name = path.isEmpty() ? document->filename() : path;
+	switch (Core::DetectNameType(name)) {
+	case Core::NameType::Image:
+	case Core::NameType::Video: return true;
+	case Core::NameType::Unknown: return unknownIsPicture;
+	default: return false;
+	}
 }
 
 } // namespace
@@ -213,7 +249,8 @@ bool HidesCustomEmoji(not_null<const HistoryItem*> item) {
 }
 
 bool HoldsInlineResults(const UserData *bot) {
-	return !Trusted(bot);
+	(void)bot;
+	return true;
 }
 
 bool HidesStickerSetPreview(bool notInstalled) {
@@ -399,9 +436,13 @@ Ui::Text::MarkedContext GateCustomEmoji(
 			const Ui::Text::MarkedContext &inner)
 	-> std::unique_ptr<Ui::Text::CustomEmoji> {
 		auto result = original(data, inner);
-		return result
-			? MakeGatedEmoji(std::move(result), hidden)
-			: nullptr;
+		// Only real custom emoji (a document id). The text's own helper
+		// icons (the quote mark, inline images) are the app's, not a
+		// sender's, and keep showing.
+		if (result && Data::ParseCustomEmojiData(data) != 0) {
+			return MakeGatedEmoji(std::move(result), hidden);
+		}
+		return result;
 	};
 	return context;
 }
@@ -455,6 +496,55 @@ bool RefusesPlay(not_null<DocumentData*> document, FullMsgId contextId) {
 	}
 	const auto item = document->owner().message(contextId);
 	return !item || Holds(item, document);
+}
+
+bool RefusesSaving(not_null<const HistoryItem*> item) {
+	const auto media = item->media();
+	if (!media) {
+		return false;
+	} else if (const auto photo = media->photo()) {
+		return Holds(item, photo);
+	} else if (const auto document = media->document()) {
+		return IsPictureOrVideo(document, QString(), false)
+			&& Holds(item, document);
+	}
+	return false;
+}
+
+bool RefusesLaunch(
+		not_null<DocumentData*> document,
+		HistoryItem *item,
+		const QString &path) {
+	if (!IsPictureOrVideo(document, path, true)
+		|| (item && !Holds(item, document))) {
+		return false;
+	}
+	ShowNotice(QVariant(), kLaunchRefused);
+	return true;
+}
+
+bool RefusesLaunch(
+		not_null<DocumentData*> document,
+		const Data::FileOrigin &origin,
+		const QString &path) {
+	const auto id = std::get_if<Data::FileOriginMessage>(&origin.data);
+	const auto item = id ? document->owner().message(*id) : nullptr;
+	return RefusesLaunch(document, item, path);
+}
+
+std::vector<Data::MessageReaction> GateReactions(
+		not_null<const HistoryItem*> item,
+		std::vector<Data::MessageReaction> reactions) {
+	const auto chat = item->history()->peer.get();
+	if (Trusted(chat) || Allowed(chat)) {
+		return reactions;
+	}
+	reactions.erase(
+		ranges::remove_if(reactions, [](const Data::MessageReaction &r) {
+			return r.id.custom() && !r.my;
+		}),
+		end(reactions));
+	return reactions;
 }
 
 } // namespace Safe
