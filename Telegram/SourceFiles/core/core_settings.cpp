@@ -161,6 +161,10 @@ Settings::Settings()
 , _dialogsWithChatWidthRatio(DefaultDialogsWidthRatio())
 , _dialogsNoChatWidthRatio(DefaultDialogsWidthRatio())
 , _videoQuality({ .height = kInitialVideoQuality }) {
+	// Safe Telegram: double click sends the quick reaction, as in
+	// Telegram for macOS. A saved choice still wins: read() replaces
+	// this only when the settings file carries the field.
+	_chatQuickAction = HistoryView::DoubleClickQuickAction::React;
 }
 
 Settings::~Settings() = default;

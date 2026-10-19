@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace HistoryView {
 
 enum class DoubleClickQuickAction {
-	Reply, // Default.
+	Reply, // Telegram Desktop's default (Safe Telegram: React).
 	React,
 	None,
 };
