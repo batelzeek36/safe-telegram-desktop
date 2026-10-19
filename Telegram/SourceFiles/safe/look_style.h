@@ -27,4 +27,8 @@ namespace Safe::Look {
 [[nodiscard]] QString ChatsTitle();
 [[nodiscard]] QString ArchivedChatsText();
 
+// The chat list search hint, naming the shortcut that focuses it (Cmd+K,
+// added by the native look; Cmd+F keeps searching inside an open chat).
+[[nodiscard]] QString SearchHint();
+
 } // namespace Safe::Look

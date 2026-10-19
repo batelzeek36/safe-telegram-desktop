@@ -59,4 +59,8 @@ QString ArchivedChatsText() {
 	return u"Archived Chats"_q;
 }
 
+QString SearchHint() {
+	return QString::fromUtf8("Search (\xE2\x8C\x98K)");
+}
+
 } // namespace Safe::Look

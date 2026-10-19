@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_layout.h"
+#include "safe/look_archive.h"
 
 #include "base/options.h"
 #include "base/unixtime.h"
@@ -1412,6 +1413,9 @@ void PaintCollapsedRow(
 		const QString &text,
 		int unread,
 		const PaintContext &context) {
+	if (Safe::Look::PaintArchivePill(p, row, folder, unread, context)) {
+		return;
+	}
 	p.fillRect(
 		QRect{ 0, 0, context.width, st::dialogsImportantBarHeight },
 		context.selected ? st::dialogsBgOver : context.currentBg);

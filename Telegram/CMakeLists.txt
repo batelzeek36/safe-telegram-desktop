@@ -1861,6 +1861,10 @@ PRIVATE
     safe/look_icons.h
     safe/look_tabs.cpp
     safe/look_tabs.h
+    safe/look_archive.cpp
+    safe/look_archive.h
+    safe/look_top.cpp
+    safe/look_top.h
     safe/safe_ask.cpp
     safe/safe_ask.h
     safe/safe_bots.cpp
