@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/reactions/history_view_reactions.h"
+#include "safe/look_reactions.h"
 #include "safe/safe_media_gate.h"
 
 #include "history/history_item.h"
@@ -515,7 +516,11 @@ void InlineList::paint(
 				}
 				color = button.paid
 					? st->creditsBg3()->c
-					: stm->msgFileBg->c;
+					: Safe::Look::ReactionBg(
+						stm->msgFileBg->c,
+						*stm,
+						context.outbg,
+						chosen);
 			} else {
 				if (!bubbleReady) {
 					opacity = bubbleProgress;
@@ -549,9 +554,12 @@ void InlineList::paint(
 			: !chosen
 			? (button.paid ? st->creditsFg() : stm->msgServiceFg)
 			: context.outbg
-			? (context.selected()
-				? st->historyFileOutIconFgSelected()
-				: st->historyFileOutIconFg())
+			? Safe::Look::ReactionChosenFg(
+				(context.selected()
+					? st->historyFileOutIconFgSelected()
+					: st->historyFileOutIconFg()),
+				*stm,
+				true)
 			: (context.selected()
 				? st->historyFileInIconFgSelected()
 				: st->historyFileInIconFg());
