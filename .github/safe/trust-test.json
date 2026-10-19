@@ -1,0 +1,20 @@
+{
+  "_comment": "Fake ids, not real chats: the compile check bakes this list in through .github/safe/inject_secrets.py, the same way the Mac build bakes in the SAFE_TRUST_JSON secret. Same shape as the control repo's docs/fixtures/trust-test.json.",
+  "android": {
+    "trusted_dialogs": [
+      1000000001
+    ],
+    "allowed_dialogs": [
+      -1000000002,
+      1000000003
+    ],
+    "known_dialogs": [
+      1000000001,
+      -1000000002,
+      1000000003,
+      1000000004,
+      -1000000005,
+      -4000000006
+    ]
+  }
+}

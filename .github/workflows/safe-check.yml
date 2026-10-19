@@ -69,6 +69,13 @@ jobs:
           echo "$(wc -l < "$GITHUB_WORKSPACE/changed.txt") changed source files:"
           cat "$GITHUB_WORKSPACE/changed.txt"
 
+      # Fake trust list (fixture), baked in exactly like the Mac build bakes the
+      # SAFE_TRUST_JSON secret, so the embedding code is compiled here too.
+      - name: Trust list fixture.
+        run: |
+          SAFE_TRUST_JSON="$(cat $REPO_NAME/.github/safe/trust-test.json)" \
+            python3 $REPO_NAME/.github/safe/inject_secrets.py $REPO_NAME
+
       # Telegram's public test credentials: the api_hash is a compile definition, so the real
       # one would show up in every FAILED command line of a public log.
       - name: Configure.
