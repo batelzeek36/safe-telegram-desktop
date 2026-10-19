@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_element.h"
+#include "safe/safe_reactions.h"
 #include "safe/safe_media_gate.h"
 
 #include "apiwrap.h"
@@ -3520,7 +3521,7 @@ void Element::animateUnreadReactions() {
 	const auto &recent = data()->recentReactions();
 	for (const auto &[id, list] : recent) {
 		if (ranges::contains(list, true, &Data::RecentReaction::unread)) {
-			animateReaction({ .id = id });
+			Safe::AnimateUnreadReaction(this, id);
 		}
 	}
 }
