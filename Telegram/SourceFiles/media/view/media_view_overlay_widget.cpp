@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/view/media_view_overlay_widget.h"
+#include "safe/safe_off.h"
 
 #include "apiwrap.h"
 #include "api/api_attached_stickers.h"
@@ -4512,6 +4513,9 @@ void OverlayWidget::activate() {
 }
 
 void OverlayWidget::show(OpenRequest request) {
+	if (Safe::RefuseOffMedia(request)) {
+		return;
+	}
 	const auto story = request.story();
 	const auto document = story ? story->document() : request.document();
 	const auto photo = story ? story->photo() : request.photo();

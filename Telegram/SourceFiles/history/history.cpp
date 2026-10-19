@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history.h"
+#include "safe/safe_off.h"
 
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_item_preview.h"
@@ -3463,7 +3464,7 @@ bool History::trackUnreadMessages() const {
 }
 
 bool History::shouldBeInChatList() const {
-	if (peer->migrateTo() || !folderKnown()) {
+	if (peer->migrateTo() || !folderKnown() || Safe::IsOff(peer)) {
 		return false;
 	} else if (const auto community = peer->asChannel()
 		; community && community->isCommunity()) {

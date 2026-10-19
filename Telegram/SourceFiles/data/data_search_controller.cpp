@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_search_controller.h"
+#include "safe/safe_off.h"
 
 #include "main/main_session.h"
 #include "data/data_session.h"
@@ -128,7 +129,8 @@ GlobalMediaResult ParseGlobalMediaResult(
 			addType);
 		if (item) {
 			result.offsetPosition = item->position();
-			if (onlyForwardable && !item->allowsForward()) {
+			if ((onlyForwardable && !item->allowsForward())
+				|| Safe::IsOffItem(item)) {
 				++result.filteredCount;
 			} else {
 				result.messageIds.push_back(item->position());

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/filters/edit_filter_chats_list.h"
+#include "safe/safe_off.h"
 
 #include "core/ui_integration.h"
 #include "data/data_chat_filters.h"
@@ -416,7 +417,7 @@ EditFilterChatsListController::EditFilterChatsListController(
 , _session(session)
 , _showLimitReached(std::move(showLimitReached))
 , _title(std::move(title))
-, _peers(peers)
+, _peers(Safe::WithoutOff(peers))
 , _options(options & ~Flag::Chatlist)
 , _selected(selected)
 , _limit(limit)

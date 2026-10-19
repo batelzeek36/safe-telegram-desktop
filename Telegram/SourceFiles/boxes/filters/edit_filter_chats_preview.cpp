@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/filters/edit_filter_chats_preview.h"
+#include "safe/safe_off.h"
 
 #include "boxes/filters/edit_filter_chats_list.h"
 #include "data/data_peer.h"
@@ -69,6 +70,9 @@ void FilterChatsPreview::updateData(
 		}
 	}
 	for (const auto &history : peers) {
+		if (Safe::IsOff(history->peer)) {
+			continue;
+		}
 		_removePeer.push_back(PeerButton{
 			.history = history,
 			.button = makeButton([=] { removePeer(history); })

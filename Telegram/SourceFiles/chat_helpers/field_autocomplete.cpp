@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/field_autocomplete.h"
+#include "safe/safe_off.h"
 
 #include "api/api_chat_participants.h"
 #include "api/api_common.h"
@@ -812,6 +813,7 @@ void FieldAutocomplete::rowsUpdated(
 		BotCommandRows &&brows,
 		StickerRows &&srows,
 		bool resetScroll) {
+	Safe::DropOffUserRows(mrows);
 	if (mrows.empty() && hrows.empty() && brows.empty() && srows.empty()) {
 		if (!isHidden()) {
 			hideAnimated();

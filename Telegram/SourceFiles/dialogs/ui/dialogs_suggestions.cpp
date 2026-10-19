@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_suggestions.h"
 #include "safe/safe_discovery.h"
+#include "safe/safe_off.h"
 
 #include "api/api_chat_participants.h"
 #include "apiwrap.h"
@@ -2930,7 +2931,9 @@ rpl::producer<TopPeersList> TopPeersContent(
 }
 
 RecentPeersList RecentPeersContent(not_null<Main::Session*> session) {
-	return RecentPeersList{ session->recentPeers().list() };
+	return RecentPeersList{
+		Safe::WithoutOff(session->recentPeers().list()),
+	};
 }
 
 object_ptr<Ui::BoxContent> StarsExamplesBox(

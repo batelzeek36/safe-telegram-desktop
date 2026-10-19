@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_session_controller.h"
+#include "safe/safe_off.h"
 
 #include "apiwrap.h"
 #include "api/api_cloud_password.h"
@@ -621,6 +622,9 @@ void SessionNavigation::showMessageByLinkResolved(
 void SessionNavigation::showPeerByLinkResolved(
 		not_null<PeerData*> peer,
 		const PeerByLinkInfo &info) {
+	if (Safe::RefuseOff(peer, this)) {
+		return;
+	}
 	auto params = SectionShow{
 		SectionShow::Way::Forward
 	};
@@ -2218,6 +2222,9 @@ void SessionController::showForum(
 		not_null<Data::Forum*> forum,
 		const SectionShow &params,
 		MsgId showAtMsgId) {
+	if (Safe::RefuseOff(forum->peer(), this)) {
+		return;
+	}
 	const auto forced = params.forceTopicsList;
 	if (showForumInDifferentWindow(forum, params, showAtMsgId)) {
 		return;
@@ -3102,6 +3109,9 @@ void SessionController::clearChooseReportMessages() const {
 void SessionController::showInNewWindow(
 		SeparateId id,
 		MsgId msgId) {
+	if (id.thread && Safe::RefuseOffThread(id.thread, this)) {
+		return;
+	}
 	if (!CanShowSeparateWindow(id)) {
 		Assert(id.thread != nullptr);
 		showThread(id.thread, msgId, SectionShow::Way::ClearStack);
@@ -3154,6 +3164,9 @@ void SessionController::showPeerHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId msgId) {
+	if (Safe::RefuseOffPeerId(this, peerId)) {
+		return;
+	}
 	if (const auto peer = session().data().peerLoaded(peerId)) {
 		if (const auto channel = peer->asChannel()) {
 			if (channel->isCommunity()) {
@@ -3222,6 +3235,9 @@ void SessionController::cancelUploadLayer(not_null<HistoryItem*> item) {
 void SessionController::showSection(
 		std::shared_ptr<SectionMemento> memento,
 		const SectionShow &params) {
+	if (Safe::RefuseOffSection(memento.get(), this)) {
+		return;
+	}
 	if (!params.thirdColumn
 		&& widget()->showSectionInExistingLayer(memento.get(), params)) {
 		return;
@@ -3897,6 +3913,9 @@ void SessionController::openPeerStory(
 		not_null<PeerData*> peer,
 		StoryId storyId,
 		Data::StoriesContext context) {
+	if (Safe::RefuseOff(peer, this)) {
+		return;
+	}
 	using namespace Media::View;
 	using namespace Data;
 
@@ -3918,6 +3937,9 @@ void SessionController::openPeerStories(
 		std::optional<Data::StorySourcesList> list,
 		bool onlyLive,
 		bool afterReload) {
+	if (Safe::RefuseOffPeerId(this, peerId)) {
+		return;
+	}
 	using namespace Media::View;
 	using namespace Data;
 
