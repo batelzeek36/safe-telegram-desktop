@@ -1865,6 +1865,8 @@ PRIVATE
     safe/look_archive.h
     safe/look_top.cpp
     safe/look_top.h
+    safe/look_chat.cpp
+    safe/look_chat.h
     safe/safe_ask.cpp
     safe/safe_ask.h
     safe/safe_bots.cpp

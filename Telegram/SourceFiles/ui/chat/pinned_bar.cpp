@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/chat/pinned_bar.h"
+#include "safe/look_chat.h"
 
 #include "ui/chat/message_bar.h"
 #include "ui/effects/spoiler_mess.h"
@@ -39,9 +40,11 @@ PinnedBar::PinnedBar(
 
 	_wrap.entity()->paintRequest(
 	) | rpl::on_next([=](QRect clip) {
-		QPainter(_wrap.entity()).fillRect(clip, st::historyPinnedBg);
+		Safe::Look::PaintPinnedBack(_wrap.entity(), clip);
 	}, lifetime());
-	_wrap.setAttribute(Qt::WA_OpaquePaintEvent);
+	_wrap.setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!Safe::Look::FloatingChatBars());
 
 	if (customEmojiPausedChanges) {
 		std::move(
@@ -133,10 +136,10 @@ void PinnedBar::setRightButton(object_ptr<Ui::RpWidget> button) {
 }
 
 void PinnedBar::updateControlsGeometry(QRect wrapGeometry) {
-	_bar->widget()->resizeToWidth(wrapGeometry.width());
-	if (_right.button) {
-		_right.button->moveToRight(0, 0);
-	}
+	Safe::Look::PlacePinnedBar(
+		_bar->widget(),
+		_right.button.data(),
+		wrapGeometry.width());
 }
 
 void PinnedBar::setShadowGeometryPostprocess(Fn<QRect(QRect)> postprocess) {
@@ -150,9 +153,10 @@ void PinnedBar::updateShadowGeometry(QRect wrapGeometry) {
 		wrapGeometry.y() + wrapGeometry.height(),
 		wrapGeometry.width(),
 		st::lineWidth);
-	_shadow->setGeometry(_shadowGeometryPostprocess
-		? _shadowGeometryPostprocess(regular)
-		: regular);
+	_shadow->setGeometry(Safe::Look::BarShadowGeometry(
+		_shadowGeometryPostprocess
+			? _shadowGeometryPostprocess(regular)
+			: regular));
 }
 
 void PinnedBar::createControls() {

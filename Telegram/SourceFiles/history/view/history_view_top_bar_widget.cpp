@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_top_bar_widget.h"
+#include "safe/look_chat.h"
 
 #include "history/history.h"
 #include "history/view/history_view_send_action.h"
@@ -130,7 +131,9 @@ TopBarWidget::TopBarWidget(
 , _menuToggle(this, st::topBarMenuToggle)
 , _titlePeerText(st::windowMinWidth / 3)
 , _onlineUpdater([=] { updateOnlineDisplay(); }) {
-	setAttribute(Qt::WA_OpaquePaintEvent);
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!Safe::Look::FloatingChatBars());
 
 	_clear->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 	_forward->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
@@ -534,7 +537,16 @@ void TopBarWidget::paintEvent(QPaintEvent *e) {
 		: -st::topBarHeight;
 	const auto slidingTop = std::max(selectedButtonsTop, searchFieldTop);
 
-	p.fillRect(QRect(0, 0, width(), st::topBarHeight), st::topBarBg);
+	if (!Safe::Look::PaintTopBarPills(
+			p,
+			this,
+			((_activeChat.section != Section::ChatsList)
+				&& (slidingTop <= -st::topBarHeight)),
+			_back.data(),
+			_info.data(),
+			_rightTaken)) {
+		p.fillRect(QRect(0, 0, width(), st::topBarHeight), st::topBarBg);
+	}
 	if (slidingTop < 0) {
 		p.translate(0, slidingTop + st::topBarHeight);
 		paintTopBar(p);
@@ -1059,9 +1071,9 @@ bool TopBarWidget::communityUserpicShown() const {
 }
 
 const style::UserpicButton &TopBarWidget::infoButtonStyle() const {
-	return communityChatsListBar()
+	return Safe::Look::TopBarInfoStyle(communityChatsListBar()
 		? st::topBarCommunityInfoButton
-		: st::topBarInfoButton;
+		: st::topBarInfoButton);
 }
 
 void TopBarWidget::refreshInfoButton() {
@@ -1269,7 +1281,9 @@ void TopBarWidget::updateControlsGeometry() {
 		updateSearchJumpToDateVisibility();
 	}
 
-	_rightTaken = 0;
+	_rightTaken = (_activeChat.section != Section::ChatsList)
+		? Safe::Look::TopBarRightInset()
+		: 0;
 	if (rootChatsListBar() && _activeChat.key.folder()) {
 		const auto &toggle = st::topBarMenuToggle;
 		const auto narrowLeft = (_narrowWidth - toggle.icon.width()) / 2
@@ -1315,7 +1329,9 @@ void TopBarWidget::finishAnimating() {
 void TopBarWidget::setAnimatingMode(bool enabled) {
 	if (_animatingMode != enabled) {
 		_animatingMode = enabled;
-		setAttribute(Qt::WA_OpaquePaintEvent, !_animatingMode);
+		setAttribute(
+			Qt::WA_OpaquePaintEvent,
+			!_animatingMode && !Safe::Look::FloatingChatBars());
 		finishAnimating();
 	} else if (!enabled) {
 		finishAnimating();
