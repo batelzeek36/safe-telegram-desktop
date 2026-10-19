@@ -1862,6 +1862,7 @@ PRIVATE
     safe/safe_policy.h
     safe/safe_sensitive.cpp
     safe/safe_sensitive.h
+    safe/safe_trust.h
     settings/business/settings_away_message.cpp
     settings/business/settings_away_message.h
     settings/business/settings_shortcut_messages.cpp
