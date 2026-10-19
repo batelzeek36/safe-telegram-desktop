@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
+#include "safe/look_tabs.h"
 #include "safe/safe_policy.h"
 
 #include "base/call_delayed.h"
@@ -4635,7 +4636,12 @@ void Widget::updateControlsGeometry() {
 
 	updateLockUnlockPosition();
 
-	auto bottomSkip = 0;
+	auto bottomSkip = Safe::Look::PlaceTabBar(
+		this,
+		controller(),
+		(_layout == Layout::Main),
+		barw,
+		narrowRatio);
 	const auto putBottomButton = [&](auto &button) {
 		if (button && !button->isHidden()) {
 			const auto buttonHeight = button->height();

@@ -19,4 +19,12 @@ namespace Safe::Look {
 // How much bubble shows around a picture or video in a message bubble.
 [[nodiscard]] int MediaInset();
 
+// The quiet grey of the native app's idle glyphs (tab bar, Archived Chats):
+// lighter than secondary text on dark themes, a soft grey on light ones.
+[[nodiscard]] QColor GlyphColor();
+
+// Words the native look adds (plain words, no translation keys).
+[[nodiscard]] QString ChatsTitle();
+[[nodiscard]] QString ArchivedChatsText();
+
 } // namespace Safe::Look

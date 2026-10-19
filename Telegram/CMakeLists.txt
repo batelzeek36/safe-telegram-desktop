@@ -1857,6 +1857,10 @@ PRIVATE
     safe/look_style.h
     safe/look_media.cpp
     safe/look_media.h
+    safe/look_icons.cpp
+    safe/look_icons.h
+    safe/look_tabs.cpp
+    safe/look_tabs.h
     safe/safe_ask.cpp
     safe/safe_ask.h
     safe/safe_bots.cpp
