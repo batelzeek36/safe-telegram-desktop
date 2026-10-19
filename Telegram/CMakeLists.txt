@@ -1862,7 +1862,20 @@ PRIVATE
     safe/safe_policy.h
     safe/safe_sensitive.cpp
     safe/safe_sensitive.h
+    safe/safe_judge_data.h
+    safe/safe_trust.cpp
     safe/safe_trust.h
+    safe/safe_trust_approvals.cpp
+    safe/safe_trust_approvals.h
+    safe/safe_trust_data.h
+    safe/safe_trust_invites.h
+    safe/safe_trust_key.h
+    safe/safe_trust_policy.cpp
+    safe/safe_trust_policy.h
+    safe/safe_trust_requests.cpp
+    safe/safe_trust_requests.h
+    safe/safe_trust_store.cpp
+    safe/safe_trust_store.h
     settings/business/settings_away_message.cpp
     settings/business/settings_away_message.h
     settings/business/settings_shortcut_messages.cpp
