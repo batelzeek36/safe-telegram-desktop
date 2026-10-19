@@ -144,6 +144,17 @@ jobs:
             safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-
           fail-on-cache-miss: true
 
+      # The trust list and the picture-check key, like the phone build's
+      # assets/safe_trust.json and api.env: into the sources, never into git.
+      # Without the secrets the app fails closed (only Saved Messages and
+      # Telegram's service account show) and the build still works; a trust
+      # secret that is set but malformed stops the build here.
+      - name: Trust list and picture-check key.
+        env:
+          SAFE_TRUST_JSON: ${{ secrets.SAFE_TRUST_JSON }}
+          SAFE_JUDGE_KEY: ${{ secrets.SAFE_JUDGE_KEY }}
+        run: python3 $REPO_NAME/.github/safe/inject_secrets.py $REPO_NAME
+
       - name: Build.
         timeout-minutes: 330
         env:
