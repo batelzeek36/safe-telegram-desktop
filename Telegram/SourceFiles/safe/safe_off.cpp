@@ -33,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "logs.h"
 #include "main/main_session.h"
 #include "media/view/media_view_open_common.h"
+#include "safe/safe_ask.h"
 #include "ui/layers/show.h"
 #include "ui/toast/toast.h"
 #include "window/section_memento.h"
@@ -41,10 +42,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Safe {
 namespace {
-
-[[nodiscard]] QString OffNoticeText() {
-	return u"This chat is off in Safe Telegram."_q;
-}
 
 // Peers whose stories were kept out of the strip, per session, so they can
 // be asked for again when a list change allows them.
@@ -162,10 +159,12 @@ bool RefuseOff(
 	if (!show) {
 		show = ActiveWindowShow();
 	}
+	// Never-listed, already asked and listed-off each get their own box
+	// (safe_ask), with Ask to allow where the phone offers it.
 	if (show) {
-		show->showToast(OffNoticeText());
+		ShowAskBox(show, peer, u"open"_q);
 	} else {
-		Ui::Toast::Show(OffNoticeText());
+		ShowAskBox(peer, u"open"_q);
 	}
 	return true;
 }
