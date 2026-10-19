@@ -1857,6 +1857,7 @@ PRIVATE
     safe/safe_identity.h
     safe/safe_links.cpp
     safe/safe_links.h
+    safe/safe_media.h
     safe/safe_notices.cpp
     safe/safe_notices.h
     safe/safe_policy.h
