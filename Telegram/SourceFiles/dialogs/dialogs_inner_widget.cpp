@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
+#include "safe/look_dialogs.h"
 #include "safe/safe_off.h"
 #include "safe/safe_policy.h"
 
@@ -1240,6 +1241,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		} else {
 			Ui::RowPainter::Paint(p, row, videoUserpic, context);
 		}
+		Safe::Look::PaintRowSeparator(p, context, row->height());
 		if (context.quickActionContext) {
 			context.quickActionContext = nullptr;
 		}

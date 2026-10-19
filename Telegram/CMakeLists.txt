@@ -1851,6 +1851,10 @@ PRIVATE
     profile/profile_block_widget.h
     profile/profile_cover_drop_area.cpp
     profile/profile_cover_drop_area.h
+    safe/look_dialogs.cpp
+    safe/look_dialogs.h
+    safe/look_style.cpp
+    safe/look_style.h
     safe/safe_ask.cpp
     safe/safe_ask.h
     safe/safe_bots.cpp
