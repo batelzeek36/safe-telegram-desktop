@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
+#include "safe/safe_policy.h"
 
 #include "dialogs/dialogs_three_state_icon.h"
 #include "dialogs/ui/chat_search_empty.h"
@@ -5279,7 +5280,8 @@ void InnerWidget::updateSearchIn() {
 	const auto communityIcon = (communityChannel && !_searchState.inChat)
 		? Ui::MakeUserpicThumbnail(communityChannel)
 		: nullptr;
-	const auto publicIcon = (_searchHashOrCashtag != HashOrCashtag::None)
+	const auto publicIcon = (_searchHashOrCashtag != HashOrCashtag::None
+			&& Safe::DiscoveryAllowed())
 		? Ui::MakeIconThumbnail(st::menuIconChannel)
 		: nullptr;
 	const auto peerTabType = (peer && peer->isBroadcast())
@@ -5320,6 +5322,9 @@ void InnerWidget::repaintPreviewResult(int index) {
 }
 
 bool InnerWidget::computeSearchWithPostsPreview() const {
+	if (!Safe::DiscoveryAllowed()) {
+		return false;
+	}
 	return 	(_searchHashOrCashtag != HashOrCashtag::None)
 		&& (_searchState.tab == ChatSearchTab::MyMessages)
 		&& !_searchState.inChat;

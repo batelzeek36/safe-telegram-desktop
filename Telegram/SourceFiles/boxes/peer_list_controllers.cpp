@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peer_list_controllers.h"
+#include "safe/safe_discovery.h"
 
 #include "api/api_chat_participants.h"
 #include "api/api_premium.h" // MessageMoneyRestriction.
@@ -259,7 +260,7 @@ void PeerListGlobalSearchController::searchOnServer() {
 		MTP_string(_query),
 		MTP_int(SearchPeopleLimit)
 	)).done([=](const MTPcontacts_Found &result, mtpRequestId requestId) {
-		searchDone(result, requestId);
+		searchDone(Safe::KeepOwnResults(result), requestId);
 	}).fail([=](const MTP::Error &error, mtpRequestId requestId) {
 		if (_requestId == requestId) {
 			_requestId = 0;

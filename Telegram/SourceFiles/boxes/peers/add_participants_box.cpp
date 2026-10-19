@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peers/add_participants_box.h"
+#include "safe/safe_discovery.h"
 
 #include "api/api_chat_participants.h"
 #include "api/api_invite_links.h"
@@ -1941,7 +1942,7 @@ void AddSpecialBoxSearchController::requestGlobal() {
 		MTP_string(_query),
 		MTP_int(perPage)
 	)).done([=](const MTPcontacts_Found &result, mtpRequestId requestId) {
-		searchGlobalDone(requestId, result);
+		searchGlobalDone(requestId, Safe::KeepOwnResults(result));
 	}).fail([=](const MTP::Error &error, mtpRequestId requestId) {
 		if (_requestId == requestId) {
 			_requestId = 0;

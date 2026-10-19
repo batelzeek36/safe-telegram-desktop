@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
+#include "safe/safe_policy.h"
 
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -3619,6 +3620,9 @@ auto Widget::currentSearchProcess() -> not_null<SearchProcessState*> {
 }
 
 bool Widget::computeSearchWithPostsPreview() const {
+	if (!Safe::DiscoveryAllowed()) {
+		return false;
+	}
 	return 	(_searchHashOrCashtag != HashOrCashtag::None)
 		&& (_searchState.tab == ChatSearchTab::MyMessages)
 		&& !_searchState.inChat;
@@ -4214,7 +4218,8 @@ bool Widget::applySearchState(SearchState state) {
 		|| (state.tab == ChatSearchTab::ThisCommunity
 			&& ((!state.community && !_openedCommunity) || state.inChat))
 		|| (state.tab == ChatSearchTab::PublicPosts
-			&& _searchHashOrCashtag == HashOrCashtag::None)) {
+			&& (_searchHashOrCashtag == HashOrCashtag::None
+				|| !Safe::DiscoveryAllowed()))) {
 		state.tab = state.inChat.topic()
 			? ChatSearchTab::ThisTopic
 			: (state.inChat.owningHistory() || state.inChat.sublist())

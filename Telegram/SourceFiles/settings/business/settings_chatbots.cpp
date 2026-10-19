@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/business/settings_chatbots.h"
+#include "safe/safe_discovery.h"
 
 #include "apiwrap.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
@@ -483,7 +484,8 @@ void AppendUsersFromPeerList(
 				MTP_string(extracted),
 				MTP_int(SearchPeopleLimit)
 			)).done([=](const MTPcontacts_Found &result) {
-				const auto &found = result.data();
+				const auto own = Safe::KeepOwnResults(result);
+				const auto &found = own.data();
 				session->data().processUsers(found.vusers());
 				session->data().processChats(found.vchats());
 				AppendUsersFromPeerList(session, found.vmy_results(), data->my);

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_suggestions.h"
+#include "safe/safe_discovery.h"
 
 #include "api/api_chat_participants.h"
 #include "apiwrap.h"
@@ -2323,6 +2324,9 @@ std::vector<Suggestions::Key> Suggestions::TabKeysFor(
 	if (Core::App().downloadManager().empty()) {
 		result.erase(ranges::find(result, Key{ Tab::Downloads }));
 	}
+	Safe::DropDiscoveryTabs(
+		result,
+		{ Tab::Channels, Tab::Apps, Tab::Posts });
 	return result;
 }
 

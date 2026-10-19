@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/share_box.h"
+#include "safe/safe_discovery.h"
 
 #include "api/api_premium.h"
 #include "base/call_delayed.h"
@@ -434,7 +435,7 @@ bool ShareBox::searchByUsername(bool searchCache) {
 				MTP_string(_peopleQuery),
 				MTP_int(SearchPeopleLimit)
 			)).done([=](const MTPcontacts_Found &result, mtpRequestId requestId) {
-				peopleDone(result, requestId);
+				peopleDone(Safe::KeepOwnResults(result), requestId);
 			}).fail([=](const MTP::Error &error, mtpRequestId requestId) {
 				peopleFail(error, requestId);
 			}).send();

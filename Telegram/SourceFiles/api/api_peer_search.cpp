@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_peer_search.h"
+#include "safe/safe_discovery.h"
 
 #include "api/api_single_message_search.h"
 #include "apiwrap.h"
@@ -53,7 +54,8 @@ void PeerSearch::request(
 	}
 	cache.requested = true;
 	cache.result.query = _query;
-	if (_query.size() < kMinSponsoredQueryLength) {
+	if (_query.size() < kMinSponsoredQueryLength
+		|| !Safe::DiscoveryAllowed()) {
 		cache.sponsoredReady = true;
 	} else if (_type == Type::WithSponsored) {
 		requestSponsored();
@@ -67,7 +69,8 @@ void PeerSearch::requestPeers() {
 		MTP_string(_query),
 		MTP_int(SearchPeopleLimit)
 	)).done([=](const MTPcontacts_Found &result, mtpRequestId requestId) {
-		const auto &data = result.data();
+		const auto own = Safe::KeepOwnResults(result);
+		const auto &data = own.data();
 		_session->data().processUsers(data.vusers());
 		_session->data().processChats(data.vchats());
 		auto parsed = PeerSearchResult();

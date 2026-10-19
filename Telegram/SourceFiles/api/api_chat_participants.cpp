@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_chat_participants.h"
+#include "safe/safe_policy.h"
 
 #include "apiwrap.h"
 #include "boxes/add_contact_box.h" // ShowAddParticipantsError
@@ -859,6 +860,9 @@ void ChatParticipants::applyKicked(
 }
 
 void ChatParticipants::loadSimilarPeers(not_null<PeerData*> peer) {
+	if (!Safe::DiscoveryAllowed()) {
+		return;
+	}
 	if (const auto i = _similar.find(peer); i != end(_similar)) {
 		if (i->second.requestId
 			|| !i->second.peers.more
@@ -921,6 +925,10 @@ auto ChatParticipants::similarLoaded() const
 }
 
 void ChatParticipants::loadRecommendations() {
+	if (!Safe::DiscoveryAllowed()) {
+		_recommendationsLoaded = true;
+		return;
+	}
 	if (_recommendationsLoaded.current() || _recommendations.requestId) {
 		return;
 	}

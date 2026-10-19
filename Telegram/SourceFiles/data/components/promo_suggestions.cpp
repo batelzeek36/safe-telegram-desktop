@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/components/promo_suggestions.h"
+#include "safe/safe_policy.h"
 
 #include "api/api_text_entities.h"
 #include "apiwrap.h"
@@ -131,7 +132,9 @@ void PromoSuggestions::refreshTopPromotion() {
 					|= _dismissedSuggestions.emplace(qs(suggestion)).second;
 			}
 
-			if (const auto peer = data.vpeer()) {
+			if (const auto peer = Safe::DiscoveryAllowed()
+					? data.vpeer()
+					: tl::conditional<MTPPeer>()) {
 				const auto peerId = peerFromMTP(*peer);
 				const auto history = _session->data().history(peerId);
 				setTopPromoted(

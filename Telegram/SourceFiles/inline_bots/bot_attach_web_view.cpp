@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/bot_attach_web_view.h"
+#include "safe/safe_policy.h"
 
 #include "api/api_blocked_peers.h"
 #include "api/api_common.h"
@@ -2589,6 +2590,10 @@ void AttachWebView::closeAll() {
 }
 
 void AttachWebView::loadPopularAppBots() {
+	if (!Safe::DiscoveryAllowed()) {
+		_popularAppBotsLoaded = true;
+		return;
+	}
 	if (_popularAppBotsLoaded.current() || _popularAppBotsRequestId) {
 		return;
 	}
