@@ -1,0 +1,123 @@
+name: Safe Telegram compile check
+
+# Fast loop for work branches: compiles only the source files that differ from the upstream
+# tag (our hooks and Telegram/SourceFiles/safe/*) with Ninja, no link, no app, no artifact.
+# About half an hour instead of the full build's 2.5 hours. Push to any branch except `safe`
+# (which runs the full Mac build) or start it by hand. Errors land in the job summary.
+# Needs the libraries cache the full build saves (`safe-libs-*`, readable from every branch).
+
+on:
+  push:
+    branches-ignore: [safe]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: safe-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+  # Upstream tag this fork's `safe` branch sits on. Change it with every rebase.
+  SAFE_BASE: "v7.3.1"
+
+jobs:
+
+  check:
+    name: Compile changed files
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - name: Get repository name.
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.REPO_NAME }}
+
+      - name: First set up.
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          sudo chown -R `whoami`:admin /usr/local/share
+          brew install automake libtool meson nasm ninja pkg-config
+          sudo mdutil -a -i off
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sudo sed -i '' '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/ -g//' /opt/homebrew/share/cmake/Modules/Compiler/GNU.cmake
+
+      - name: Restore libraries cache.
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            Libraries
+            ThirdParty
+          key: safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-${{ github.run_id }}
+          restore-keys: |
+            safe-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}-
+          fail-on-cache-miss: true
+
+      - name: Changed files.
+        run: |
+          cd $REPO_NAME
+          git fetch --depth=1 https://github.com/telegramdesktop/tdesktop.git "refs/tags/$SAFE_BASE:refs/tags/$SAFE_BASE"
+          git diff --name-only --diff-filter=AMR "$SAFE_BASE" HEAD -- 'Telegram/SourceFiles/' \
+            | grep -E '\.(cpp|mm|c)$' > "$GITHUB_WORKSPACE/changed.txt" || true
+          echo "$(wc -l < "$GITHUB_WORKSPACE/changed.txt") changed source files:"
+          cat "$GITHUB_WORKSPACE/changed.txt"
+
+      # Telegram's public test credentials: the api_hash is a compile definition, so the real
+      # one would show up in every FAILED command line of a public log.
+      - name: Configure.
+        run: |
+          cd $REPO_NAME/Telegram
+          ./configure.sh -GNinja \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D TDESKTOP_API_TEST=ON \
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+
+      - name: Compile.
+        run: |
+          cd $REPO_NAME/out
+          ninja -t targets all | sed -n 's/^\(Telegram\/CMakeFiles\/[^:]*\.o\): .*/\1/p' > "$GITHUB_WORKSPACE/objects.txt"
+          : > "$GITHUB_WORKSPACE/wanted.txt"
+          missing=0
+          while read -r file; do
+            object=$(grep -F "/${file#Telegram/}.o" "$GITHUB_WORKSPACE/objects.txt" | head -1)
+            if [ -z "$object" ]; then
+              echo "::error file=$file::not in the Ninja build (missing from Telegram/CMakeLists.txt?)"
+              missing=1
+            else
+              echo "$object" >> "$GITHUB_WORKSPACE/wanted.txt"
+            fi
+          done < "$GITHUB_WORKSPACE/changed.txt"
+          echo "Compiling $(wc -l < "$GITHUB_WORKSPACE/wanted.txt") objects."
+          set +e
+          ninja -k 0 $(cat "$GITHUB_WORKSPACE/wanted.txt") 2>&1 | tee "$GITHUB_WORKSPACE/compile.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## Compile check"
+            echo
+            echo "$(wc -l < "$GITHUB_WORKSPACE/wanted.txt") changed files, ninja exit $status."
+            echo
+            echo '```'
+            grep -E ': (error|fatal error):|^FAILED: ' "$GITHUB_WORKSPACE/compile.log" | head -200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ $status -ne 0 ] || [ $missing -ne 0 ]; then exit 1; fi
+
+      - name: Upload log.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: compile-log
+          path: |
+            compile.log
+            changed.txt
+          retention-days: 7
+          if-no-files-found: ignore
