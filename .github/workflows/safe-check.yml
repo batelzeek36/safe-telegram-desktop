@@ -74,8 +74,15 @@ jobs:
       - name: Configure.
         run: |
           cd $REPO_NAME/Telegram
+          # Ninja (unlike Xcode) needs every compiler named; lib_translate is Swift.
           ./configure.sh -GNinja \
             -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \
+            -D CMAKE_C_COMPILER="$(xcrun -f clang)" \
+            -D CMAKE_CXX_COMPILER="$(xcrun -f clang++)" \
+            -D CMAKE_OBJC_COMPILER="$(xcrun -f clang)" \
+            -D CMAKE_OBJCXX_COMPILER="$(xcrun -f clang++)" \
+            -D CMAKE_Swift_COMPILER="$(xcrun -f swiftc)" \
             -D TDESKTOP_API_TEST=ON \
             -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
             -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
