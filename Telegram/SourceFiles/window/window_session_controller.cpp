@@ -628,6 +628,9 @@ void SessionNavigation::showPeerByLinkResolved(
 	if (Safe::RefuseLink(uiShow(), peer, info)) {
 		return;
 	}
+	if (Safe::RefuseOff(peer, this)) {
+		return;
+	}
 	auto params = SectionShow{
 		SectionShow::Way::Forward
 	};

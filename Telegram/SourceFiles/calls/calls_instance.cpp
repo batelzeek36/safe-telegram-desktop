@@ -208,6 +208,9 @@ void Instance::startOutgoingCall(
 	if (Safe::RefuseCall(user)) {
 		return;
 	}
+	if (Safe::RefuseOff(user)) {
+		return;
+	}
 	if (activateCurrentCall()
 		|| (!args.isConfirmed && activateUnconfirmedCall(user))) {
 		return;
