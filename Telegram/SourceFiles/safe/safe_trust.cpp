@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_changes.h"
 #include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "main/main_session.h"
@@ -43,6 +44,16 @@ namespace Rules = TrustRules;
 	return Tier::Off;
 }
 
+// Own chats: a basic group, supergroup or channel this account created.
+[[nodiscard]] bool AmCreator(not_null<PeerData*> peer) {
+	if (const auto chat = peer->asChat()) {
+		return chat->amCreator();
+	} else if (const auto channel = peer->asChannel()) {
+		return channel->amCreator();
+	}
+	return false;
+}
+
 [[nodiscard]] Rules::PeerKind KindOf(not_null<PeerData*> peer) {
 	if (const auto user = peer->asUser()) {
 		// Not loaded yet: the bot flag is unknown, so it counts as a bot.
@@ -51,7 +62,67 @@ namespace Rules = TrustRules;
 		}
 		return user->isBot() ? Rules::PeerKind::Bot : Rules::PeerKind::User;
 	}
-	return Rules::PeerKind::Chat;
+	// Read live on every call: a group made today is his at once, a chat
+	// handed to someone else is plain Chat again (its listed tier).
+	return AmCreator(peer) ? Rules::PeerKind::OwnChat : Rules::PeerKind::Chat;
+}
+
+// One notifyChanged per main-loop pass, however many creator flags flip in
+// it (a batch of chats arriving at start). Unguarded on purpose: the store is
+// a process-wide singleton, so the call needs no session.
+void NotifyCreatorFlip() {
+	static auto scheduled = false;
+	if (scheduled) {
+		return;
+	}
+	scheduled = true;
+	crl::on_main([] {
+		scheduled = false;
+		TrustStore::Instance().notifyChanged();
+	});
+}
+
+// The creator flag alone decides the tier of a chat no list names (his own =
+// Trusted, anyone else's = Off), so a flip changes that tier: tell everything
+// that caches tiers. Each chat is watched once, from the first time its tier
+// is asked for while it is unlisted; the watch ends with the session.
+void WatchCreatorFlag(not_null<PeerData*> peer) {
+	using Key = std::pair<not_null<Main::Session*>, PeerId>;
+	static auto watched = base::flat_set<Key>();
+	static auto sessions = base::flat_set<not_null<Main::Session*>>();
+	const auto session = &peer->session();
+	if (!watched.emplace(session, peer->id).second) {
+		return;
+	}
+	if (sessions.emplace(session).second) {
+		session->lifetime().add([=] {
+			sessions.remove(session);
+			for (auto i = begin(watched); i != end(watched);) {
+				if (i->first == session) {
+					i = watched.erase(i);
+				} else {
+					++i;
+				}
+			}
+		});
+	}
+	if (const auto chat = peer->asChat()) {
+		chat->flagsValue() | rpl::skip(
+			1
+		) | rpl::filter([](const ChatData::Flags::Change &change) {
+			return (change.diff & ChatDataFlag::Creator) != 0;
+		}) | rpl::on_next([](const ChatData::Flags::Change &) {
+			NotifyCreatorFlip();
+		}, session->lifetime());
+	} else if (const auto channel = peer->asChannel()) {
+		channel->flagsValue() | rpl::skip(
+			1
+		) | rpl::filter([](const ChannelData::Flags::Change &change) {
+			return (change.diff & ChannelDataFlag::Creator) != 0;
+		}) | rpl::on_next([](const ChannelData::Flags::Change &) {
+			NotifyCreatorFlip();
+		}, session->lifetime());
+	}
 }
 
 [[nodiscard]] std::int64_t SelfOf(not_null<PeerData*> peer) {
@@ -128,10 +199,19 @@ Status StatusOf(not_null<PeerData*> peer) {
 	const auto &policy = TrustStore::Instance().policy();
 	const auto id = DialogIdOf(peer->id);
 	const auto self = SelfOf(peer);
+	if (!peer->isUser() && policy.isUnlisted(id)) {
+		WatchCreatorFlag(peer);
+	}
 	if (const auto channel = DiscussionChannelOf(peer)) {
+		const auto channelId = DialogIdOf(channel->id);
+		if (policy.isUnlisted(channelId)) {
+			WatchCreatorFlag(channel);
+		}
 		return FromRules(policy.discussionStatus(
 			id,
-			DialogIdOf(channel->id),
+			KindOf(peer),
+			channelId,
+			KindOf(channel),
 			self));
 	}
 	return FromRules(policy.statusOf(id, KindOf(peer), self));

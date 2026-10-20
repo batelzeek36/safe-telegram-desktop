@@ -23,10 +23,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 //      the base list;
 //   3. trusted_dialogs -> Trusted, allowed_dialogs -> Allowed;
 //   4. known_dialogs but in neither list -> Off;
-//   5. not known: a person -> New; a group, channel, bot, or a user whose kind
-//      is not known yet -> Off.
+//   5. not known: a person -> New; a group, supergroup or channel this
+//      account created (PeerKind::OwnChat) -> Trusted; any other group,
+//      channel, bot, or a user whose kind is not known yet -> Off.
 // Fail closed: a missing or broken base list gives empty lists, and overrides
-// may then only turn chats Off, never open them.
+// may then only turn chats Off, never open them (the own-chat rule is off
+// too: which of his chats he turned Off is not known then).
+//
+// Own chats (Zach, 2026-10-19: "the groups i make should show automatically"):
+// the creator flag is read live by the caller, so a group made today is
+// Trusted at once. It is only the default: an override or the base list still
+// decides a chat it names (a chat named Off stays Off, an Allowed pick stays
+// Allowed), and a chat handed to someone else is plain Chat again and falls
+// back to its listed tier.
 
 #include <cstddef>
 #include <cstdint>
@@ -69,6 +78,7 @@ enum class PeerKind : unsigned char {
 	Bot,
 	Chat, // A basic group, supergroup or channel.
 	Unknown, // A user whose object is not loaded yet: treated as a bot.
+	OwnChat, // A basic group, supergroup or channel this account created.
 };
 
 [[nodiscard]] Tier TierOfStatus(Status status);
@@ -177,6 +187,25 @@ public:
 		std::int64_t groupId,
 		std::int64_t channelId,
 		std::int64_t selfUserId) const;
+	// The same with both chats' kinds (either may be OwnChat): a group he
+	// created is Trusted on its own, a group under his own channel is raised
+	// to Allowed like under any open channel. The forms above = both Chat.
+	[[nodiscard]] Tier discussionTier(
+		std::int64_t groupId,
+		PeerKind groupKind,
+		std::int64_t channelId,
+		PeerKind channelKind,
+		std::int64_t selfUserId) const;
+	[[nodiscard]] Status discussionStatus(
+		std::int64_t groupId,
+		PeerKind groupKind,
+		std::int64_t channelId,
+		PeerKind channelKind,
+		std::int64_t selfUserId) const;
+
+	// No override and no base list entry names `dialogId`: its tier is the
+	// rule-5 default (a person New, his own chat Trusted, anything else Off).
+	[[nodiscard]] bool isUnlisted(std::int64_t dialogId) const;
 
 	// Every id the base list or the override layer names, sorted.
 	[[nodiscard]] std::vector<std::int64_t> listedIds() const;
