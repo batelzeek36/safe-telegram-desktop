@@ -3956,12 +3956,21 @@ void ListWidget::toggleFavoriteReaction(not_null<Element*> view) const {
 			favorite,
 			&Data::Reaction::id)) {
 		return;
-	} else if (!ranges::contains(item->chosenReactions(), favorite)) {
-		if (const auto top = itemTop(view); top >= 0) {
-			view->animateReaction({ .id = favorite });
+	}
+	// Safe Telegram: toggle first, then animate (as reactionChosen does).
+	// A reaction the message did not have yet has no pill before the
+	// toggle, and animateReaction drops an animation with no pill.
+	const auto adding = !ranges::contains(
+		item->chosenReactions(),
+		favorite);
+	item->toggleReaction(favorite, HistoryReactionSource::Quick);
+	if (adding && ranges::contains(item->chosenReactions(), favorite)) {
+		if (const auto now = viewForItem(item)) {
+			if (const auto top = itemTop(now); top >= 0) {
+				now->animateReaction({ .id = favorite });
+			}
 		}
 	}
-	item->toggleReaction(favorite, HistoryReactionSource::Quick);
 }
 
 void ListWidget::trySwitchToWordSelection() {
