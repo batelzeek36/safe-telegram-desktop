@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "inline_bots/bot_attach_web_view.h"
 #include "main/main_session.h"
 #include "safe/safe_ask.h"
+#include "safe/safe_identity.h"
 #include "safe/safe_trust.h"
 #include "safe/safe_trust_invites.h"
 #include "window/window_session_controller.h"
@@ -25,15 +26,21 @@ namespace {
 
 // User-visible text (C++ constants: cloud language packs cannot change them).
 [[nodiscard]] QString FolderRefusedText() {
-	return u"Folder links can only add chats that are allowed in Safe Telegram."_q;
+	return u"Folder links can only add chats that are allowed in "_q
+		+ Safe::AppName()
+		+ u"."_q;
 }
 
 [[nodiscard]] QString CallNotAllowedText() {
-	return u"This call has people in it who are not allowed in Safe Telegram."_q;
+	return u"This call has people in it who are not allowed in "_q
+		+ Safe::AppName()
+		+ u"."_q;
 }
 
 [[nodiscard]] QString CallUncheckedText() {
-	return u"This call has more people in it than Safe Telegram can check, so it stays closed."_q;
+	return u"This call has more people in it than "_q
+		+ Safe::AppName()
+		+ u" can check, so it stays closed."_q;
 }
 
 // The reason words safe_trust.h lists for Safe::Ask.

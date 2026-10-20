@@ -195,7 +195,8 @@ void Manager::retranslate() {
 		_newChannel->setText(tr::lng_mac_menu_new_channel(tr::now));
 	}
 	if (_showTelegram) {
-		_showTelegram->setText(tr::lng_mac_menu_show(tr::now));
+		_showTelegram->setText(
+			Safe::NameInText(tr::lng_mac_menu_show(tr::now)));
 	}
 	if (_fullScreen) {
 		_fullScreen->setText(tr::lng_mac_menu_fullscreen(tr::now));
@@ -590,7 +591,7 @@ void Manager::buildWindowMenu(QMenu *window) {
 	}
 	window->addSeparator();
 	_showTelegram = window->addAction(
-		u"Show Telegram"_q,
+		Safe::NameInText(u"Show Telegram"_q),
 		receiver,
 		[this] {
 			if (const auto w = resolveActiveWindow()) {

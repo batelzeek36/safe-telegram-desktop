@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "main/main_app_config.h"
 #include "main/main_session.h"
+#include "safe/safe_identity.h"
 #include "safe/safe_notices.h"
 #include "ui/click_handler.h"
 
@@ -31,7 +32,7 @@ std::shared_ptr<ClickHandler> MakeSensitiveRefusedLink() {
 	return std::make_shared<LambdaClickHandler>([](ClickContext context) {
 		ShowNotice(
 			context.other,
-			u"Sensitive media stays hidden in Safe Telegram."_q);
+			u"Sensitive media stays hidden in "_q + AppName() + u"."_q);
 	});
 }
 

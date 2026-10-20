@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "data/data_peer.h"
 #include "main/main_session.h"
+#include "safe/safe_identity.h"
 #include "safe/safe_trust.h"
 #include "safe/safe_trust_invites.h"
 #include "ui/boxes/confirm_box.h"
@@ -28,15 +29,15 @@ constexpr auto kRepeatWindow = crl::time(3000);
 
 // User-visible text (C++ constants: cloud language packs cannot change them).
 [[nodiscard]] QString NotListedText() {
-	return u"Not on your Safe Telegram lists."_q;
+	return u"Not on your "_q + Safe::AppName() + u" lists."_q;
 }
 
 [[nodiscard]] QString ChatOffText() {
-	return u"This chat is off in Safe Telegram."_q;
+	return u"This chat is off in "_q + Safe::AppName() + u"."_q;
 }
 
 [[nodiscard]] QString BotOffText() {
-	return u"This bot is off in Safe Telegram."_q;
+	return u"This bot is off in "_q + Safe::AppName() + u"."_q;
 }
 
 [[nodiscard]] QString AskedText() {

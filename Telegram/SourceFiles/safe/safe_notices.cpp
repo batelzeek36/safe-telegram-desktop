@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_notices.h"
 
 #include "core/click_handler_types.h"
+#include "safe/safe_identity.h"
 #include "safe/safe_policy.h"
 #include "ui/layers/show.h"
 #include "ui/toast/toast.h"
@@ -23,8 +24,9 @@ rpl::producer<TextWithEntities> AboutIntro() {
 
 TextWithEntities UnsupportedMessageText() {
 	auto result = TextWithEntities::Simple(
-		u"This message needs a newer Telegram Desktop. "
-		"It shows once Safe Telegram moves to that release."_q);
+		u"This message needs a newer Telegram Desktop. It shows once "_q
+		+ AppName()
+		+ u" moves to that release."_q);
 	result.entities.push_front(
 		EntityInText(EntityType::Italic, 0, result.text.size()));
 	return result;
@@ -47,7 +49,8 @@ bool RefuseOfficialUpdate() {
 	}
 	ShowNotice(
 		QVariant(),
-		u"Safe Telegram updates come with its own builds. "
+		AppName()
+		+ u" updates come with its own builds. "
 		"It does not install the official app."_q);
 	return true;
 }
@@ -56,7 +59,7 @@ bool RefuseTonSite(const QVariant &context) {
 	if (WebPagesInside()) {
 		return false;
 	}
-	ShowNotice(context, u"TON sites do not open in Safe Telegram."_q);
+	ShowNotice(context, u"TON sites do not open in "_q + AppName() + u"."_q);
 	return true;
 }
 

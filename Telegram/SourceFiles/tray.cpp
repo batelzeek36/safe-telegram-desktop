@@ -88,7 +88,7 @@ void Tray::rebuildMenu() {
 			_activeForTrayIconAction = Core::App().isActiveForTrayMenu();
 			return _activeForTrayIconAction
 				? tr::lng_minimize_to_tray(tr::now)
-				: tr::lng_open_from_tray(tr::now);
+				: Safe::NameInText(tr::lng_open_from_tray(tr::now));
 		});
 
 		_tray.addAction(
@@ -109,7 +109,9 @@ void Tray::rebuildMenu() {
 			[=] { toggleSoundNotifications(); });
 	}
 
-	_tray.addAction(tr::lng_quit_from_tray(), [] { Core::Quit(); });
+	_tray.addAction(tr::lng_quit_from_tray() | rpl::map([](QString text) {
+		return Safe::NameInText(std::move(text));
+	}), [] { Core::Quit(); });
 
 	TrayAccountsMenu::Fill(_tray);
 

@@ -175,17 +175,17 @@ jobs:
       - name: Strip.
         run: |
           cd "$REPO_NAME/out/Release"
-          du -sh "Safe Telegram.app"
-          strip "Safe Telegram.app/Contents/MacOS/Safe Telegram"
-          du -sh "Safe Telegram.app"
-          lipo -archs "Safe Telegram.app/Contents/MacOS/Safe Telegram"
+          du -sh "JADEGRAM.app"
+          strip "JADEGRAM.app/Contents/MacOS/JADEGRAM"
+          du -sh "JADEGRAM.app"
+          lipo -archs "JADEGRAM.app/Contents/MacOS/JADEGRAM"
 
       - name: Encrypt.
         env:
           ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
         run: |
           cd $REPO_NAME/out/Release
-          tar -czf - "Safe Telegram.app" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+          tar -czf - "JADEGRAM.app" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
             -pass env:ARTIFACT_KEY -out "$GITHUB_WORKSPACE/safe-telegram-mac.tgz.enc"
           shasum -a 256 "$GITHUB_WORKSPACE/safe-telegram-mac.tgz.enc"
 

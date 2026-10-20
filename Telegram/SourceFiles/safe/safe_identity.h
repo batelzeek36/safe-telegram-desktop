@@ -16,4 +16,10 @@ namespace Safe {
 [[nodiscard]] QString IntroAbout();
 [[nodiscard]] QString QtAppName();
 
+// An upstream line that names this app as "Telegram" ("Open Telegram",
+// "Quit Telegram", "Show Telegram"), with the first "Telegram" changed to
+// AppName(), in any language (like the phone build's rename rules). Lines
+// that already carry AppName() are returned as they are.
+[[nodiscard]] QString NameInText(QString text);
+
 } // namespace Safe

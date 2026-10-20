@@ -8,10 +8,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Safe {
 
+// The name the app shows (Zach, 2026-10-19: JADEGRAM, all caps; hook script
+// d18-jadegram). Only the shown name: the bundle id, the data folder, the Qt
+// app name and every file inside the data folder keep their Safe Telegram
+// names, so the login and the local data stay where they are.
 QString AppName() {
-	return u"Safe Telegram"_q;
+	return u"JADEGRAM"_q;
 }
 
+// ~/Library/Application Support/<this>/ holds the login and all local data.
+// It is never renamed with the app: a new folder would log out and orphan it.
 QString DataFolderName() {
 	return u"Safe Telegram"_q;
 }
@@ -27,6 +33,19 @@ QString IntroAbout() {
 
 QString QtAppName() {
 	return u"SafeTelegramDesktop"_q;
+}
+
+QString NameInText(QString text) {
+	const auto name = AppName();
+	if (text.contains(name)) {
+		return text;
+	}
+	const auto upstream = u"Telegram"_q;
+	const auto at = text.indexOf(upstream);
+	if (at < 0) {
+		return text;
+	}
+	return text.replace(at, upstream.size(), name);
 }
 
 } // namespace Safe
