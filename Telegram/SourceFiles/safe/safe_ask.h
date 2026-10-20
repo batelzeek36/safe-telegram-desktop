@@ -22,10 +22,10 @@ namespace Safe {
 // (its name and @username, never a photo or an avatar). The wording comes
 // from Safe::StatusOf(peer):
 // - never listed (OffNew, or a New person a gate applies to, like a call):
-//   "Not on your JADEGRAM lists." with Ask to allow / Cancel;
+//   "Not on your JADELEAF lists." with Ask to allow / Cancel;
 // - already asked (OffRequested): "Already asked. It opens once it is
 //   approved." with Close;
-// - listed as off (OffKnown): "This chat is off in JADEGRAM." ("This
+// - listed as off (OffKnown): "This chat is off in JADELEAF." ("This
 //   bot is off ..." for a bot) with Ask to allow / Cancel, like the phone
 //   build's SafeAsk.
 // Trusted and Allowed show nothing. Ask to allow calls Safe::Ask(peer,
