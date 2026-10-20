@@ -576,6 +576,9 @@ Tier Policy::tierOf(
 		return Tier::Allowed;
 	} else if (_lists->known.contains(dialogId)) {
 		return Tier::Off;
+	} else if (kind == PeerKind::OwnChat) {
+		// His own group or channel, named nowhere (never while failed closed).
+		return (_lists->loaded && dialogId < 0) ? Tier::Trusted : Tier::Off;
 	}
 	return (kind == PeerKind::User && dialogId > 0) ? Tier::New : Tier::Off;
 }
@@ -614,7 +617,21 @@ Tier Policy::discussionTier(
 		std::int64_t groupId,
 		std::int64_t channelId,
 		std::int64_t selfUserId) const {
-	const auto own = tierOf(groupId, PeerKind::Chat, selfUserId);
+	return discussionTier(
+		groupId,
+		PeerKind::Chat,
+		channelId,
+		PeerKind::Chat,
+		selfUserId);
+}
+
+Tier Policy::discussionTier(
+		std::int64_t groupId,
+		PeerKind groupKind,
+		std::int64_t channelId,
+		PeerKind channelKind,
+		std::int64_t selfUserId) const {
+	const auto own = tierOf(groupId, groupKind, selfUserId);
 	if (own != Tier::Off
 		|| groupId >= 0
 		|| channelId >= 0
@@ -623,7 +640,7 @@ Tier Policy::discussionTier(
 	} else if (overrideOf(groupId) == Tier::Off) {
 		return Tier::Off;
 	}
-	return IsOpen(tierOf(channelId, PeerKind::Chat, selfUserId))
+	return IsOpen(tierOf(channelId, channelKind, selfUserId))
 		? Tier::Allowed
 		: Tier::Off;
 }
@@ -633,6 +650,24 @@ Status Policy::discussionStatus(
 		std::int64_t channelId,
 		std::int64_t selfUserId) const {
 	return statusFor(groupId, discussionTier(groupId, channelId, selfUserId));
+}
+
+Status Policy::discussionStatus(
+		std::int64_t groupId,
+		PeerKind groupKind,
+		std::int64_t channelId,
+		PeerKind channelKind,
+		std::int64_t selfUserId) const {
+	return statusFor(groupId, discussionTier(
+		groupId,
+		groupKind,
+		channelId,
+		channelKind,
+		selfUserId));
+}
+
+bool Policy::isUnlisted(std::int64_t dialogId) const {
+	return !_overrides.contains(dialogId) && !baseTier(dialogId).has_value();
 }
 
 std::vector<std::int64_t> Policy::listedIds() const {
