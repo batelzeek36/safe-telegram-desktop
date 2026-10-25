@@ -32,5 +32,7 @@ bool WantDocument(
 	not_null<const HistoryItem*> item,
 	not_null<DocumentData*> document);
 bool WantUserpic(not_null<const PeerData*> peer, MediaKey key);
+// A GIF search result (no message): judged by its thumbnail.
+bool WantSearchedGif(not_null<DocumentData*> document);
 
 } // namespace Safe::Covers

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/gifs_list_widget.h"
 #include "safe/safe_bots.h"
+#include "safe/safe_gifs.h"
 
 #include "api/api_toggling_media.h" // Api::ToggleSavedGif
 #include "base/const_string.h"
@@ -360,10 +361,12 @@ void GifsListWidget::paintInlineItems(Painter &p, QRect clip) {
 
 	auto paintItem = [&](not_null<const ItemBase*> item, QPoint point) {
 		p.translate(point.x(), point.y());
-		item->paint(
-			p,
-			clip.translated(-point),
-			&context);
+		if (!Safe::PaintHeldGifTile(p, item)) {
+			item->paint(
+				p,
+				clip.translated(-point),
+				&context);
+		}
 		p.translate(-point.x(), -point.y());
 	};
 	_mosaic.paint(std::move(paintItem), clip);
@@ -383,7 +386,9 @@ void GifsListWidget::mousePressEvent(QMouseEvent *e) {
 
 base::unique_qptr<Ui::PopupMenu> GifsListWidget::fillContextMenu(
 		const SendMenu::Details &details) {
-	if (_selected < 0 || _pressed >= 0) {
+	if (_selected < 0
+		|| _pressed >= 0
+		|| Safe::HoldsGifTile(_mosaic.maybeItemAt(_selected))) {
 		return nullptr;
 	}
 
@@ -482,7 +487,7 @@ void GifsListWidget::selectInlineResult(
 		bool forceSend,
 		bool needsCaption) {
 	const auto item = _mosaic.maybeItemAt(index);
-	if (!item) {
+	if (!item || Safe::HoldsGifTile(item)) {
 		return;
 	}
 
@@ -940,8 +945,12 @@ void GifsListWidget::sendInlineRequest() {
 		}
 	}
 
-	if (!Safe::IsOpenBot(_searchBot)) {
+	if (!Safe::AllowsGifSearch(_searchBot, _inlineQuery)) {
 		_search->setLoading(false);
+		_inlineCache.emplace(
+			_inlineQuery,
+			std::make_unique<InlineCacheEntry>());
+		showInlineRows(true);
 		return;
 	}
 	_search->setLoading(true);
@@ -978,7 +987,9 @@ void GifsListWidget::updateSelected() {
 	const auto &[index, exact, relative] = _mosaic.findByPoint({ sx, sy });
 	const auto selected = exact ? index : -1;
 	const auto item = exact ? _mosaic.itemAt(selected).get() : nullptr;
-	const auto link = exact ? item->getState(relative, {}).link : nullptr;
+	const auto link = (exact && !Safe::HoldsGifTile(item))
+		? item->getState(relative, {}).link
+		: nullptr;
 
 	if (_selected != selected) {
 		if (const auto s = _mosaic.maybeItemAt(_selected)) {
@@ -990,7 +1001,7 @@ void GifsListWidget::updateSelected() {
 		}
 		if (_previewShown && _selected >= 0 && _pressed != _selected) {
 			_pressed = _selected;
-			if (item) {
+			if (item && !Safe::HoldsGifTile(item)) {
 				if (const auto preview = item->getPreviewDocument()) {
 					_show->showMediaPreview(
 						Data::FileOriginSavedGifs(),
@@ -1011,6 +1022,9 @@ void GifsListWidget::showPreview() {
 		return;
 	}
 	if (const auto layout = _mosaic.maybeItemAt(_pressed)) {
+		if (Safe::HoldsGifTile(layout)) {
+			return;
+		}
 		if (const auto previewDocument = layout->getPreviewDocument()) {
 			_previewShown = _show->showMediaPreview(
 				Data::FileOriginSavedGifs(),

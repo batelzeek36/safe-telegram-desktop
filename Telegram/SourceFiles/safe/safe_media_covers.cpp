@@ -364,4 +364,26 @@ bool WantUserpic(not_null<const PeerData*> peer, MediaKey key) {
 	return true;
 }
 
+bool WantSearchedGif(not_null<DocumentData*> document) {
+	const auto key = KeyOf(document);
+	if (!JudgeAvailable() || !key || !document->hasThumbnail()) {
+		return false;
+	}
+	auto &state = Instance();
+	if (Known(state, key)) {
+		return true;
+	}
+	const auto session = &document->session();
+	auto entry = Pending{
+		.session = base::make_weak(session),
+		.key = key,
+		.document = document->createMediaView(),
+		.fileName = document->filename(),
+		.mime = document->mimeString(),
+	};
+	document->loadThumbnail(Data::FileOrigin());
+	Queue(state, session, std::move(entry));
+	return true;
+}
+
 } // namespace Safe::Covers
