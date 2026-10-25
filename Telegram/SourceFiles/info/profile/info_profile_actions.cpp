@@ -144,6 +144,7 @@ base::options::toggle ShowPeerIdBelowAbout({
 	.name = "Show Peer IDs in Profile",
 	.description = "Show peer IDs from API below their Bio / Description."
 		" Add contact IDs to exported data.",
+	.defaultValue = true, // Safe (d23): on, Zach builds bots and scripts.
 });
 
 base::options::toggle ShowChannelJoinedBelowAbout({
@@ -228,6 +229,17 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 	return Ui::CreateSkipWidget(parent, st::infoProfileSkip);
 }
 
+// Safe (d23): the id bots and scripts use (Bot API form): users as is,
+// basic groups negative, channels and supergroups -100 in front.
+[[nodiscard]] QString ShownPeerId(not_null<PeerData*> peer) {
+	const auto bare = int64(peer->id.value & PeerId::kChatTypeMask);
+	return QString::number(peer->isUser()
+		? bare
+		: peer->isChat()
+		? -bare
+		: (-1000000000000LL - bare));
+}
+
 [[nodiscard]] rpl::producer<TextWithEntities> AboutWithAdvancedValue(
 		not_null<PeerData*> peer) {
 
@@ -240,10 +252,7 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 				value.append("\n\n");
 			}
 			value.append(Italic(u"id: "_q));
-			const auto raw = peer->id.value & PeerId::kChatTypeMask;
-			value.append(Link(
-				Italic(Lang::FormatCountDecimal(raw)),
-				kPeerIdLinkIndex));
+			value.append(Link(Italic(ShownPeerId(peer)), kPeerIdLinkIndex));
 		}
 		if (ShowChannelJoinedBelowAbout.value()) {
 			if (const auto channel = peer->asChannel()) {
@@ -279,7 +288,7 @@ void SetupAboutPeerIdDrag(
 	if (!ShowPeerIdBelowAbout.value()) {
 		return;
 	}
-	const auto id = QString::number(peer->id.value & PeerId::kChatTypeMask);
+	const auto id = ShownPeerId(peer);
 	AboutValue(
 		peer
 	) | rpl::on_next([=] {
