@@ -236,6 +236,7 @@ public:
 	void itemEdited(not_null<HistoryItem*> item);
 
 	void replyToMessage(FullReplyTo id);
+	void calmSuggestReply(FullMsgId itemId);
 	void replyToMessage(
 		not_null<HistoryItem*> item,
 		FullReplyTo fields = {});

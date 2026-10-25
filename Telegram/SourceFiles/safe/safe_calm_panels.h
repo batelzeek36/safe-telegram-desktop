@@ -11,10 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 
-// The floating pieces Calm shows above a composer (docs/previews/calm/):
-// the Second look card (A), the "Reads hot" sheet (B), the Autopilot toast
-// (C) and the small pill. One widget paints all of them, buttons included,
-// so a panel fades and slides in as one piece.
+// The pieces Calm shows above a composer (docs/previews/calm/): the Second
+// look card (A), the "Reads hot" sheet (B) and the small pill. One widget
+// paints all of them, buttons included, so a panel fades and slides in as
+// one piece. The card and the sheet take room above the composer (the chat
+// moves up for them); the pill floats.
 namespace Safe::Calm {
 
 struct PanelButton {
@@ -22,7 +23,6 @@ struct PanelButton {
 		Primary, // jade, full width
 		Ghost,
 		Ember, // a ghost button in ember ("Send mine")
-		Undo,
 	};
 	QString text;
 	Look look = Look::Ghost;
@@ -52,8 +52,6 @@ public:
 		const Verdict &verdict,
 		Fn<void()> use,
 		Fn<void()> keepEditing);
-	// C: "Softened", Undo and a ring that runs out in `duration`.
-	void showToast(crl::time duration, Fn<void()> undo);
 	// A one-line note that hides itself.
 	void showPill(const QString &text);
 
@@ -67,6 +65,10 @@ public:
 
 	// Where the composer is, in the parent's coordinates.
 	void setAnchor(QRect compose);
+	// The room the card or the sheet takes above the composer, kept while
+	// it fades out; the pill takes none.
+	[[nodiscard]] int reservedHeight() const;
+	void setChangedCallback(Fn<void()> changed);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -82,7 +84,6 @@ private:
 		Card,
 		Failed,
 		Sheet,
-		Toast,
 		Pill,
 	};
 	struct Laid {
@@ -99,6 +100,7 @@ private:
 	void paintButton(QPainter &p, const Laid &laid, bool over);
 	[[nodiscard]] int buttonAt(QPoint point) const;
 	void finishHiding();
+	void notifyChanged();
 
 	Kind _kind = Kind::None;
 	QRect _anchor;
@@ -123,11 +125,12 @@ private:
 	int _boxHeight = 0;
 	int _laidWidth = 0;
 	int _relayoutFor = 0;
+	int _reserved = 0;
+	bool _painting = false;
+	Fn<void()> _changed;
 
 	Ui::Animations::Simple _shown;
 	Ui::Animations::Basic _ticker;
-	crl::time _started = 0;
-	crl::time _duration = 0;
 	bool _hiding = false;
 	base::Timer _autoHide;
 

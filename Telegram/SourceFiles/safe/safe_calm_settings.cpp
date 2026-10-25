@@ -80,6 +80,8 @@ void Save(const Settings &settings) {
 		{ u"typing"_q, settings.typing },
 		{ u"incoming"_q, settings.incoming },
 		{ u"incomingSince"_q, double(settings.incomingSince) },
+		{ u"suggest"_q, settings.suggest },
+		{ u"ready"_q, settings.ready },
 		{ u"chats"_q, chats },
 	}).toJson(QJsonDocument::Indented));
 }
@@ -102,6 +104,8 @@ void Load(State &state) {
 	settings.send = SendModeFrom(object.value(u"send"_q).toString());
 	settings.typing = object.value(u"typing"_q).toBool(true);
 	settings.incoming = object.value(u"incoming"_q).toBool(true);
+	settings.suggest = object.value(u"suggest"_q).toBool(true);
+	settings.ready = object.value(u"ready"_q).toBool(false);
 	settings.incomingSince = TimeId(
 		object.value(u"incomingSince"_q).toDouble());
 	if (settings.incoming && settings.incomingSince <= 0) {
@@ -200,6 +204,8 @@ Modes ModesFor(not_null<PeerData*> peer) {
 		.incomingSince = settings.incoming
 			? std::min(settings.incomingSince, i->second.since)
 			: i->second.since,
+		.suggest = settings.suggest,
+		.ready = settings.suggest && settings.ready,
 	};
 	case ChatRule::Default: break;
 	}
@@ -213,6 +219,8 @@ Modes ModesFor(not_null<PeerData*> peer) {
 		.typing = settings.typing,
 		.incoming = settings.incoming && peer->isUser(),
 		.incomingSince = settings.incomingSince,
+		.suggest = settings.suggest,
+		.ready = settings.suggest && settings.ready && peer->isUser(),
 	};
 }
 

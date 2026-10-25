@@ -15,11 +15,13 @@ class Session;
 
 namespace Ui {
 class GenericBox;
+class PopupMenu;
 } // namespace Ui
 
-// Calm mode's boxes: the settings (Settings > Chat Settings > Calm mode,
-// laid out like docs/previews/calm/js/settings.js), one chat's rule (the
-// chat's menu) and "What you typed" on a softened message he sent.
+// Calm mode's boxes and menu items: the settings (Settings > Chat Settings
+// > Calm mode, laid out like docs/previews/calm/js/settings.js), one chat's
+// rule (the chat's menu), "What you typed" on a softened message he sent
+// and "Suggest a reply" on a message (next-suggest-ui.js messageMenu).
 namespace Safe::Calm {
 
 void SettingsBox(
@@ -37,5 +39,12 @@ void ChatRuleBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer);
 void WhatYouTypedBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<HistoryItem*> item);
+
+// The message's menu: "Suggest a reply" with the leaf, when suggestions
+// are on in its chat and it has words to answer.
+void AddSuggestReplyAction(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<HistoryItem*> item,
+	Fn<void()> callback);
 
 } // namespace Safe::Calm

@@ -12,7 +12,8 @@ class PeerData;
 
 // Calm mode's choices (Settings > Chat Settings > Calm mode, docs/CALM.md
 // "Modes"), kept in safe_calm.json in the app's data folder. Defaults are
-// Zach's picks of 2026-10-25: Second look, leaf on, their side on.
+// Zach's picks of 2026-10-25: Second look, leaf on, their side on, reply
+// suggestions on, ready ideas off.
 namespace Safe::Calm {
 
 enum class SendMode : uchar {
@@ -37,6 +38,8 @@ struct Settings {
 	bool typing = true; // B: Leaf in the bar
 	bool incoming = true; // D: Their side
 	TimeId incomingSince = 0; // when their side was last switched on
+	bool suggest = true; // reply suggestions on demand (S2 and S)
+	bool ready = false; // S2 on its own when a message lands
 	base::flat_map<PeerId, ChatEntry> chats;
 };
 
@@ -46,6 +49,8 @@ struct Modes {
 	bool typing = false;
 	bool incoming = false;
 	TimeId incomingSince = 0;
+	bool suggest = false;
+	bool ready = false;
 
 	[[nodiscard]] bool outgoing() const {
 		return (send != SendMode::Off) || typing;
@@ -60,9 +65,10 @@ void Update(Fn<void(Settings&)> change);
 void SetRule(PeerId peer, ChatRule rule);
 
 // Default rule: people and groups only (not bots, not channels, not Saved
-// Messages or the service account), their side in one-on-one chats only;
-// Always turns everything on in that chat (Second look when Send is Off),
-// Off turns everything off.
+// Messages or the service account), their side and ready ideas in
+// one-on-one chats only; Always turns the checks on in that chat (Second
+// look when Send is Off) and follows the suggestion switches, Off turns
+// everything off.
 [[nodiscard]] Modes ModesFor(not_null<PeerData*> peer);
 
 } // namespace Safe::Calm

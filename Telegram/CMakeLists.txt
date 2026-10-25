@@ -1888,6 +1888,8 @@ PRIVATE
     safe/safe_calm_data.h
     safe/safe_calm_files.cpp
     safe/safe_calm_files.h
+    safe/safe_calm_ideas.cpp
+    safe/safe_calm_ideas.h
     safe/safe_calm_incoming.cpp
     safe/safe_calm_leaf.cpp
     safe/safe_calm_leaf.h

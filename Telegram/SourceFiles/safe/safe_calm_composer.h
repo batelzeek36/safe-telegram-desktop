@@ -8,9 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "base/unique_qptr.h"
+#include "base/weak_ptr.h"
+#include "data/data_msg_id.h"
 #include "safe/safe_calm_prompt.h"
+#include "safe/safe_calm_suggest_prompt.h"
 
 class History;
+class HistoryItem;
 
 namespace Ui {
 class InputField;
@@ -22,11 +26,14 @@ namespace Safe::Calm {
 class LeafButton;
 class HeatLine;
 class Panel;
+class Ideas;
 
 // Calm on one message composer (HistoryWidget's own and ComposeControls'):
-// the leaf in the bar with its heat line and the wavy underline (B), and
-// the send intercept for Second look (A) and Autopilot (C).
-class Composer final {
+// the leaf in the bar with its heat line and the wavy underline (B), the
+// send intercept for Second look (A) and Autopilot (C), and reply ideas:
+// the leaf with an empty field, one message from its menu, and Ready ideas
+// when a message lands.
+class Composer final : public base::has_weak_ptr {
 public:
 	struct Args {
 		not_null<Ui::RpWidget*> parent; // the panels and the heat line
@@ -36,6 +43,9 @@ public:
 		Fn<TextWithTags()> text; // what Send would send
 		Fn<void(TextWithTags)> setText;
 		Fn<void()> relayout; // the leaf was shown or hidden
+		// The host moves the chat up by reservedHeight(); without it the
+		// pieces float over the chat.
+		Fn<void()> reserve;
 	};
 	explicit Composer(Args &&args);
 	~Composer();
@@ -47,6 +57,12 @@ public:
 	void moveLeaf(int left, int top);
 	// The compose bar, in the parent's coordinates.
 	void setComposeRect(QRect rect);
+	// The room the card, the sheet or the ideas take above the bar, so
+	// nothing Calm shows covers the newest messages.
+	[[nodiscard]] int reservedHeight() const;
+
+	// Reply ideas for one message; the host put it in the reply slot.
+	void suggestFor(not_null<HistoryItem*> item);
 
 	// True when Calm took this send; `resend` runs again (and passes) once
 	// Zach chose. Autopilot never takes it: the send goes out as a bubble at
@@ -75,19 +91,44 @@ private:
 	void closePanel();
 	[[nodiscard]] QString currentText() const;
 
+	void showIdeas(HistoryItem *replyTo, bool fresh, bool automatic);
+	void ideasAnswered(const SuggestResult &result);
+	void closeIdeas();
+	void pickIdea(const QString &text);
+	void watchLandings();
+	void messageLanded(not_null<HistoryItem*> item);
+	void readyCheck();
+	[[nodiscard]] int computeReserve() const;
+	void reserveChanged();
+	void queueReserveCheck();
+
 	const not_null<Ui::RpWidget*> _parent;
 	const not_null<Ui::InputField*> _field;
 	const Fn<TextWithTags()> _text;
 	const Fn<void(TextWithTags)> _setText;
 	const Fn<void()> _relayout;
+	const Fn<void()> _reserve;
 	History *_history = nullptr;
 
 	base::unique_qptr<LeafButton> _leaf;
 	base::unique_qptr<HeatLine> _heatLine;
 	base::unique_qptr<Panel> _panel;
+	base::unique_qptr<Ideas> _ideas;
 	QRect _composeRect;
 	bool _leafShown = false;
 	bool _typing = false;
+	bool _suggest = false;
+	bool _ready = false;
+
+	uint64 _suggestCall = 0;
+	FullMsgId _ideasFor; // the message the panel answers; empty for chips
+	bool _ideasAuto = false; // Ready ideas, not asked for
+	base::Timer _readyTimer;
+	FullMsgId _readyWaitFor; // landed, still held by their side
+	rpl::lifetime _historyLifetime;
+	mutable int _appliedReserve = 0;
+	bool _layingOut = false;
+	bool _reserveQueued = false;
 
 	base::Timer _typingTimer;
 	uint64 _typingWaiter = 0;

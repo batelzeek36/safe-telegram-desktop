@@ -3318,6 +3318,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					Ui::Text::FixAmpersandInAction);
 			const auto replyToItem = selected.item ? selected.item : item;
 			const auto itemId = replyToItem->fullId();
+			if (canSendReply) {
+				Safe::Calm::AddSuggestReplyAction(_menu.get(), replyToItem, [=] {
+					_widget->calmSuggestReply(itemId);
+				});
+			}
 			_menu->addAction(std::move(text), [=] {
 				_widget->replyToMessage({
 					.messageId = itemId,

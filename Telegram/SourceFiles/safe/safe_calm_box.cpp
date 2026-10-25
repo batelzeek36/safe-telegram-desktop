@@ -13,20 +13,30 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "safe/safe_calm.h"
 #include "safe/safe_calm_leaf.h"
+#include "safe/safe_calm_marks.h"
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/menu/menu_action.h"
+#include "ui/widgets/menu/menu_common.h"
+#include "ui/widgets/popup_menu.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
+#include "styles/style_widgets.h"
+
+#include <QtWidgets/QGraphicsOpacityEffect>
 
 namespace Safe::Calm {
 namespace {
 
 constexpr auto kHeroLeaf = 28;
+constexpr auto kMenuLeaf = 18;
+constexpr auto kMenuIcon = 24;
+constexpr auto kNewSize = 11;
 
 class Hero final : public Ui::RpWidget {
 public:
@@ -85,6 +95,114 @@ void Hero::paintEvent(QPaintEvent *e) {
 		.outerWidth = width(),
 		.availableWidth = width() - left - padding.right(),
 	});
+}
+
+// The small "new" pill after a section title (next-suggest.css .set-new).
+class NewMark final : public Ui::RpWidget {
+public:
+	explicit NewMark(QWidget *parent);
+
+protected:
+	void paintEvent(QPaintEvent *e) override;
+
+private:
+	[[nodiscard]] static const style::font &Font();
+
+};
+
+NewMark::NewMark(QWidget *parent)
+: RpWidget(parent) {
+	setAttribute(Qt::WA_TransparentForMouseEvents);
+	resize(
+		Font()->width(u"new"_q) + 2 * style::ConvertScale(7),
+		Font()->height + 2 * style::ConvertScale(2));
+}
+
+const style::font &NewMark::Font() {
+	static const auto result = style::font(
+		style::ConvertScale(kNewSize),
+		st::semiboldFont->flags(),
+		st::semiboldFont->family());
+	return result;
+}
+
+void NewMark::paintEvent(QPaintEvent *e) {
+	auto p = QPainter(this);
+	auto hq = PainterHighQualityEnabler(p);
+	const auto radius = style::ConvertScale(8);
+	p.setPen(Qt::NoPen);
+	p.setBrush(JadeColor(0.16));
+	p.drawRoundedRect(rect(), radius, radius);
+	p.setFont(Font());
+	p.setPen(TickColor(st::windowFg->c));
+	p.drawText(rect(), u"new"_q, style::al_center);
+}
+
+// "Suggest a reply" leads with the leaf in jade, drawn where icons go.
+class LeafAction final : public Ui::Menu::Action {
+public:
+	using Action::Action;
+
+protected:
+	void paintEvent(QPaintEvent *e) override;
+
+};
+
+void LeafAction::paintEvent(QPaintEvent *e) {
+	Action::paintEvent(e);
+	auto p = QPainter(this);
+	const auto box = QRectF(
+		st().itemIconPosition,
+		QSizeF(style::ConvertScale(kMenuIcon), style::ConvertScale(kMenuIcon)));
+	PaintLeaf(p, box, style::ConvertScale(kMenuLeaf), JadeColor());
+}
+
+void AddSuggestionRows(not_null<Ui::VerticalLayout*> container) {
+	Ui::AddSkip(container);
+	const auto title = Ui::AddSubsectionTitle(
+		container,
+		rpl::single(u"When you're stuck"_q));
+	const auto mark = Ui::CreateChild<NewMark>(container.get());
+	title->geometryValue() | rpl::on_next([=](QRect geometry) {
+		mark->move(
+			geometry.x() + title->textMaxWidth() + style::ConvertScale(8),
+			geometry.y() + (geometry.height() - mark->height()) / 2);
+	}, mark->lifetime());
+	mark->show();
+
+	const auto suggest = container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Reply suggestions"_q),
+		st::settingsButtonNoIcon));
+	suggest->toggleOn(rpl::single(Current().suggest));
+	const auto ready = container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Ready ideas"_q),
+		st::settingsButtonNoIcon));
+	ready->toggleOn(rpl::single(Current().ready));
+	// Greyed while suggestions are off, like the mock's dimmed row.
+	const auto dim = Ui::CreateChild<QGraphicsOpacityEffect>(ready);
+	ready->setGraphicsEffect(dim);
+	const auto follow = [=](bool suggestions) {
+		dim->setOpacity(suggestions ? 1. : 0.4);
+		dim->setEnabled(!suggestions);
+		ready->setDisabled(!suggestions);
+	};
+	follow(Current().suggest);
+	suggest->toggledChanges() | rpl::on_next([=](bool on) {
+		Update([&](Settings &settings) { settings.suggest = on; });
+		follow(on);
+	}, suggest->lifetime());
+	ready->toggledChanges() | rpl::on_next([=](bool on) {
+		Update([&](Settings &settings) { settings.ready = on; });
+	}, ready->lifetime());
+	Ui::AddSkip(container);
+	Ui::AddDividerText(
+		container,
+		rpl::single(u"Click the leaf with an empty field for three ideas for "
+			"the whole chat, or right-click a message and choose Suggest a "
+			"reply. Ready ideas show up on their own when a message lands; "
+			"typing hides them."_q));
 }
 
 [[nodiscard]] QString RuleText(ChatRule rule) {
@@ -213,6 +331,8 @@ void SettingsBox(
 			"version, with a small leaf by the time. There is no way to open "
 			"the original. Set a group to Always to include it."_q));
 
+	AddSuggestionRows(container);
+
 	Ui::AddSkip(container);
 	Ui::AddSubsectionTitle(container, rpl::single(u"Chats"_q));
 	AddChatRows(container, session);
@@ -283,6 +403,27 @@ void WhatYouTypedBox(
 		box->verticalLayout(),
 		rpl::single(u"Only you can see this. %1 got the calm one."_q.arg(
 			name)));
+}
+
+void AddSuggestReplyAction(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<HistoryItem*> item,
+		Fn<void()> callback) {
+	if (!ModesFor(item->history()->peer).suggest
+		|| !item->isRegular()
+		|| IsHeld(item)
+		|| item->originalText().text.trimmed().isEmpty()) {
+		return;
+	}
+	menu->addAction(base::make_unique_q<LeafAction>(
+		menu->menu(),
+		menu->st().menu,
+		Ui::Menu::CreateAction(
+			menu->menu().get(),
+			u"Suggest a reply"_q,
+			std::move(callback)),
+		nullptr,
+		nullptr));
 }
 
 } // namespace Safe::Calm

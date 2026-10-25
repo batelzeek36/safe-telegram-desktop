@@ -29,7 +29,6 @@ constexpr auto kBubbleRadius = 12;
 constexpr auto kSkeleton = 44;
 constexpr auto kButtonHeight = 36;
 constexpr auto kButtonRadius = 12;
-constexpr auto kToastHeight = 44;
 constexpr auto kPillHeight = 28;
 constexpr auto kHeatBar = 14;
 constexpr auto kPillShowMs = crl::time(1700);
@@ -148,17 +147,6 @@ void Panel::showSheet(
 	});
 }
 
-void Panel::showToast(crl::time duration, Fn<void()> undo) {
-	_head = u"Softened"_q;
-	_hint = u"sending in a moment"_q;
-	_duration = duration;
-	start(Kind::Toast, {
-		{ u"Undo"_q, PanelButton::Look::Undo, std::move(undo) },
-	});
-	_started = crl::now();
-	_ticker.start();
-}
-
 void Panel::showPill(const QString &text) {
 	_head = text;
 	_hint = QString();
@@ -184,6 +172,7 @@ void Panel::start(Kind kind, std::vector<PanelButton> buttons) {
 		_shown.start([=] { update(); }, 0., 1., kAnimationMs, anim::easeOutCirc);
 	}
 	update();
+	notifyChanged();
 }
 
 void Panel::hideAnimated() {
@@ -212,6 +201,27 @@ void Panel::finishHiding() {
 	_autoHide.cancel();
 	_buttons.clear();
 	hide();
+	notifyChanged();
+}
+
+void Panel::setChangedCallback(Fn<void()> changed) {
+	_changed = std::move(changed);
+}
+
+void Panel::notifyChanged() {
+	if (!_changed) {
+		return;
+	} else if (_painting) {
+		crl::on_main(this, [=] { _changed(); });
+	} else {
+		_changed();
+	}
+}
+
+int Panel::reservedHeight() const {
+	return (isHidden() || _kind == Kind::None || _kind == Kind::Pill)
+		? 0
+		: _reserved;
 }
 
 bool Panel::activatePrimary() {
@@ -233,7 +243,11 @@ void Panel::setAnchor(QRect compose) {
 	if (_anchor != compose) {
 		_anchor = compose;
 		if (_kind != Kind::None) {
+			const auto was = _reserved;
 			relayout();
+			if (_reserved != was) {
+				notifyChanged();
+			}
 		}
 	}
 }
@@ -241,15 +255,6 @@ void Panel::setAnchor(QRect compose) {
 int Panel::contentWidth() const {
 	const auto available = _anchor.width() - 2 * S(kSide);
 	switch (_kind) {
-	case Kind::Toast: {
-		const auto text = HeadFont()->width(_head)
-			+ S(8)
-			+ SmallFont()->width(_hint);
-		const auto undo = BodyFont()->width(u"Undo"_q) + S(28);
-		return std::min(
-			available,
-			S(kPadding) * 2 + S(kLeafHead) + S(8) + text + S(12) + undo + S(26));
-	}
 	case Kind::Pill:
 		return std::min(
 			available,
@@ -336,15 +341,7 @@ void Panel::relayout() {
 	const auto width = contentWidth();
 	_laidWidth = width;
 	auto height = 0;
-	if (_kind == Kind::Toast) {
-		height = S(kToastHeight);
-		const auto undoWidth = BodyFont()->width(u"Undo"_q) + S(28);
-		_buttons[0].rect = QRect(
-			S(kShadow) + width - S(kPadding) - S(26) - undoWidth,
-			S(kShadow) + (height - S(30)) / 2,
-			undoWidth,
-			S(30));
-	} else if (_kind == Kind::Pill) {
+	if (_kind == Kind::Pill) {
 		height = S(kPillHeight);
 	} else {
 		const auto top = layoutBody(S(kShadow) + S(kPadding), width);
@@ -357,12 +354,13 @@ void Panel::relayout() {
 			+ S(kPadding) - S(4);
 	}
 	const auto full = QSize(width + 2 * S(kShadow), height + 2 * S(kShadow));
-	const auto centered = (_kind == Kind::Toast || _kind == Kind::Pill);
+	const auto centered = (_kind == Kind::Pill);
 	const auto x = centered
 		? (_anchor.x() + (_anchor.width() - width) / 2)
 		: (_anchor.x() + _anchor.width() - S(kSide) - width);
 	const auto y = _anchor.y() - S(kGap) - height;
 	setGeometry(QRect(QPoint(x - S(kShadow), y - S(kShadow)), full));
+	_reserved = S(kGap) + height;
 	update();
 }
 
@@ -374,7 +372,10 @@ void Panel::paintEvent(QPaintEvent *e) {
 		{ S(kShadow), S(kShadow), S(kShadow), S(kShadow) });
 	if (box.width() != _laidWidth && _relayoutFor != box.width()) {
 		_relayoutFor = box.width();
+		_painting = true;
 		relayout();
+		notifyChanged();
+		_painting = false;
 		return;
 	}
 	auto p = QPainter(this);
@@ -382,7 +383,7 @@ void Panel::paintEvent(QPaintEvent *e) {
 	const auto progress = _shown.value(_hiding ? 0. : 1.);
 	if (progress < 1.) {
 		const auto scale = 0.96 + 0.04 * progress;
-		const auto origin = (_kind == Kind::Toast || _kind == Kind::Pill)
+		const auto origin = (_kind == Kind::Pill)
 			? QPointF(box.center().x(), box.bottom())
 			: QPointF(box.right(), box.bottom());
 		p.translate(origin);
@@ -390,9 +391,7 @@ void Panel::paintEvent(QPaintEvent *e) {
 		p.translate(-origin);
 		p.setOpacity(progress);
 	}
-	const auto radius = (_kind == Kind::Pill || _kind == Kind::Toast)
-		? S(14)
-		: S(kRadius);
+	const auto radius = (_kind == Kind::Pill) ? S(14) : S(kRadius);
 	for (auto i = 3; i != 0; --i) {
 		p.setPen(Qt::NoPen);
 		p.setBrush(QColor(0, 0, 0, 14 * (4 - i)));
@@ -428,34 +427,6 @@ void Panel::paintBody(QPainter &p, int width) {
 			left + S(13) + S(6),
 			top + (h - SmallFont()->height) / 2 + SmallFont()->ascent,
 			_head);
-		return;
-	} else if (_kind == Kind::Toast) {
-		const auto h = S(kToastHeight);
-		PaintLeaf(p, QRectF(left, top + (h - S(kLeafHead)) / 2., S(kLeafHead), S(kLeafHead)), S(kLeafHead), JadeColor());
-		auto x = left + S(kLeafHead) + S(8);
-		p.setFont(HeadFont());
-		p.setPen(st::windowFg);
-		const auto baseline = top + (h - HeadFont()->height) / 2 + HeadFont()->ascent;
-		p.drawText(x, baseline, _head);
-		x += HeadFont()->width(_head) + S(8);
-		p.setFont(SmallFont());
-		p.setPen(st::windowSubTextFg);
-		p.drawText(x, baseline, _hint);
-		const auto elapsed = std::clamp(crl::now() - _started, crl::time(0), _duration);
-		const auto left = _duration ? (1. - elapsed / float64(_duration)) : 0.;
-		const auto ring = QRectF(
-			S(kShadow) + width - S(kPadding) - S(18),
-			top + (h - S(18)) / 2.,
-			S(18),
-			S(18));
-		p.setBrush(Qt::NoBrush);
-		p.setPen(QPen(JadeColor(0.25), S(2)));
-		p.drawEllipse(ring.adjusted(S(1), S(1), -S(1), -S(1)));
-		p.setPen(QPen(JadeColor(), S(2), Qt::SolidLine, Qt::RoundCap));
-		p.drawArc(
-			ring.adjusted(S(1), S(1), -S(1), -S(1)),
-			90 * 16,
-			int(360 * 16 * left));
 		return;
 	}
 
@@ -596,12 +567,6 @@ void Panel::paintButton(QPainter &p, const Laid &laid, bool over) {
 		}
 		fg = QColor(0x04, 0x26, 0x1A);
 	} break;
-	case PanelButton::Look::Undo:
-		p.setPen(Qt::NoPen);
-		p.setBrush(over ? JadeColor(0.26) : JadeColor(0.16));
-		p.drawRoundedRect(rect, S(10), S(10));
-		fg = JadeColor();
-		break;
 	case PanelButton::Look::Ghost:
 	case PanelButton::Look::Ember:
 		if (over) {

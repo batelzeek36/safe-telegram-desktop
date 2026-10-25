@@ -590,6 +590,7 @@ HistoryWidget::HistoryWidget(
 					Ui::InputField::HistoryAction::NewEntry);
 			},
 			.relayout = [=] { updateFieldSize(); },
+			.reserve = [=] { updateControlsGeometry(); },
 		});
 	initSendAsFileButton();
 	initExpandButton();
@@ -8683,6 +8684,9 @@ void HistoryWidget::updateHistoryGeometry(
 		if (_kbShown) {
 			newScrollHeight -= _kbScroll->height();
 		}
+		if (_calm) {
+			newScrollHeight -= _calm->reservedHeight();
+		}
 	}
 	if (newScrollHeight <= 0) {
 		return;
@@ -10438,6 +10442,15 @@ void HistoryWidget::clearFieldText(
 		TextUpdateEvents events,
 		FieldHistoryAction fieldHistoryAction) {
 	setFieldText(TextWithTags(), events, fieldHistoryAction);
+}
+
+void HistoryWidget::calmSuggestReply(FullMsgId itemId) {
+	const auto item = session().data().message(itemId);
+	if (!_calm || !item || item->history() != _history) {
+		return;
+	}
+	replyToMessage({ .messageId = itemId });
+	_calm->suggestFor(item);
 }
 
 void HistoryWidget::replyToMessage(FullReplyTo id) {
