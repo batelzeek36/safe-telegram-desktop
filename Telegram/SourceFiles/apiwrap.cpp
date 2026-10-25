@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_tenor.h"
 #include "safe/safe_gate.h"
 #include "safe/safe_sensitive.h"
+#include "safe/safe_calm_queue.h"
 
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
@@ -5018,6 +5019,25 @@ void ApiWrap::sendMessage(
 		const auto mtpShortcut = Data::ShortcutIdToMTP(
 			_session,
 			action.options.shortcutId);
+		Safe::Calm::OfferRebuild(randomId, [=](const QString &calm) {
+			return Data::Histories::PrepareMessage<MTPmessages_SendMessage>(
+				MTP_flags(sendFlags
+					& ~MTPmessages_SendMessage::Flag::f_entities),
+				peer->input(),
+				Data::Histories::ReplyToPlaceholder(),
+				MTP_string(calm),
+				MTP_long(randomId),
+				MTPReplyMarkup(),
+				MTPVector<MTPMessageEntity>(),
+				MTP_int(action.options.scheduled),
+				MTP_int(action.options.scheduleRepeatPeriod),
+				(sendAs ? sendAs->input() : MTP_inputPeerEmpty()),
+				mtpShortcut,
+				MTP_long(action.options.effectId),
+				MTP_long(starsPaid),
+				Api::SuggestToMTP(action.options.suggest),
+				MTPInputRichMessage());
+		});
 		if (exactWebPage
 			&& !ignoreWebPage
 			&& (manualWebPage || sending.empty())) {

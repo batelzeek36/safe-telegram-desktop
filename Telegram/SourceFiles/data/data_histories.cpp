@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_histories.h"
 
-#include "safe/safe_calm.h"
+#include "safe/safe_calm_queue.h"
 
 #include "api/api_text_entities.h"
 #include "data/business/data_shortcut_messages.h"
@@ -1144,8 +1144,9 @@ int Histories::sendPreparedMessage(
 		Fn<PreparedMessage(not_null<History*>, FullReplyTo)> message,
 		Fn<void(const MTPUpdates&, const MTP::Response&)> done,
 		Fn<void(const MTP::Error&, const MTP::Response&)> fail) {
-	if (Safe::Calm::DeferSend(history, randomId, [=] {
-		sendPreparedMessage(history, replyTo, randomId, message, done, fail);
+	if (Safe::Calm::DeferSend(history, randomId, message, [=](
+			Safe::Calm::Builder prepared) {
+		sendPreparedMessage(history, replyTo, randomId, prepared, done, fail);
 	})) {
 		return 0;
 	}

@@ -49,7 +49,8 @@ public:
 	void setComposeRect(QRect rect);
 
 	// True when Calm took this send; `resend` runs again (and passes) once
-	// Zach chose, or the calm version was armed.
+	// Zach chose. Autopilot never takes it: the send goes out as a bubble at
+	// once and its network send waits in the queue (safe_calm_queue).
 	[[nodiscard]] bool interceptSend(Fn<void()> resend);
 	bool handleEscape();
 
@@ -65,10 +66,6 @@ private:
 		const Result &result,
 		Fn<void()> resend);
 	void sendCalm(
-		const TextWithTags &draft,
-		const Verdict &verdict,
-		Fn<void()> resend);
-	void autopilot(
 		const TextWithTags &draft,
 		const Verdict &verdict,
 		Fn<void()> resend);

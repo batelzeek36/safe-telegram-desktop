@@ -57,23 +57,6 @@ void MarkSentSoftened(
 // The small leaf by the time: his softened messages and softened ones to him.
 [[nodiscard]] bool ShowsLeaf(not_null<const HistoryItem*> item);
 
-// Autopilot (C): the next message sent in `history` with exactly `text`
-// keeps its network send for kHoldMs after its local bubble appears.
-inline constexpr auto kHoldMs = crl::time(4000);
-void ArmHold(
-	not_null<History*> history,
-	const QString &text,
-	Fn<void(FullMsgId)> held);
-// Data::Histories::sendPreparedMessage: true when `send` was kept for later
-// (the local bubble is found by the request's random id).
-[[nodiscard]] bool DeferSend(
-	not_null<History*> history,
-	uint64 randomId,
-	Fn<void()> send);
-void SendHeldNow(FullMsgId local);
-// Destroys the local bubble before anything left the Mac.
-void UndoHold(FullMsgId local);
-
 // Their side (D), from HistoryItem::setTextValue: what a message sent to
 // Zach shows. A message to check shows a placeholder until its verdict, then
 // the calm version or the original; the original's words never show.

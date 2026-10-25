@@ -6,12 +6,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "safe/safe_calm_composer.h"
 
-#include "base/call_delayed.h"
 #include "data/data_peer.h"
 #include "history/history.h"
 #include "safe/safe_calm.h"
 #include "safe/safe_calm_leaf.h"
 #include "safe/safe_calm_panels.h"
+#include "safe/safe_calm_queue.h"
 #include "ui/abstract_button.h"
 #include "ui/effects/animations.h"
 #include "ui/painter.h"
@@ -363,6 +363,12 @@ bool Composer::interceptSend(Fn<void()> resend) {
 	if (modes.send == SendMode::Off || !Checkable(text)) {
 		return false;
 	}
+	if (modes.send == SendMode::Autopilot) {
+		CancelDraft(base::take(_sendWaiter));
+		closePanel();
+		QueueNext(_history, text);
+		return false;
+	}
 	if (_panel->isCard()) {
 		if (_sendText == text) {
 			_panel->activatePrimary();
@@ -421,9 +427,6 @@ void Composer::sendAnswered(
 		_approved = text;
 		resend();
 		return;
-	} else if (ModesFor(_history->peer).send == SendMode::Autopilot) {
-		autopilot(draft, verdict, std::move(resend));
-		return;
 	}
 	_sendText = text;
 	_panel->showCard(verdict, text, [=] {
@@ -444,35 +447,6 @@ void Composer::sendCalm(
 	RememberFine(_history->peer->id, verdict.text);
 	_setText({ verdict.text });
 	_approved = currentText();
-	resend();
-}
-
-void Composer::autopilot(
-		const TextWithTags &draft,
-		const Verdict &verdict,
-		Fn<void()> resend) {
-	closePanel();
-	MarkSentSoftened(_history, verdict.text, draft.text);
-	RememberFine(_history->peer->id, verdict.text);
-	_setText({ verdict.text });
-	const auto calm = currentText();
-	_approved = calm;
-	const auto panel = _panel.get();
-	const auto restore = _setText;
-	const auto field = _field;
-	ArmHold(_history, calm, [=](FullMsgId id) {
-		panel->showToast(kHoldMs, [=] {
-			UndoHold(id);
-			panel->hideAnimated();
-			restore(draft);
-			field->setFocus();
-		});
-		base::call_delayed(kHoldMs, panel, [=] {
-			if (panel->showing() && !panel->isCard() && !panel->isSheet()) {
-				panel->hideAnimated();
-			}
-		});
-	});
 	resend();
 }
 

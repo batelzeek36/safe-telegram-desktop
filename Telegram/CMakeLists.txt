@@ -1886,7 +1886,6 @@ PRIVATE
     safe/safe_calm_data.h
     safe/safe_calm_files.cpp
     safe/safe_calm_files.h
-    safe/safe_calm_hold.cpp
     safe/safe_calm_incoming.cpp
     safe/safe_calm_leaf.cpp
     safe/safe_calm_leaf.h
@@ -1894,6 +1893,8 @@ PRIVATE
     safe/safe_calm_panels.h
     safe/safe_calm_prompt.cpp
     safe/safe_calm_prompt.h
+    safe/safe_calm_queue.cpp
+    safe/safe_calm_queue.h
     safe/safe_calm_settings.cpp
     safe/safe_calm_settings.h
     safe/safe_calm_shared.h
