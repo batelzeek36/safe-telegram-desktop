@@ -16,15 +16,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
+#include "ffmpeg/ffmpeg_frame_generator.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "main/main_session.h"
+#include "safe/safe_judge_protocol.h"
 #include "safe/safe_media_gate.h"
 #include "safe/safe_trust.h"
 #include "ui/image/image.h"
 #include "ui/ui_utility.h"
 #include "ui/userpic_view.h"
 
+#include <QtCore/QFile>
 #include <QtWidgets/QApplication>
 
 #include <deque>
@@ -38,6 +41,8 @@ constexpr auto kAskedLimit = 4096;
 constexpr auto kWatchedLimit = 2048;
 constexpr auto kWatchedPerKey = 8;
 constexpr auto kRepaintDelay = crl::time(150);
+constexpr auto kMaxFileBytes = int64(16 * 1024 * 1024);
+constexpr auto kMaxDecodedFrames = 1200;
 
 struct Pending {
 	base::weak_ptr<Main::Session> session;
@@ -48,6 +53,7 @@ struct Pending {
 	QString caption;
 	QString fileName;
 	QString mime;
+	bool fromFile = false; // Frames decoded from the downloaded file.
 };
 
 struct Watched {
@@ -172,11 +178,124 @@ void Keep(State &state, Pending &entry) {
 	}
 }
 
+void Asked(State &state, MediaKey key) {
+	if (state.asked.size() >= kAskedLimit) {
+		state.asked.clear();
+	}
+	state.asked.emplace(key);
+}
+
+[[nodiscard]] QSize FrameSize(QSize dimensions) {
+	const auto side = JudgeProtocol::kMaxSide;
+	if (dimensions.isEmpty()) {
+		return QSize(side, side);
+	} else if (dimensions.width() <= side && dimensions.height() <= side) {
+		return dimensions;
+	}
+	return dimensions.scaled(side, side, Qt::KeepAspectRatio);
+}
+
+[[nodiscard]] QByteArray ReadFile(const QString &path) {
+	auto file = QFile(path);
+	if (!file.open(QIODevice::ReadOnly) || file.size() > kMaxFileBytes) {
+		return QByteArray();
+	}
+	return file.readAll();
+}
+
+// The first frame and the frames at a quarter, half and three quarters.
+[[nodiscard]] std::vector<QImage> DecodeFrames(
+		const QByteArray &bytes,
+		QSize size) {
+	auto result = std::vector<QImage>();
+	if (bytes.isEmpty()) {
+		return result;
+	}
+	auto generator = FFmpeg::FrameGenerator(bytes);
+	auto count = 0;
+	while (count < kMaxDecodedFrames) {
+		const auto frame = generator.renderNext(QImage(), QSize(8, 8));
+		if (frame.image.isNull()) {
+			break;
+		}
+		++count;
+		if (frame.last) {
+			break;
+		}
+	}
+	if (!count) {
+		return result;
+	}
+	generator.jumpToStart();
+	const auto picks = base::flat_set<int>{
+		0,
+		count / 4,
+		count / 2,
+		(count * 3) / 4,
+	};
+	for (auto index = 0; index != count; ++index) {
+		auto frame = generator.renderNext(QImage(), size);
+		if (frame.image.isNull()) {
+			break;
+		} else if (picks.contains(index)) {
+			result.push_back(std::move(frame.image));
+		}
+		if (frame.last) {
+			break;
+		}
+	}
+	return result;
+}
+
+// A GIF search result: its own frames, not a thumbnail (many have none).
+[[nodiscard]] bool TrySendFromFile(State &state, Pending &entry) {
+	const auto media = entry.document;
+	if (!media || !media->loaded()) {
+		return false;
+	}
+	const auto document = media->owner();
+	const auto bytes = media->bytes();
+	const auto path = bytes.isEmpty() ? document->filepath(true) : QString();
+	if (bytes.isEmpty() && path.isEmpty()) {
+		return false;
+	}
+	const auto size = FrameSize(document->dimensions);
+	const auto session = entry.session;
+	const auto key = entry.key;
+	const auto fileName = entry.fileName;
+	const auto mime = entry.mime;
+	crl::async([=] {
+		auto frames = DecodeFrames(
+			bytes.isEmpty() ? ReadFile(path) : bytes,
+			size);
+		crl::on_main(session, [=, frames = std::move(frames)]() mutable {
+			if (frames.empty() || Verdict(key) != VerdictState::Waiting) {
+				return;
+			}
+			auto cover = std::move(frames.front());
+			frames.erase(begin(frames));
+			RequestVerdict(
+				session.get(),
+				key,
+				std::move(cover),
+				std::move(frames),
+				QString(),
+				fileName,
+				mime);
+		});
+	});
+	Asked(state, key);
+	Keep(state, entry);
+	return true;
+}
+
 // True when the entry is finished with (sent, answered or gone).
 [[nodiscard]] bool TrySend(State &state, Pending &entry) {
 	const auto session = entry.session.get();
 	if (!session || Verdict(entry.key) != VerdictState::Waiting) {
 		return true;
+	} else if (entry.fromFile) {
+		return TrySendFromFile(state, entry);
 	}
 	const auto cover = CoverOf(entry);
 	if (cover.isNull()) {
@@ -192,10 +311,7 @@ void Keep(State &state, Pending &entry) {
 		entry.caption,
 		entry.fileName,
 		entry.mime);
-	if (state.asked.size() >= kAskedLimit) {
-		state.asked.clear();
-	}
-	state.asked.emplace(entry.key);
+	Asked(state, entry.key);
 	Keep(state, entry);
 	return true;
 }
@@ -366,7 +482,7 @@ bool WantUserpic(not_null<const PeerData*> peer, MediaKey key) {
 
 bool WantSearchedGif(not_null<DocumentData*> document) {
 	const auto key = KeyOf(document);
-	if (!JudgeAvailable() || !key || !document->hasThumbnail()) {
+	if (!JudgeAvailable() || !key || document->size > kMaxFileBytes) {
 		return false;
 	}
 	auto &state = Instance();
@@ -380,8 +496,13 @@ bool WantSearchedGif(not_null<DocumentData*> document) {
 		.document = document->createMediaView(),
 		.fileName = document->filename(),
 		.mime = document->mimeString(),
+		.fromFile = true,
 	};
-	document->loadThumbnail(Data::FileOrigin());
+	document->save(
+		Data::FileOrigin(),
+		QString(),
+		LoadFromCloudOrLocal,
+		true);
 	Queue(state, session, std::move(entry));
 	return true;
 }

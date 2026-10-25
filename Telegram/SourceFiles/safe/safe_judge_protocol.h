@@ -56,7 +56,7 @@ inline constexpr int kStrippedMaxSide = 64;
 inline constexpr std::size_t kMaxTextUnits = 1024;
 inline constexpr std::size_t kMaxPictureBytes = 1024 * 1024;
 inline constexpr std::size_t kMaxResponseBytes = 256 * 1024;
-inline constexpr int kMaxInFlight = 2;
+inline constexpr int kMaxInFlight = 4;
 inline constexpr int kTimeoutMs = 20 * 1000;
 
 // What the picture is, in the phone's words ("Kind: photo.").
