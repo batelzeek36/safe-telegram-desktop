@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
+#include "base/unique_qptr.h"
 #include "safe/safe_calm_prompt.h"
 
 class History;
@@ -84,9 +85,9 @@ private:
 	const Fn<void()> _relayout;
 	History *_history = nullptr;
 
-	std::unique_ptr<LeafButton> _leaf;
-	std::unique_ptr<HeatLine> _heatLine;
-	std::unique_ptr<Panel> _panel;
+	base::unique_qptr<LeafButton> _leaf;
+	base::unique_qptr<HeatLine> _heatLine;
+	base::unique_qptr<Panel> _panel;
 	QRect _composeRect;
 	bool _leafShown = false;
 	bool _typing = false;

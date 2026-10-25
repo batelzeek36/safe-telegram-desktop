@@ -173,9 +173,9 @@ Composer::Composer(Args &&args)
 , _text(std::move(args.text))
 , _setText(std::move(args.setText))
 , _relayout(std::move(args.relayout))
-, _leaf(std::make_unique<LeafButton>(args.buttonParent, args.buttonSize))
-, _heatLine(std::make_unique<HeatLine>(args.parent))
-, _panel(std::make_unique<Panel>(args.parent))
+, _leaf(base::make_unique_q<LeafButton>(args.buttonParent, args.buttonSize))
+, _heatLine(base::make_unique_q<HeatLine>(args.parent))
+, _panel(base::make_unique_q<Panel>(args.parent))
 , _typingTimer([=] { checkTyping(); }) {
 	_leaf->hide();
 	_leaf->setClickedCallback([=] { leafClicked(); });
