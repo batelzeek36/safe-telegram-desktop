@@ -195,6 +195,10 @@ void CancelDraft(uint64 waiter) {
 	}
 }
 
+void RememberFine(PeerId peer, const QString &text) {
+	Remember(DraftKey(peer, text), Verdict{ .text = text, .via = u"calm"_q });
+}
+
 void MarkSentSoftened(
 		not_null<History*> history,
 		const QString &calm,

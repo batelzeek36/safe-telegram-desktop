@@ -42,6 +42,8 @@ uint64 CheckDraft(
 	const QString &text,
 	Fn<void(const Result&)> done);
 void CancelDraft(uint64 waiter);
+// A calm version Zach took ("Use this") reads as fine without asking again.
+void RememberFine(PeerId peer, const QString &text);
 
 // Softened messages Zach sent: marked when the calm version goes out.
 void MarkSentSoftened(
