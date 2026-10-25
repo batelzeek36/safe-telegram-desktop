@@ -6,6 +6,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "safe/safe_calm.h"
 
+#include "base/unixtime.h"
 #include "data/data_peer.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -68,6 +69,18 @@ void Answer(const DraftKey &key, const Result &result) {
 	}
 }
 
+// "now", "4m", "3h", "2d": the context line's age for the model.
+[[nodiscard]] QString Ago(TimeId seconds) {
+	if (seconds < 60) {
+		return u"now"_q;
+	} else if (seconds < 3600) {
+		return QString::number(seconds / 60) + QChar('m');
+	} else if (seconds < 86400) {
+		return QString::number(seconds / 3600) + QChar('h');
+	}
+	return QString::number(seconds / 86400) + QChar('d');
+}
+
 [[nodiscard]] QString DisplayName(not_null<PeerData*> peer) {
 	const auto &name = peer->isUser() ? peer->shortName() : peer->name();
 	return name.isEmpty() ? peer->name() : name;
@@ -110,6 +123,7 @@ Request MakeRequest(
 			? DisplayName(peer)
 			: OwnerName(),
 	};
+	const auto now = base::unixtime::now();
 	auto lines = std::vector<ContextLine>();
 	for (auto b = history->blocks.rbegin(); b != history->blocks.rend(); ++b) {
 		const auto &messages = (*b)->messages;
@@ -127,6 +141,7 @@ Request MakeRequest(
 			lines.push_back({
 				.from = item->out() ? OwnerName() : DisplayName(item->from()),
 				.text = line,
+				.ago = Ago(now - item->date()),
 			});
 			if (int(lines.size()) >= kMaxContext) {
 				break;

@@ -23,8 +23,9 @@ namespace Safe::Calm {
 // A draft worth asking about: it has letters, is not a /command, and fits.
 [[nodiscard]] bool Checkable(const QString &text);
 
-// The request for `text` in `history`: names and the last few messages
-// loaded before `before` (all of them when it is zero) for tone.
+// The request for `text` in `history`: names and the last kMaxContext
+// messages loaded before `before` (all of them when it is zero), each with
+// its age, for tone.
 [[nodiscard]] Request MakeRequest(
 	not_null<History*> history,
 	Direction direction,

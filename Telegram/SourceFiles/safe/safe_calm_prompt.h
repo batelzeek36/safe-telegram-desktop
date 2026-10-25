@@ -20,6 +20,7 @@ enum class Direction : uchar {
 struct ContextLine {
 	QString from;
 	QString text;
+	QString ago; // how long before now it was sent: "now", "4m", "3h", "2d"
 };
 
 struct Request {
@@ -50,8 +51,9 @@ inline constexpr auto kRunnerTimeoutMs = 9000;
 inline constexpr auto kApiTimeoutMs = 14000;
 inline constexpr auto kMaxResponseBytes = 64 * 1024;
 inline constexpr auto kMaxTextLength = 4000; // the runner's MAX_TEXT
-inline constexpr auto kMaxContext = 6;
+inline constexpr auto kMaxContext = 50; // the runner's MAX_CONTEXT
 inline constexpr auto kMaxContextText = 1500;
+inline constexpr auto kMaxAgo = 16;
 
 inline constexpr auto kApiEndpoint = "https://api.anthropic.com/v1/messages";
 inline constexpr auto kApiVersion = "2023-06-01";
