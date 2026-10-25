@@ -7613,7 +7613,7 @@ void HistoryWidget::moveFieldControls() {
 	_tabbedSelectorToggle->moveToRight(right, buttonsBottom);
 	_botKeyboardHide->moveToRight(right, buttonsBottom);
 	right += _botKeyboardHide->width();
-	if (const auto leaf = _calm->leafWidth()) {
+	if (const auto leaf = _calm ? _calm->leafWidth() : 0) {
 		_calm->moveLeaf(width() - right - leaf, buttonsBottom);
 		right += leaf;
 	}
@@ -7649,10 +7649,12 @@ void HistoryWidget::moveFieldControls() {
 	_fieldBarCancel->moveToRight(
 		0,
 		_field->y() - st::historySendPadding - _fieldBarCancel->height());
-	const auto calmTop = _field->y()
-		- st::historySendPadding
-		- (_fieldBarCancel->isHidden() ? 0 : _fieldBarCancel->height());
-	_calm->setComposeRect(QRect(0, calmTop, width(), bottom - calmTop));
+	if (_calm) {
+		const auto top = _field->y()
+			- st::historySendPadding
+			- (_fieldBarCancel->isHidden() ? 0 : _fieldBarCancel->height());
+		_calm->setComposeRect(QRect(0, top, width(), bottom - top));
+	}
 	if (_inlineResults) {
 		_inlineResults->moveBottom(_field->y() - st::historySendPadding);
 	}
@@ -7681,16 +7683,18 @@ void HistoryWidget::moveFieldControls() {
 }
 
 void HistoryWidget::updateFieldSize() {
-	_calm->setHistory((_history && !_field->isHidden())
-		? _history
-		: nullptr);
+	if (_calm) {
+		_calm->setHistory((_history && !_field->isHidden())
+			? _history
+			: nullptr);
+	}
 	const auto kbShowShown = _history && !_kbShown && _keyboard->hasMarkup();
 	auto fieldWidth = width()
 		- _attachToggle->width()
 		- st::historySendRight
 		- _send->width()
 		- _tabbedSelectorToggle->width()
-		- _calm->leafWidth();
+		- (_calm ? _calm->leafWidth() : 0);
 	if (_botMenu) {
 		fieldWidth -= st::historyBotMenuSkip + _botMenu->width();
 	}
