@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_chat_section.h"
+#include "safe/safe_drop.h"
 
 #include "history/admin_log/history_admin_log_section.h"
 #include "history/view/controls/history_view_top_controls.h"
@@ -2008,6 +2009,16 @@ bool ChatWidget::confirmSendingFiles(
 	}
 	const auto hasImage = data->hasImage();
 	const auto premium = controller()->session().user()->isPremium();
+	if (Safe::TakeHostedGif(data, crl::guard(this, [=](QStringList files) {
+		confirmSendingFiles(
+			Storage::PrepareMediaList(
+				files,
+				st::sendMediaPreviewSize,
+				premium),
+			QString());
+	}))) {
+		return true;
+	}
 
 	if (const auto urls = Core::ReadMimeUrls(data); !urls.empty()) {
 		const auto folder = Storage::SingleFolderPath(urls);

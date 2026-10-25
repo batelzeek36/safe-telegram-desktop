@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/mime_type.h"
 
 #include "core/utils.h"
+#include "safe/safe_drop.h"
 #include "ui/image/image_prepare.h"
 
 #include <QtCore/QMimeDatabase>
@@ -228,9 +229,11 @@ QString ReadMimeText(not_null<const QMimeData*> data) {
 
 QList<QUrl> ReadMimeUrls(not_null<const QMimeData*> data) {
 	return (data->hasUrls() && !IsImageFromFirefox(data))
-		? KUrlMimeData::urlsFromMimeData(
+		? Safe::PreferBrowserFiles(
 			data,
-			KUrlMimeData::PreferLocalUrls)
+			KUrlMimeData::urlsFromMimeData(
+				data,
+				KUrlMimeData::PreferLocalUrls))
 		: QList<QUrl>();
 }
 

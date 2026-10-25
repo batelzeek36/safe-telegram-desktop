@@ -1877,8 +1877,14 @@ PRIVATE
     safe/safe_bots.h
     safe/safe_discovery.cpp
     safe/safe_discovery.h
+    safe/safe_drop.cpp
+    safe/safe_drop.h
+    safe/safe_drop_mac.h
+    safe/safe_drop_mac.mm
     safe/safe_gate.cpp
     safe/safe_gate.h
+    safe/safe_gifs.cpp
+    safe/safe_gifs.h
     safe/safe_identity.cpp
     safe/safe_identity.h
     safe/safe_judge.cpp
@@ -1926,6 +1932,8 @@ PRIVATE
     safe/safe_trust_requests.h
     safe/safe_trust_store.cpp
     safe/safe_trust_store.h
+    safe/safe_words.cpp
+    safe/safe_words.h
     settings/business/settings_away_message.cpp
     settings/business/settings_away_message.h
     settings/business/settings_shortcut_messages.cpp

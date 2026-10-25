@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_widget.h"
+#include "safe/safe_drop.h"
 #include "safe/look_chat.h"
 #include "safe/look_tint.h"
 #include "safe/safe_bots.h"
@@ -8110,6 +8111,16 @@ bool HistoryWidget::confirmSendingFiles(
 
 	const auto hasImage = data->hasImage();
 	const auto premium = controller()->session().user()->isPremium();
+	if (Safe::TakeHostedGif(data, crl::guard(this, [=](QStringList files) {
+		confirmSendingFiles(
+			Storage::PrepareMediaList(
+				files,
+				st::sendMediaPreviewSize,
+				premium),
+			QString());
+	}))) {
+		return true;
+	}
 
 	if (const auto urls = Core::ReadMimeUrls(data); !urls.empty()) {
 		const auto folder = Storage::SingleFolderPath(urls);
