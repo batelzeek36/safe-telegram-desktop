@@ -101,10 +101,13 @@ void Pump(PeerId peer);
 	return queue ? Bubble(*queue, id) : nullptr;
 }
 
-// The row under the bubble (safe_calm_chip) comes and goes with the state.
+// The row under the bubble (safe_calm_chip) comes and goes with the state,
+// and the failed mark takes the clock's place by the time (BottomInfo).
 void Refresh(HistoryItem *item) {
 	if (item) {
-		item->history()->owner().requestItemResize(item);
+		auto &owner = item->history()->owner();
+		owner.notifyItemDataChange(item);
+		owner.requestItemResize(item);
 	}
 }
 
@@ -115,6 +118,7 @@ void Emit(PeerId peer, FullMsgId id, QueueState state, crl::time until = 0) {
 	auto event = QueueEvent{ id, state, until };
 	if (const auto now = QueueStateOf(id)) {
 		event.holding = now->holding;
+		event.behind = now->behind;
 		event.aside = now->aside;
 	}
 	State().events.fire({ peer, event });
@@ -505,12 +509,13 @@ std::optional<QueueEvent> QueueStateOf(FullMsgId id) {
 		auto result = QueueEvent{ id, Public(entry, !i), entry.until };
 		result.aside = entry.aside;
 		if (entry.step == Step::Failed && !entry.aside) {
-			result.holding = std::any_of(
+			result.behind = int(std::count_if(
 				begin(entries) + i + 1,
 				end(entries),
 				[](const Entry &other) {
 					return other.step != Step::Failed || !other.aside;
-				});
+				}));
+			result.holding = (result.behind > 0);
 		}
 		return result;
 	}

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_message.h"
 
+#include "safe/safe_calm_chip.h"
+
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
 #include "base/options.h"
@@ -1775,6 +1777,7 @@ int Message::marginBottom() const {
 		return 0;
 	}
 	auto result = st::msgMargin.bottom();
+	result += Safe::Calm::QueueChipHeight(data());
 	if (const auto service = Get<ServicePreMessage>()) {
 		if (service->below) {
 			result += service->height;
@@ -1840,6 +1843,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	if (isHidden()) {
 		return;
 	}
+	Safe::Calm::PaintQueueChip(p, this, g, context);
 
 	const auto entry = logEntryOriginal();
 	const auto check = factcheckBlock();
@@ -3912,6 +3916,10 @@ TextState Message::textState(
 
 	auto g = countGeometry();
 	if (g.width() < 1 || isHidden()) {
+		return result;
+	}
+	if (const auto link = Safe::Calm::QueueChipLink(this, point, g)) {
+		result.link = link;
 		return result;
 	}
 

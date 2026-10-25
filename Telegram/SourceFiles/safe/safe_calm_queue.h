@@ -43,6 +43,7 @@ struct QueueEvent {
 	QueueState state = QueueState::Checking;
 	crl::time until = 0; // Softened: when it goes out
 	bool holding = false; // Failed: messages behind it are waiting on it
+	int behind = 0; // Failed and holding: how many wait behind it
 	bool aside = false; // Failed: stepped aside, the rest go on
 };
 

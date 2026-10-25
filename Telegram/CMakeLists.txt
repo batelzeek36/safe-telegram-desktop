@@ -1879,6 +1879,8 @@ PRIVATE
     safe/safe_calm.h
     safe/safe_calm_box.cpp
     safe/safe_calm_box.h
+    safe/safe_calm_chip.cpp
+    safe/safe_calm_chip.h
     safe/safe_calm_client.cpp
     safe/safe_calm_client.h
     safe/safe_calm_composer.cpp
@@ -1889,6 +1891,8 @@ PRIVATE
     safe/safe_calm_incoming.cpp
     safe/safe_calm_leaf.cpp
     safe/safe_calm_leaf.h
+    safe/safe_calm_marks.cpp
+    safe/safe_calm_marks.h
     safe/safe_calm_panels.cpp
     safe/safe_calm_panels.h
     safe/safe_calm_prompt.cpp

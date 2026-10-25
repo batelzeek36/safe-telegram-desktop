@@ -8,7 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_bottom_info.h"
 
 #include "safe/safe_calm.h"
+#include "safe/safe_calm_chip.h"
 #include "safe/safe_calm_leaf.h"
+#include "safe/safe_calm_marks.h"
 
 #include "ui/chat/message_bubble.h"
 #include "ui/chat/chat_style.h"
@@ -277,7 +279,10 @@ void BottomInfo::paint(
 
 	auto right = position.x() + width();
 	const auto firstLineBottom = position.y() + st::msgDateFont->height;
-	if (_data.flags & Data::Flag::OutLayout) {
+	if (_data.flags & Data::Flag::CalmFailed) {
+		Safe::Calm::PaintFailedMark(p, QPoint(right, firstLineBottom));
+		right -= st::historySendStateSpace;
+	} else if (_data.flags & Data::Flag::OutLayout) {
 		const auto &icon = (_data.flags & Data::Flag::Sending)
 			? (inverted
 				? st->historySendingInvertedIcon()
@@ -693,6 +698,9 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 	}
 	if (Safe::Calm::ShowsLeaf(item)) {
 		result.flags |= Flag::CalmLeaf;
+	}
+	if (Safe::Calm::QueueShowsFailed(item)) {
+		result.flags |= Flag::CalmFailed;
 	}
 	if (message->context() == Context::ShortcutMessages) {
 		result.flags |= Flag::Shortcut;
