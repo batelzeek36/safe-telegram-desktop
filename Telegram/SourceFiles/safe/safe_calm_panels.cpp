@@ -70,7 +70,7 @@ Panel::Panel(QWidget *parent)
 }
 
 bool Panel::showing() const {
-	return (_kind != Kind::None) && !_hiding;
+	return (_kind != Kind::None) && !_hiding && !isHidden();
 }
 
 bool Panel::isCard() const {

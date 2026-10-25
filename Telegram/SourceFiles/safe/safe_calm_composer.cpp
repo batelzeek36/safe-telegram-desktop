@@ -58,6 +58,7 @@ public:
 	explicit HeatLine(not_null<QWidget*> parent);
 
 	void setHeat(float64 heat);
+	void restore();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -153,6 +154,13 @@ void HeatLine::setHeat(float64 heat) {
 	}
 }
 
+void HeatLine::restore() {
+	if (_heat > 0. && isHidden()) {
+		show();
+		raise();
+	}
+}
+
 void HeatLine::paintEvent(QPaintEvent *e) {
 	const auto heat = _animation.value(_heat);
 	if (heat <= 0.) {
@@ -232,12 +240,18 @@ int Composer::leafWidth() const {
 
 void Composer::moveLeaf(int left, int top) {
 	_leaf->move(left, top);
+	// The host hides all its children when it switches chats and shows
+	// back only the controls it knows about.
+	if (_leafShown && _leaf->isHidden()) {
+		_leaf->show();
+	}
 }
 
 void Composer::setComposeRect(QRect rect) {
 	_composeRect = rect;
 	_panel->setAnchor(rect);
 	_heatLine->setGeometry(rect.x(), rect.y(), rect.width(), S(2));
+	_heatLine->restore();
 }
 
 QString Composer::currentText() const {
