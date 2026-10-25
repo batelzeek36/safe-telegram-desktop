@@ -410,6 +410,7 @@ void AddSuggestReplyAction(
 		not_null<HistoryItem*> item,
 		Fn<void()> callback) {
 	if (!ModesFor(item->history()->peer).suggest
+		|| IsOwn(item)
 		|| !item->isRegular()
 		|| IsHeld(item)
 		|| item->originalText().text.trimmed().isEmpty()) {

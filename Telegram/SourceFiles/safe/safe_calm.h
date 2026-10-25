@@ -23,6 +23,11 @@ namespace Safe::Calm {
 // A draft worth asking about: it has letters, is not a /command, and fits.
 [[nodiscard]] bool Checkable(const QString &text);
 
+// Zach's own message. Not just out(): Telegram never flags messages in
+// Saved Messages as outgoing (NewMessageFlags), so there his own words count
+// as his unless they are a forward of someone else's.
+[[nodiscard]] bool IsOwn(not_null<const HistoryItem*> item);
+
 // The request for `text` in `history`: names and the last kMaxContext
 // messages loaded before `before` (all of them when it is zero), each with
 // its age, for tone.

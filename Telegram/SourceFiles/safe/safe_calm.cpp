@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_item_components.h"
 #include "history/view/history_view_element.h"
 #include "safe/safe_calm_client.h"
 #include "safe/safe_calm_shared.h"
@@ -97,6 +98,12 @@ QString OwnerName() {
 	return u"Zach"_q;
 }
 
+bool IsOwn(not_null<const HistoryItem*> item) {
+	return item->out()
+		|| (item->history()->peer->isSelf()
+			&& !item->Has<HistoryMessageForwarded>());
+}
+
 bool Checkable(const QString &text) {
 	const auto trimmed = text.trimmed();
 	if (trimmed.isEmpty()
@@ -139,7 +146,7 @@ Request MakeRequest(
 				continue;
 			}
 			lines.push_back({
-				.from = item->out() ? OwnerName() : DisplayName(item->from()),
+				.from = IsOwn(item) ? OwnerName() : DisplayName(item->from()),
 				.text = line,
 				.ago = Ago(now - item->date()),
 			});
@@ -222,14 +229,14 @@ void MarkSentSoftened(
 }
 
 std::optional<QString> WhatYouTyped(not_null<const HistoryItem*> item) {
-	if (!item->out()) {
+	if (!IsOwn(item)) {
 		return std::nullopt;
 	}
 	return SentOriginal(item->history()->peer->id, item->originalText().text);
 }
 
 bool ShowsLeaf(not_null<const HistoryItem*> item) {
-	return item->out()
+	return IsOwn(item)
 		? WhatYouTyped(item).has_value()
 		: IsSoftenedIncoming(item);
 }

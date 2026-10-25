@@ -41,6 +41,7 @@ constexpr auto kAngleSize = 11;
 constexpr auto kAngleMax = 110;
 
 constexpr auto kChipHeight = 34;
+constexpr auto kChipLines = 2;
 constexpr auto kChipPad = 12;
 constexpr auto kChipLabelGap = 6;
 constexpr auto kChipMin = 60;
@@ -364,6 +365,7 @@ void Ideas::layoutChips() {
 		+ MoreFont()->width(MoreText())
 		+ S(kMorePadRight);
 	auto rects = std::vector<QRect>();
+	auto textTops = std::vector<int>();
 	auto more = QRect();
 	auto top = S(kStackTop);
 	auto minLeft = right;
@@ -371,17 +373,36 @@ void Ideas::layoutChips() {
 		const auto limit = cap
 			- ((i == moreRow) ? (moreWidth + S(kMoreGap)) : 0);
 		const auto w = std::min(naturals[i], std::max(limit, S(kChipMin)));
-		rects.push_back(QRect(right - w, top, w, S(kChipHeight)));
+		// An idea too long for one line wraps to a second under itself (the
+		// angle stays a label column on the first); never cut to one line.
+		auto h = S(kChipHeight);
+		auto textTop = top + (h - IdeaStyle().font->height) / 2;
+		if (!_loading) {
+			const auto &item = _items[i];
+			const auto column = w
+				- 2 * S(kChipPad)
+				- AngleFont()->width(item.angle)
+				- S(kChipLabelGap);
+			const auto line = item.text.countHeight(
+				std::max(item.text.maxWidth(), 1));
+			const auto text = std::min(
+				item.text.countHeight(std::max(column, 1)),
+				kChipLines * line);
+			h = S(kChipHeight) - line + text;
+			textTop = top + (h - text) / 2;
+		}
+		rects.push_back(QRect(right - w, top, w, h));
+		textTops.push_back(textTop);
 		minLeft = std::min(minLeft, right - w);
 		if (i == moreRow) {
 			more = QRect(
 				right - w - S(kMoreGap) - moreWidth,
-				top + (S(kChipHeight) - S(kMoreHeight)) / 2,
+				top + (h - S(kMoreHeight)) / 2,
 				moreWidth,
 				S(kMoreHeight));
 			minLeft = std::min(minLeft, more.x());
 		}
-		top += S(kChipHeight) + S(kRowGap);
+		top += h + S(kRowGap);
 	}
 	top += S(kStackBottom) - S(kRowGap);
 	const auto height = top;
@@ -394,6 +415,7 @@ void Ideas::layoutChips() {
 	} else {
 		for (auto i = 0; i != int(_items.size()); ++i) {
 			_items[i].rect = rects[i].translated(shift);
+			_items[i].textTop = textTops[i];
 		}
 	}
 	_moreRect = more.isEmpty() ? QRect() : more.translated(shift);
@@ -578,25 +600,23 @@ void Ideas::paintIdea(QPainter &p, int index) {
 	p.setFont(AngleFont());
 	p.setPen(angle);
 	if (chip) {
-		const auto h = item.rect.height();
+		// The angle sits on the first line of the idea.
+		const auto line = IdeaStyle().font->height;
 		p.drawText(
 			left,
-			item.rect.y() + (h - AngleFont()->height) / 2 + AngleFont()->ascent,
+			item.textTop + (line - AngleFont()->height) / 2 + AngleFont()->ascent,
 			item.angle);
 		const auto textLeft = left
 			+ AngleFont()->width(item.angle)
 			+ S(kChipLabelGap);
 		p.setPen(st::historyTextOutFg);
 		item.text.draw(p, {
-			.position = {
-				textLeft,
-				item.rect.y() + (h - IdeaStyle().font->height) / 2,
-			},
+			.position = { textLeft, item.textTop },
 			.outerWidth = width(),
 			.availableWidth = std::max(
 				item.rect.x() + item.rect.width() - padX - textLeft,
 				1),
-			.elisionLines = 1,
+			.elisionLines = kChipLines,
 		});
 	} else {
 		p.drawText(

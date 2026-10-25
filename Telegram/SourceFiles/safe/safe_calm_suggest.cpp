@@ -89,7 +89,7 @@ uint64 Suggest(
 	};
 	if (replyTo) {
 		request.replyTo = ContextLine{
-			.from = replyTo->out()
+			.from = IsOwn(replyTo)
 				? OwnerName()
 				: DisplayName(replyTo->from()),
 			.text = replyTo->originalText().text,

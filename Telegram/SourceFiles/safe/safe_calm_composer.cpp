@@ -711,7 +711,7 @@ void Composer::watchLandings() {
 
 void Composer::messageLanded(not_null<HistoryItem*> item) {
 	if (!_ready
-		|| item->out()
+		|| IsOwn(item)
 		|| !item->isRegular()
 		|| item->isService()
 		|| item->originalText().text.trimmed().isEmpty()) {
