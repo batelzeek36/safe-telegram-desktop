@@ -109,6 +109,8 @@ constexpr auto kLeafPath = ""
 
 constexpr auto kCenter = 54.;
 constexpr auto kSpan = 47.;
+constexpr auto kMarkSize = 11;
+constexpr auto kMarkGap = 3;
 
 [[nodiscard]] QPainterPath ParsePath(const char *data) {
 	auto result = QPainterPath();
@@ -183,6 +185,19 @@ void PaintLeaf(QPainter &p, QRectF rect, float64 size, const QColor &color) {
 	p.setBrush(color);
 	p.drawPath(LeafPath());
 	p.restore();
+}
+
+int LeafMarkWidth() {
+	return style::ConvertScale(kMarkSize + kMarkGap);
+}
+
+void PaintLeafMark(QPainter &p, int left, int top, int lineHeight) {
+	const auto size = style::ConvertScale(kMarkSize);
+	PaintLeaf(
+		p,
+		QRectF(left, top + (lineHeight - size) / 2., size, size),
+		size,
+		JadeColor(0.95));
 }
 
 } // namespace Safe::Calm

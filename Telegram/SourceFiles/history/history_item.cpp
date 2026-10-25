@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
+#include "safe/safe_calm.h"
 #include "safe/safe_media_gate.h"
 
 #include "api/api_premium.h"
@@ -1259,6 +1260,9 @@ void HistoryItem::resolveDependent() {
 }
 
 bool HistoryItem::notificationReady() const {
+	if (Safe::Calm::HoldsNotification(this)) {
+		return false;
+	}
 	if (const auto dependent = GetServiceDependentData()) {
 		if (dependent->msg || !dependent->msgId) {
 			return true;
@@ -3372,6 +3376,8 @@ bool HistoryItem::allowsReschedule() const {
 
 bool HistoryItem::allowsForward() const {
 	return !isService()
+		&& !Safe::Calm::IsHeld(this)
+		&& !Safe::Calm::IsSoftenedIncoming(this)
 		&& (isRegular() || isEphemeral())
 		&& !forbidsForward()
 		&& history()->peer->allowsForwarding()
@@ -4779,6 +4785,7 @@ void HistoryItem::clearRichPage() {
 }
 
 void HistoryItem::setTextValue(TextWithEntities text, bool force) {
+	text = Safe::Calm::FilterIncoming(this, std::move(text));
 	if (const auto processId = Spellchecker::TryHighlightSyntax(text)) {
 		_flags |= MessageFlag::InHighlightProcess;
 		history()->owner().registerHighlightProcess(processId, this);

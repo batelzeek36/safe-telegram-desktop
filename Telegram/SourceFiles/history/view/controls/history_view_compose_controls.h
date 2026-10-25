@@ -36,6 +36,10 @@ namespace SendMenu {
 struct Details;
 } // namespace SendMenu
 
+namespace Safe::Calm {
+class Composer;
+} // namespace Safe::Calm
+
 namespace ChatHelpers {
 class TabbedPanel;
 class TabbedSelector;
@@ -685,6 +689,8 @@ private:
 	rpl::lifetime _sessionLifetime;
 	rpl::lifetime _threadFieldVisibleLifetime;
 	rpl::lifetime _uploaderSubscriptions;
+
+	std::unique_ptr<Safe::Calm::Composer> _calm;
 
 };
 

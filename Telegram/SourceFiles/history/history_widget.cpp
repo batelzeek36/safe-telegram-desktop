@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/look_chat.h"
 #include "safe/look_tint.h"
 #include "safe/safe_bots.h"
+#include "safe/safe_calm_composer.h"
 
 #include "api/api_compose_with_ai.h"
 #include "api/api_editing.h"
@@ -575,6 +576,21 @@ HistoryWidget::HistoryWidget(
 
 	setupFastButtonMode();
 	initAiButton();
+	_calm = std::make_unique<Safe::Calm::Composer>(
+		Safe::Calm::Composer::Args{
+			.parent = this,
+			.buttonParent = this,
+			.field = _field,
+			.buttonSize = _tabbedSelectorToggle->size(),
+			.text = [=] { return _field->getTextWithAppliedMarkdown(); },
+			.setText = [=](TextWithTags text) {
+				setFieldText(
+					text,
+					TextUpdateEvent::SaveDraft,
+					Ui::InputField::HistoryAction::NewEntry);
+			},
+			.relayout = [=] { updateFieldSize(); },
+		});
 	initSendAsFileButton();
 	initExpandButton();
 	initDiscardRichDraftButton();
@@ -5836,6 +5852,11 @@ void HistoryWidget::send(Api::SendOptions options) {
 		sendRichDraft(page, options);
 		return;
 	}
+	if (_calm
+		&& !_voiceRecordBar->isListenState()
+		&& _calm->interceptSend([=] { send(options); })) {
+		return;
+	}
 	if (!options.scheduled) {
 		auto action = Api::SendAction(_history, options);
 		action.replyTo = replyTo();
@@ -7592,6 +7613,10 @@ void HistoryWidget::moveFieldControls() {
 	_tabbedSelectorToggle->moveToRight(right, buttonsBottom);
 	_botKeyboardHide->moveToRight(right, buttonsBottom);
 	right += _botKeyboardHide->width();
+	if (const auto leaf = _calm->leafWidth()) {
+		_calm->moveLeaf(width() - right - leaf, buttonsBottom);
+		right += leaf;
+	}
 	_botKeyboardShow->moveToRight(right, buttonsBottom);
 	_botCommandStart->moveToRight(right, buttonsBottom);
 	if (_silent) {
@@ -7624,6 +7649,10 @@ void HistoryWidget::moveFieldControls() {
 	_fieldBarCancel->moveToRight(
 		0,
 		_field->y() - st::historySendPadding - _fieldBarCancel->height());
+	const auto calmTop = _field->y()
+		- st::historySendPadding
+		- (_fieldBarCancel->isHidden() ? 0 : _fieldBarCancel->height());
+	_calm->setComposeRect(QRect(0, calmTop, width(), bottom - calmTop));
 	if (_inlineResults) {
 		_inlineResults->moveBottom(_field->y() - st::historySendPadding);
 	}
@@ -7652,12 +7681,16 @@ void HistoryWidget::moveFieldControls() {
 }
 
 void HistoryWidget::updateFieldSize() {
+	_calm->setHistory((_history && !_field->isHidden())
+		? _history
+		: nullptr);
 	const auto kbShowShown = _history && !_kbShown && _keyboard->hasMarkup();
 	auto fieldWidth = width()
 		- _attachToggle->width()
 		- st::historySendRight
 		- _send->width()
-		- _tabbedSelectorToggle->width();
+		- _tabbedSelectorToggle->width()
+		- _calm->leafWidth();
 	if (_botMenu) {
 		fieldWidth -= st::historyBotMenuSkip + _botMenu->width();
 	}
@@ -11005,6 +11038,9 @@ void HistoryWidget::confirmDeleteSelected() {
 }
 
 void HistoryWidget::escape() {
+	if (_calm && _calm->handleEscape()) {
+		return;
+	}
 	if (_composeSearch) {
 		if (_nonEmptySelection) {
 			clearSelected();

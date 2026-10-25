@@ -67,9 +67,17 @@ void ArmHold(
 	};
 }
 
-bool DeferSend(not_null<HistoryItem*> local, Fn<void()> send) {
+bool DeferSend(
+		not_null<History*> history,
+		uint64 randomId,
+		Fn<void()> send) {
 	auto &state = HoldState();
 	if (!state.armed) {
+		return false;
+	}
+	const auto local = history->owner().message(
+		history->owner().messageIdByRandomId(randomId));
+	if (!local) {
 		return false;
 	}
 	auto armed = base::take(*state.armed);

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_chat.h"
+#include "safe/safe_calm_box.h"
 #include "safe/safe_policy.h"
 
 #include "settings/settings_common_session.h"
@@ -1096,6 +1097,23 @@ void BuildMessagesSection(SectionBuilder &builder) {
 	});
 }
 
+void BuildCalmSection(SectionBuilder &builder) {
+	const auto controller = builder.controller();
+	const auto session = builder.session();
+	builder.addButton({
+		.id = u"chat/calm-mode"_q,
+		.title = rpl::single(u"Calm mode"_q),
+		.icon = { &st::menuIconChatBubble },
+		.label = Safe::Calm::SendModeLabel(),
+		.onClick = [=] {
+			if (controller) {
+				controller->show(Box(Safe::Calm::SettingsBox, session));
+			}
+		},
+		.keywords = { u"calm"_q, u"soften"_q, u"leaf"_q, u"crash"_q },
+	});
+}
+
 void BuildSensitiveContentSection(SectionBuilder &builder) {
 	if (Safe::SensitiveLocked()) {
 		return;
@@ -1307,6 +1325,7 @@ void BuildChatSectionContent(SectionBuilder &builder) {
 	BuildChatListQuickActionSection(builder);
 	BuildStickersEmojiSection(builder);
 	BuildMessagesSection(builder);
+	BuildCalmSection(builder);
 	BuildSensitiveContentSection(builder);
 	BuildArchiveSection(builder);
 	BuildSupportSection(builder);

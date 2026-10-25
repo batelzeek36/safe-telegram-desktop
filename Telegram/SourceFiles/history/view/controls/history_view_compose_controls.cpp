@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
 #include "safe/safe_bots.h"
+#include "safe/safe_calm_composer.h"
 
 #include "history/view/controls/history_view_bot_menu_button.h"
 
@@ -1520,6 +1521,9 @@ void ComposeControls::setHistory(SetHistoryArgs &&args) {
 	untrackThreadFieldVisibility();
 	unregisterDraftSources();
 	_history = history;
+	if (_calm) {
+		_calm->setHistory(history);
+	}
 	_fieldDisabled = nullptr;
 	_topicRootId = args.topicRootId;
 	_monoforumPeerId = args.monoforumPeerId;
@@ -2198,7 +2202,12 @@ rpl::producer<Api::SendOptions> ComposeControls::scrollToMaxRequests() const {
 rpl::producer<Api::SendOptions> ComposeControls::sendRequests() const {
 	return sendContentRequests(
 		SendRequestType::Text
-	) | rpl::filter([=] {
+	) | rpl::filter([=](const Api::SendOptions &options) {
+		const auto that = const_cast<ComposeControls*>(this);
+		return !_calm || !_calm->interceptSend([=] {
+			that->_sendCustomRequests.fire_copy(options);
+		});
+	}) | rpl::filter([=] {
 		if (!_chosenStarsCount) {
 			return true;
 		}
@@ -2830,6 +2839,19 @@ void ComposeControls::show() {
 }
 
 void ComposeControls::init() {
+	_calm = std::make_unique<Safe::Calm::Composer>(
+		Safe::Calm::Composer::Args{
+			.parent = _parent,
+			.buttonParent = _wrap.get(),
+			.field = _field,
+			.buttonSize = _tabbedSelectorToggle->size(),
+			.text = [=] { return _field->getTextWithAppliedMarkdown(); },
+			.setText = [=](TextWithTags text) { setText(text); },
+			.relayout = [=] { updateControlsGeometry(_wrap->size()); },
+		});
+	_wrap->geometryValue() | rpl::on_next([=](QRect rect) {
+		_calm->setComposeRect(rect);
+	}, _wrap->lifetime());
 	if (session().settings().shouldShowStashHint()) {
 		_stashHintManager = std::make_unique<Controls::StashHintManager>(
 			Controls::StashHintDescriptor{
@@ -5049,6 +5071,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		- (_tabbedSelectorToggle->isHidden()
 			? 0
 			: _tabbedSelectorToggle->width())
+		- (_calm ? _calm->leafWidth() : 0)
 		- (_likeShown ? _like->width() : 0)
 		- (_botCommandShown ? _botCommandStart->width() : 0)
 		- ((_silent && !_silent->isHidden()) ? _silent->width() : 0)
@@ -5136,6 +5159,10 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	_tabbedSelectorToggle->moveToRight(right, buttonsTop);
 	if (!_tabbedSelectorToggle->isHidden()) {
 		right += _tabbedSelectorToggle->width();
+	}
+	if (const auto leaf = _calm ? _calm->leafWidth() : 0) {
+		_calm->moveLeaf(size.width() - right - leaf, buttonsTop);
+		right += leaf;
 	}
 	if (_like) {
 		using Type = Controls::WriteRestrictionType;
@@ -5737,6 +5764,9 @@ void ComposeControls::paintBackground(QPainter &p, QRect full, QRect clip) {
 }
 
 void ComposeControls::escape() {
+	if (_calm && _calm->handleEscape()) {
+		return;
+	}
 	if (const auto voice = _voiceRecordBar.get(); voice->isActive()) {
 		voice->showDiscardBox(nullptr, anim::type::normal);
 	} else {

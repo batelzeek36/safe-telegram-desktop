@@ -7,6 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_bottom_info.h"
 
+#include "safe/safe_calm.h"
+#include "safe/safe_calm_leaf.h"
+
 #include "ui/chat/message_bubble.h"
 #include "ui/chat/chat_style.h"
 #include "ui/effects/reaction_fly_animation.h"
@@ -301,6 +304,14 @@ void BottomInfo::paint(
 		position.y(),
 		authorEditedWidth,
 		outerWidth);
+	if (_data.flags & Data::Flag::CalmLeaf) {
+		right -= Safe::Calm::LeafMarkWidth();
+		Safe::Calm::PaintLeafMark(
+			p,
+			right,
+			position.y(),
+			st::msgDateFont->height);
+	}
 
 	if (_data.flags & Data::Flag::Silent) {
 		const auto &icon = inverted
@@ -594,6 +605,9 @@ QSize BottomInfo::countOptimalSize() {
 		width += st::historySendStateSpace;
 	}
 	width += _authorEditedDate.maxWidth();
+	if (_data.flags & Data::Flag::CalmLeaf) {
+		width += Safe::Calm::LeafMarkWidth();
+	}
 	if (!_views.isEmpty()) {
 		width += st::historyViewsSpace
 			+ _views.maxWidth()
@@ -676,6 +690,9 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 	}
 	if (item->isPinned() && message->context() != Context::Pinned) {
 		result.flags |= Flag::Pinned;
+	}
+	if (Safe::Calm::ShowsLeaf(item)) {
+		result.flags |= Flag::CalmLeaf;
 	}
 	if (message->context() == Context::ShortcutMessages) {
 		result.flags |= Flag::Shortcut;

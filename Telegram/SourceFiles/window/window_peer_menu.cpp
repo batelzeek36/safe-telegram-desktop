@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
 
+#include "safe/safe_calm_box.h"
+
 #include "base/call_delayed.h"
 #include "menu/menu_check_item.h"
 #include "menu/menu_mark_as_read.h"
@@ -1936,6 +1938,12 @@ void Filler::fillContextMenuActions() {
 
 void Filler::fillHistoryActions() {
 	addToggleMuteSubmenu(true);
+	if (const auto peer = _peer) {
+		const auto controller = _controller;
+		_addAction(Safe::Calm::ChatRuleLabel(peer), [=] {
+			controller->show(Box(Safe::Calm::ChatRuleBox, peer));
+		}, &st::menuIconChatBubble);
+	}
 	addCreateTopic();
 	addInfo();
 	addViewAsTopics();

@@ -66,6 +66,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "window/window_controller.h"
 #include "window/window_peer_menu.h"
+#include "safe/safe_calm.h"
+#include "safe/safe_calm_box.h"
 #include "window/notifications_manager.h"
 #include "info/info_memento.h"
 #include "info/statistics/info_statistics_widget.h"
@@ -3669,6 +3671,15 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							[=] { copyContextText(itemId); },
 							&st::menuIconCopy);
 					}
+					if (Safe::Calm::WhatYouTyped(item)) {
+						_menu->addAction(u"What you typed"_q, [=] {
+							const auto session = &_controller->session();
+							if (const auto item = session->data().message(itemId)) {
+								_controller->show(
+									Box(Safe::Calm::WhatYouTypedBox, item));
+							}
+						}, &st::menuIconInfo);
+					}
 					if ((!item->translation() || !_history->translatedTo())
 						&& (view->hasVisibleText() || mediaHasTextForCopy)) {
 						const auto peer = item->history()->peer;
@@ -3679,6 +3690,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 								.append(item->originalText()))
 							: item->originalText();
 						if (!translate.text.isEmpty()
+							&& !Safe::Calm::IsSoftenedIncoming(item)
 							&& !Ui::SkipTranslate(translate)) {
 							_menu->addAction(tr::lng_context_translate(tr::now), [=] {
 								_controller->show(Box(

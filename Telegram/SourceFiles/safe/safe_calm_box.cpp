@@ -221,6 +221,19 @@ void SettingsBox(
 			"MAINGEAR. The other person only ever gets the calm version."_q));
 }
 
+rpl::producer<QString> SendModeLabel() {
+	return rpl::single(rpl::empty) | rpl::then(
+		Changes()
+	) | rpl::map([] {
+		switch (Current().send) {
+		case SendMode::Off: return u"Off"_q;
+		case SendMode::Review: return u"Second look"_q;
+		case SendMode::Autopilot: return u"Autopilot"_q;
+		}
+		Unexpected("Safe::Calm::SendMode in SendModeLabel.");
+	});
+}
+
 QString ChatRuleLabel(not_null<PeerData*> peer) {
 	return u"Calm mode: "_q + RuleText(RuleFor(peer->id));
 }

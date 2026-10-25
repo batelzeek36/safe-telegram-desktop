@@ -63,8 +63,12 @@ void ArmHold(
 	not_null<History*> history,
 	const QString &text,
 	Fn<void(FullMsgId)> held);
-// ApiWrap::sendMessage: true when `send` was kept for later.
-[[nodiscard]] bool DeferSend(not_null<HistoryItem*> local, Fn<void()> send);
+// Data::Histories::sendPreparedMessage: true when `send` was kept for later
+// (the local bubble is found by the request's random id).
+[[nodiscard]] bool DeferSend(
+	not_null<History*> history,
+	uint64 randomId,
+	Fn<void()> send);
 void SendHeldNow(FullMsgId local);
 // Destroys the local bubble before anything left the Mac.
 void UndoHold(FullMsgId local);

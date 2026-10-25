@@ -1875,6 +1875,30 @@ PRIVATE
     safe/safe_ask.h
     safe/safe_bots.cpp
     safe/safe_bots.h
+    safe/safe_calm.cpp
+    safe/safe_calm.h
+    safe/safe_calm_box.cpp
+    safe/safe_calm_box.h
+    safe/safe_calm_client.cpp
+    safe/safe_calm_client.h
+    safe/safe_calm_composer.cpp
+    safe/safe_calm_composer.h
+    safe/safe_calm_data.h
+    safe/safe_calm_files.cpp
+    safe/safe_calm_files.h
+    safe/safe_calm_hold.cpp
+    safe/safe_calm_incoming.cpp
+    safe/safe_calm_leaf.cpp
+    safe/safe_calm_leaf.h
+    safe/safe_calm_panels.cpp
+    safe/safe_calm_panels.h
+    safe/safe_calm_prompt.cpp
+    safe/safe_calm_prompt.h
+    safe/safe_calm_settings.cpp
+    safe/safe_calm_settings.h
+    safe/safe_calm_shared.h
+    safe/safe_calm_store.cpp
+    safe/safe_calm_store.h
     safe/safe_discovery.cpp
     safe/safe_discovery.h
     safe/safe_drop.cpp

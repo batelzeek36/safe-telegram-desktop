@@ -24,4 +24,9 @@ inline constexpr auto kEmber = 0xF0A35E;
 [[nodiscard]] const QPainterPath &LeafPath();
 void PaintLeaf(QPainter &p, QRectF rect, float64 size, const QColor &color);
 
+// The small leaf by a message's time (HistoryView::BottomInfo): the room it
+// takes left of the date, and the leaf in it, on the date's line.
+[[nodiscard]] int LeafMarkWidth();
+void PaintLeafMark(QPainter &p, int left, int top, int lineHeight);
+
 } // namespace Safe::Calm

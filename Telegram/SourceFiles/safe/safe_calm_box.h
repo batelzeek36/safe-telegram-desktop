@@ -30,6 +30,9 @@ void ChatRuleBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer);
 
 [[nodiscard]] QString ChatRuleLabel(not_null<PeerData*> peer);
 
+// "Second look" / "Autopilot" / "Off", following the settings.
+[[nodiscard]] rpl::producer<QString> SendModeLabel();
+
 // Empty when the item is not one of his softened messages.
 void WhatYouTypedBox(
 	not_null<Ui::GenericBox*> box,

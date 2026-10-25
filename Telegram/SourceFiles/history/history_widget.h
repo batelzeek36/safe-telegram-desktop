@@ -148,6 +148,10 @@ struct VoiceToSend;
 class BotKeyboard;
 class HistoryInner;
 
+namespace Safe::Calm {
+class Composer;
+} // namespace Safe::Calm
+
 class HistoryWidget final
 	: public Window::AbstractSectionWidget
 	, private HistoryView::CornerButtonsDelegate {
@@ -925,6 +929,7 @@ private:
 	const std::shared_ptr<Ui::SendButton> _send;
 	rpl::event_stream<bool> _sendLockBadge;
 	HistoryView::Controls::ComposeAiButton * const _aiButton = nullptr;
+	std::unique_ptr<Safe::Calm::Composer> _calm;
 	Ui::IconButton * const _sendAsFile = nullptr;
 	Ui::IconButton * const _expand = nullptr;
 	Ui::IconButton * const _discardRichDraft = nullptr;
