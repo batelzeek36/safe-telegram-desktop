@@ -18,6 +18,9 @@ class History;
 // Fine goes out as typed. Hot flips to the calm version in place, waits
 // kHoldMs for Undo, then goes out. A chat's sends leave strictly in order:
 // anything sent behind a waiting message (stickers and media too) waits.
+// A message whose check failed holds the line until Zach sends it as is,
+// deletes it, or steps it aside to let the rest go (Zach 10-25: "hold the
+// line by default, with a button to step aside").
 namespace Safe::Calm {
 
 using Builder = Fn<Data::Histories::PreparedMessage(
@@ -38,7 +41,9 @@ enum class QueueState : uchar {
 struct QueueEvent {
 	FullMsgId id;
 	QueueState state = QueueState::Checking;
-	crl::time until = 0;
+	crl::time until = 0; // Softened: when it goes out
+	bool holding = false; // Failed: messages behind it are waiting on it
+	bool aside = false; // Failed: stepped aside, the rest go on
 };
 
 // The composer, on Send in Autopilot: the next message sent in `history`
@@ -63,8 +68,10 @@ void OfferRebuild(
 
 // A softened message: the bubble flips back to his words and those go out.
 void QueueUndo(FullMsgId id);
-// A failed check: his words go out as typed, or the bubble goes.
+// A failed check: his words go out as typed (once it reaches the front), the
+// rest go ahead without it, or the bubble goes.
 void QueueSendAsIs(FullMsgId id);
+void QueueStepAside(FullMsgId id);
 void QueueDelete(FullMsgId id);
 
 [[nodiscard]] rpl::producer<QueueEvent> QueueEvents(PeerId peer);

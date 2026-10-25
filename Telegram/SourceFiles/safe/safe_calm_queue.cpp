@@ -48,12 +48,14 @@ struct Entry {
 	Fn<void(Builder)> send;
 	Step step = Step::Checking;
 	crl::time until = 0;
+	bool aside = false; // Failed and stepped aside: does not block
 };
 
 struct PeerQueue {
 	base::weak_ptr<Main::Session> session;
 	std::deque<Entry> entries;
-	base::Timer timer;
+	base::Timer timer; // the next Softened entry's Undo window ends
+	base::Timer ring; // repaints the countdown rings while any is Softened
 };
 
 struct Queues {
@@ -83,12 +85,6 @@ void Pump(PeerId peer);
 	return first ? QueueState::Sent : QueueState::Waiting;
 }
 
-void Emit(PeerId peer, FullMsgId id, QueueState state, crl::time until = 0) {
-	if (id) {
-		State().events.fire({ peer, QueueEvent{ id, state, until } });
-	}
-}
-
 [[nodiscard]] PeerQueue *QueueFor(PeerId peer) {
 	auto &peers = State().peers;
 	const auto i = peers.find(peer);
@@ -98,6 +94,47 @@ void Emit(PeerId peer, FullMsgId id, QueueState state, crl::time until = 0) {
 [[nodiscard]] HistoryItem *Bubble(const PeerQueue &queue, FullMsgId id) {
 	const auto session = queue.session.get();
 	return (session && id) ? session->data().message(id) : nullptr;
+}
+
+[[nodiscard]] HistoryItem *Bubble(FullMsgId id) {
+	const auto queue = QueueFor(id.peer);
+	return queue ? Bubble(*queue, id) : nullptr;
+}
+
+// The row under the bubble (safe_calm_chip) comes and goes with the state.
+void Refresh(HistoryItem *item) {
+	if (item) {
+		item->history()->owner().requestItemResize(item);
+	}
+}
+
+void Emit(PeerId peer, FullMsgId id, QueueState state, crl::time until = 0) {
+	if (!id) {
+		return;
+	}
+	auto event = QueueEvent{ id, state, until };
+	if (const auto now = QueueStateOf(id)) {
+		event.holding = now->holding;
+		event.aside = now->aside;
+	}
+	State().events.fire({ peer, event });
+}
+
+void TickRings(PeerQueue &queue) {
+	auto any = false;
+	for (const auto &entry : queue.entries) {
+		if (entry.step == Step::Softened) {
+			any = true;
+			if (const auto item = Bubble(queue, entry.id)) {
+				item->history()->owner().requestItemRepaint(item);
+			}
+		}
+	}
+	if (!any) {
+		queue.ring.cancel();
+	} else if (!queue.ring.isActive()) {
+		queue.ring.callEach(40);
+	}
 }
 
 [[nodiscard]] Entry *FindEntry(FullMsgId id, PeerQueue **queue = nullptr) {
@@ -175,6 +212,7 @@ void Apply(PeerQueue &queue, Entry &entry, const Result &result) {
 		LOG(("Safe Calm: no verdict for a queued message (%1)."
 			).arg(result.failure));
 		entry.step = Step::Failed;
+		Refresh(Bubble(queue, entry.id));
 		Emit(peer, entry.id, QueueState::Failed);
 		return;
 	}
@@ -188,6 +226,7 @@ void Apply(PeerQueue &queue, Entry &entry, const Result &result) {
 		// Never let a hot draft go out as typed without him choosing it.
 		LOG(("Safe Calm: a softened message could not be rebuilt."));
 		entry.step = Step::Failed;
+		Refresh(item);
 		Emit(peer, entry.id, QueueState::Failed);
 		return;
 	}
@@ -197,6 +236,8 @@ void Apply(PeerQueue &queue, Entry &entry, const Result &result) {
 	MarkSentSoftened(item->history(), entry.calm, entry.original);
 	RememberFine(peer, entry.calm);
 	ShowText(item, entry.randomId, entry.calm);
+	Refresh(item);
+	TickRings(queue);
 	Emit(peer, entry.id, QueueState::Softened, entry.until);
 }
 
@@ -229,19 +270,25 @@ void Pump(PeerId peer) {
 		return;
 	}
 	auto &entries = queue->entries;
-	while (!entries.empty()) {
-		auto &entry = entries.front();
+	auto blocker = (Entry*)nullptr;
+	for (auto i = 0; i < int(entries.size());) {
+		auto &entry = entries[i];
 		if (entry.id && !Bubble(*queue, entry.id)) {
 			// Deleted from the chat while it waited.
-			entries.pop_front();
+			entries.erase(begin(entries) + i);
+			continue;
+		} else if (entry.step == Step::Failed && entry.aside) {
+			++i;
 			continue;
 		} else if (entry.step == Step::Checking
 			|| entry.step == Step::Failed) {
+			blocker = &entry;
 			break;
 		} else if (entry.step == Step::Softened) {
 			const auto left = entry.until - crl::now();
 			if (left > 0) {
 				queue->timer.callOnce(left);
+				blocker = &entry;
 				break;
 			}
 		}
@@ -250,15 +297,21 @@ void Pump(PeerId peer) {
 			: entry.message;
 		const auto send = std::move(entry.send);
 		const auto id = entry.id;
-		entries.pop_front();
+		entries.erase(begin(entries) + i);
 		state.releasing = true;
 		send(builder);
 		state.releasing = false;
+		Refresh(Bubble(*queue, id));
 		Emit(peer, id, QueueState::Sent);
 	}
-	for (auto i = 1; i < int(entries.size()); ++i) {
-		if (entries[i].step == Step::Ready) {
-			Emit(peer, entries[i].id, QueueState::Waiting);
+	TickRings(*queue);
+	if (blocker && blocker->step == Step::Failed) {
+		// Its row offers "Let the rest go" only while others wait on it.
+		Refresh(Bubble(*queue, blocker->id));
+	}
+	for (const auto &entry : entries) {
+		if (entry.step == Step::Ready && &entry != blocker) {
+			Emit(peer, entry.id, QueueState::Waiting);
 		}
 	}
 	if (entries.empty()) {
@@ -274,6 +327,11 @@ void Pump(PeerId peer) {
 		auto queue = std::make_unique<PeerQueue>();
 		queue->session = base::make_weak(&history->session());
 		queue->timer.setCallback([=] { Pump(peer); });
+		queue->ring.setCallback([=] {
+			if (const auto queue = QueueFor(peer)) {
+				TickRings(*queue);
+			}
+		});
 		i = peers.emplace(peer, std::move(queue)).first;
 	}
 	return *i->second;
@@ -370,10 +428,12 @@ void QueueUndo(FullMsgId id) {
 	if (!entry || entry->step != Step::Softened) {
 		return;
 	}
-	if (const auto item = Bubble(*queue, id)) {
+	const auto item = Bubble(*queue, id);
+	if (item) {
 		ShowText(item, entry->randomId, entry->original);
 	}
 	entry->step = Step::Ready;
+	Refresh(item);
 	Pump(id.peer);
 }
 
@@ -383,6 +443,18 @@ void QueueSendAsIs(FullMsgId id) {
 		return;
 	}
 	entry->step = Step::Ready;
+	entry->aside = false;
+	Refresh(Bubble(id));
+	Pump(id.peer);
+}
+
+void QueueStepAside(FullMsgId id) {
+	const auto entry = FindEntry(id);
+	if (!entry || entry->step != Step::Failed || entry->aside) {
+		return;
+	}
+	entry->aside = true;
+	Refresh(Bubble(id));
 	Pump(id.peer);
 }
 
@@ -424,11 +496,23 @@ std::optional<QueueEvent> QueueStateOf(FullMsgId id) {
 	if (!queue) {
 		return std::nullopt;
 	}
-	for (auto i = 0; i < int(queue->entries.size()); ++i) {
-		const auto &entry = queue->entries[i];
-		if (entry.id == id) {
-			return QueueEvent{ id, Public(entry, !i), entry.until };
+	const auto &entries = queue->entries;
+	for (auto i = 0; i < int(entries.size()); ++i) {
+		const auto &entry = entries[i];
+		if (entry.id != id) {
+			continue;
 		}
+		auto result = QueueEvent{ id, Public(entry, !i), entry.until };
+		result.aside = entry.aside;
+		if (entry.step == Step::Failed && !entry.aside) {
+			result.holding = std::any_of(
+				begin(entries) + i + 1,
+				end(entries),
+				[](const Entry &other) {
+					return other.step != Step::Failed || !other.aside;
+				});
+		}
+		return result;
 	}
 	return std::nullopt;
 }
