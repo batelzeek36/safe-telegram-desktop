@@ -208,8 +208,9 @@ void SettingsBox(
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
-		rpl::single(u"You only ever see the calm version, with a small leaf "
-			"by the time. There is no way to open the original."_q));
+		rpl::single(u"In one-on-one chats you only ever see the calm "
+			"version, with a small leaf by the time. There is no way to open "
+			"the original. Set a group to Always to include it."_q));
 
 	Ui::AddSkip(container);
 	Ui::AddSubsectionTitle(container, rpl::single(u"Chats"_q));

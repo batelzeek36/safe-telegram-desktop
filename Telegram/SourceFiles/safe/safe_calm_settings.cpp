@@ -206,10 +206,12 @@ Modes ModesFor(not_null<PeerData*> peer) {
 	if (!DefaultKind(peer)) {
 		return {};
 	}
+	// Groups only by Always: their traffic is not aimed at Zach and would
+	// spend the runner's caps.
 	return {
 		.send = settings.send,
 		.typing = settings.typing,
-		.incoming = settings.incoming,
+		.incoming = settings.incoming && peer->isUser(),
 		.incomingSince = settings.incomingSince,
 	};
 }

@@ -60,8 +60,9 @@ void Update(Fn<void(Settings&)> change);
 void SetRule(PeerId peer, ChatRule rule);
 
 // Default rule: people and groups only (not bots, not channels, not Saved
-// Messages or the service account); Always turns everything on in that chat
-// (Second look when Send is Off), Off turns everything off.
+// Messages or the service account), their side in one-on-one chats only;
+// Always turns everything on in that chat (Second look when Send is Off),
+// Off turns everything off.
 [[nodiscard]] Modes ModesFor(not_null<PeerData*> peer);
 
 } // namespace Safe::Calm
