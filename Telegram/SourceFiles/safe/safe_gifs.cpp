@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document_media.h"
 #include "data/data_user.h"
 #include "inline_bots/inline_bot_layout_item.h"
+#include "inline_bots/inline_bot_result.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
 #include "safe/safe_bots.h"
@@ -17,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_media_covers.h"
 #include "safe/safe_media_gate.h"
 #include "safe/safe_media_paint.h"
+#include "safe/safe_tenor.h"
 #include "safe/safe_words.h"
 
 namespace Safe {
@@ -28,17 +30,16 @@ namespace {
 		&& !bot->username().compare(configured, Qt::CaseInsensitive);
 }
 
-[[nodiscard]] bool IsSearchResult(
+// Tenor's post id for a Tenor tile (its web document id is new each time).
+[[nodiscard]] MediaKey KeyFor(
 		not_null<const InlineBots::Layout::ItemBase*> item) {
-	return item->getResult() != nullptr;
-}
-
-[[nodiscard]] bool Held(DocumentData *document) {
-	if (!document) {
-		return true;
+	if (const auto result = item->getResult()) {
+		if (const auto key = Tenor::KeyOf(result.get())) {
+			return key;
+		}
 	}
-	const auto key = KeyOf(document);
-	return !key || (Verdict(key) != VerdictState::Clear);
+	const auto document = item->getPreviewDocument();
+	return document ? KeyOf(document) : MediaKey();
 }
 
 [[nodiscard]] HeldLook LookOf(MediaKey key, bool requestable) {
@@ -62,9 +63,11 @@ bool AllowsGifSearch(not_null<UserData*> bot, const QString &query) {
 }
 
 bool HoldsGifTile(const InlineBots::Layout::ItemBase *item) {
-	return item
-		&& IsSearchResult(item)
-		&& Held(item->getPreviewDocument());
+	if (!item || !item->getResult()) {
+		return false;
+	}
+	const auto key = KeyFor(item);
+	return !key || (Verdict(key) != VerdictState::Clear);
 }
 
 bool PaintHeldGifTile(
@@ -76,13 +79,13 @@ bool PaintHeldGifTile(
 	const auto rect = QRect(0, 0, item->width(), item->height());
 	const auto shape = HoldShape::Small();
 	const auto document = item->getPreviewDocument();
-	if (!document) {
+	const auto key = KeyFor(item);
+	if (!document || !key) {
 		PaintFog(p, rect, shape);
 		return true;
 	}
-	const auto key = KeyOf(document);
 	const auto requestable = (Verdict(key) == VerdictState::Waiting)
-		&& Covers::WantSearchedGif(document);
+		&& Covers::WantSearchedGif(document, key);
 	PaintJudged(
 		p,
 		rect,

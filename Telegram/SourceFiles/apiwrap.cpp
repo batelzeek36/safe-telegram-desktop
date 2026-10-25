@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include "safe/safe_tenor.h"
 #include "safe/safe_gate.h"
 #include "safe/safe_sensitive.h"
 
@@ -5194,6 +5195,17 @@ void ApiWrap::sendInlineResult(
 	history->clearCloudDraft(topicRootId, monoforumPeerId);
 	history->startSavingCloudDraft(topicRootId, monoforumPeerId);
 
+	if (Safe::Tenor::Send(
+			this,
+			data,
+			action,
+			randomId,
+			newId,
+			starsPaid,
+			done)) {
+		finishForwarding(action);
+		return;
+	}
 	auto &histories = history->owner().histories();
 	histories.sendPreparedMessage(
 		history,

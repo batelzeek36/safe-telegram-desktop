@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/gifs_list_widget.h"
 #include "safe/safe_bots.h"
 #include "safe/safe_gifs.h"
+#include "safe/safe_tenor.h"
 
 #include "api/api_toggling_media.h" // Api::ToggleSavedGif
 #include "base/const_string.h"
@@ -954,20 +955,14 @@ void GifsListWidget::sendInlineRequest() {
 		return;
 	}
 	_search->setLoading(true);
-	_inlineRequestId = _api.request(MTPmessages_GetInlineBotResults(
-		MTP_flags(0),
-		_searchBot->inputUser(),
-		_inlineQueryPeer->input(),
-		MTPInputGeoPoint(),
-		MTP_string(_inlineQuery),
-		MTP_string(nextOffset)
-	)).done([this](const MTPmessages_BotResults &result) {
-		inlineResultsDone(result);
-	}).fail([this] {
-		// show error?
-		_search->setLoading(false);
-		_inlineRequestId = 0;
-	}).handleAllErrors().send();
+	_inlineRequestId = -1;
+	const auto query = _inlineQuery;
+	Safe::Tenor::Search(&session(), query, crl::guard(this, [=](
+			const MTPmessages_BotResults &result) {
+		if (_inlineRequestId && _inlineQuery == query) {
+			inlineResultsDone(result);
+		}
+	}));
 }
 
 void GifsListWidget::refreshRecent() {

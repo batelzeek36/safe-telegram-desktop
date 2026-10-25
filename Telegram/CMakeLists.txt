@@ -1918,6 +1918,8 @@ PRIVATE
     safe/safe_reactions.h
     safe/safe_sensitive.cpp
     safe/safe_sensitive.h
+    safe/safe_tenor.cpp
+    safe/safe_tenor.h
     safe/safe_judge_data.h
     safe/safe_trust.cpp
     safe/safe_trust.h

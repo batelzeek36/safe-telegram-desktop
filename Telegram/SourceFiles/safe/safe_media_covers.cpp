@@ -480,8 +480,7 @@ bool WantUserpic(not_null<const PeerData*> peer, MediaKey key) {
 	return true;
 }
 
-bool WantSearchedGif(not_null<DocumentData*> document) {
-	const auto key = KeyOf(document);
+bool WantSearchedGif(not_null<DocumentData*> document, MediaKey key) {
 	if (!JudgeAvailable() || !key || document->size > kMaxFileBytes) {
 		return false;
 	}
