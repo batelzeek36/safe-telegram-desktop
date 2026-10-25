@@ -10,6 +10,8 @@ Reads two environment variables (GitHub Actions secrets):
                    array of non-zero integer dialog ids. Nothing else is
                    allowed through: names and picks never leave the Mac.
   SAFE_JUDGE_KEY   the picture check's API key.
+  SAFE_CALM_URL    Calm mode's runner (https://calm.zakkbates.com).
+  SAFE_CALM_KEY    the runner's key.
 
 Each one is written into its header under Telegram/SourceFiles/safe/. A
 missing value is NOT an error: the header stays as it is (empty), the app
@@ -100,6 +102,30 @@ def main():
             key,
             # Public repository: not one character of the key in the log.
             "picture-check key baked in (%d characters)" % len(key))
+    inject_calm(safe)
+
+
+def inject_calm(safe):
+    url = os.environ.get("SAFE_CALM_URL", "").strip()
+    key = os.environ.get("SAFE_CALM_KEY", "").strip()
+    if not url or not key:
+        print("==> no SAFE_CALM_URL / SAFE_CALM_KEY: Calm mode goes straight "
+              "to the API fallback")
+        return
+    if not re.fullmatch(r"https://[A-Za-z0-9.\-]+(:[0-9]+)?(/[A-Za-z0-9._\-/]*)?", url):
+        sys.exit("SAFE_CALM_URL is not a plain https address")
+    if not re.fullmatch(r"[A-Za-z0-9_\-]{32,256}", key):
+        sys.exit("SAFE_CALM_KEY has the wrong shape")
+    header = safe / "safe_calm_data.h"
+    if not header.exists():
+        print("==> safe_calm_data.h not in this tree: skipped")
+        return
+    write_header(header, "kCalmUrl", url, "Calm runner address baked in")
+    write_header(
+        header,
+        "kCalmKey",
+        key,
+        "Calm runner key baked in (%d characters)" % len(key))
 
 
 if __name__ == "__main__":

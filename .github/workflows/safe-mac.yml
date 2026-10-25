@@ -153,6 +153,8 @@ jobs:
         env:
           SAFE_TRUST_JSON: ${{ secrets.SAFE_TRUST_JSON }}
           SAFE_JUDGE_KEY: ${{ secrets.SAFE_JUDGE_KEY }}
+          SAFE_CALM_URL: ${{ secrets.SAFE_CALM_URL }}
+          SAFE_CALM_KEY: ${{ secrets.SAFE_CALM_KEY }}
         run: python3 $REPO_NAME/.github/safe/inject_secrets.py $REPO_NAME
 
       - name: Build.
