@@ -21,4 +21,9 @@ class Client;
 // How a chat or a sender is named to the model: the short name of a person.
 [[nodiscard]] QString DisplayName(not_null<PeerData*> peer);
 
+// Telegram's marked chat id ("5666554655", "-1002882936986"), as Telethon's
+// get_peer_id and the Bot API write it: the runner picks its per-chat voice
+// profile by it. Sent to the runner only, never to the API fallback.
+[[nodiscard]] QString ChatKey(not_null<PeerData*> peer);
+
 } // namespace Safe::Calm

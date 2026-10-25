@@ -120,8 +120,13 @@ QJsonArray ContextJson(const std::vector<ContextLine> &context) {
 }
 
 QByteArray RunnerBody(const Request &request) {
-	return QJsonDocument(RequestObject(request)).toJson(
-		QJsonDocument::Compact);
+	auto object = RequestObject(request);
+	// The runner's per-chat voice profile; never in the API fallback's body,
+	// where this object is the model's own user turn.
+	if (!request.chat.isEmpty()) {
+		object.insert(u"chat"_q, request.chat);
+	}
+	return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
 
 QByteArray ApiBody(const Request &request) {

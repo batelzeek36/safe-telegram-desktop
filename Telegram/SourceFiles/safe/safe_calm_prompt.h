@@ -32,6 +32,7 @@ struct Request {
 	QString sender;
 	QString recipient;
 	std::vector<ContextLine> context;
+	QString chat; // Telegram's marked chat id, for the runner's per-chat voice profile
 };
 
 struct Verdict {

@@ -84,6 +84,19 @@ void Answer(const DraftKey &key, const Result &result) {
 
 } // namespace
 
+QString ChatKey(not_null<PeerData*> peer) {
+	const auto id = peer->id;
+	if (peerIsUser(id)) {
+		return QString::number(int64(peerToUser(id).bare));
+	} else if (peerIsChat(id)) {
+		return QString::number(-int64(peerToChat(id).bare));
+	} else if (peerIsChannel(id)) {
+		return QString::number(
+			-(1000000000000LL + int64(peerToChannel(id).bare)));
+	}
+	return QString();
+}
+
 QString DisplayName(not_null<PeerData*> peer) {
 	const auto &name = peer->isUser() ? peer->shortName() : peer->name();
 	return name.isEmpty() ? peer->name() : name;
@@ -129,6 +142,7 @@ Request MakeRequest(
 		.recipient = (direction == Direction::Out)
 			? DisplayName(peer)
 			: OwnerName(),
+		.chat = ChatKey(peer),
 	};
 	const auto now = base::unixtime::now();
 	auto lines = std::vector<ContextLine>();

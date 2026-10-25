@@ -86,6 +86,7 @@ uint64 Suggest(
 	auto request = SuggestRequest{
 		.recipient = DisplayName(history->peer),
 		.context = MakeRequest(history, Direction::Out, QString()).context,
+		.chat = ChatKey(history->peer),
 	};
 	if (replyTo) {
 		request.replyTo = ContextLine{
