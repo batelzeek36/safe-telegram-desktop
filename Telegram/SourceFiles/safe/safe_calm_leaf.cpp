@@ -110,6 +110,9 @@ constexpr auto kLeafPath = ""
 constexpr auto kCenter = 54.;
 constexpr auto kSpan = 47.;
 constexpr auto kMarkSize = 11;
+constexpr auto kGold = 0xE9BE4F;
+constexpr auto kOrange = 0xF0884A;
+constexpr auto kFlame = 0xEC5246;
 constexpr auto kMarkGap = 3;
 
 [[nodiscard]] QPainterPath ParsePath(const char *data) {
@@ -166,7 +169,11 @@ QColor EmberColor(float64 alpha) {
 }
 
 QColor HeatColor(float64 heat, float64 alpha) {
-	return Mix(kJade, kEmber, heat, alpha);
+	// Zach 10-25: each level must read at a glance (heat 1 looked green).
+	constexpr auto kStops = std::array{ kJade, kGold, kOrange, kFlame };
+	const auto t = std::clamp(heat, 0., 1.) * (kStops.size() - 1);
+	const auto i = std::min(int(t), int(kStops.size()) - 2);
+	return Mix(kStops[i], kStops[i + 1], t - i, alpha);
 }
 
 const QPainterPath &LeafPath() {

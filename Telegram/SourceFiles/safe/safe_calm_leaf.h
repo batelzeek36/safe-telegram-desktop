@@ -17,7 +17,8 @@ inline constexpr auto kEmber = 0xF0A35E;
 [[nodiscard]] QColor JadeColor(float64 alpha = 1.);
 [[nodiscard]] QColor EmberColor(float64 alpha = 1.);
 
-// Jade at 0, ember at 1.
+// The leaf's heat: jade at 0, then gold, orange and red at heats 1, 2, 3
+// (0 .. 1 in thirds).
 [[nodiscard]] QColor HeatColor(float64 heat, float64 alpha = 1.);
 
 // The leaf filling a `size` x `size` square centered in `rect`.
