@@ -134,11 +134,11 @@ void Panel::showSheet(
 	_head = u"Reads hot"_q;
 	_hint = QString();
 	_heat = std::clamp(verdict.heat, 1, 3);
-	// Filled in place: a Text::String moved by vector growth measured
-	// one line short (the first note overlapped the second, 10-25).
-	_notes = std::vector<Ui::Text::String>(verdict.notes.size());
-	for (auto i = 0; i != int(verdict.notes.size()); ++i) {
-		_notes[i].setText(st::defaultTextStyle, verdict.notes[i]);
+	_notes.clear();
+	_notes.reserve(verdict.notes.size());
+	for (const auto &note : verdict.notes) {
+		_notes.emplace_back(1);
+		_notes.back().setText(st::defaultTextStyle, note);
 	}
 	_calmLabel = u"CALMER VERSION"_q;
 	_main.setText(st::defaultTextStyle, verdict.text);

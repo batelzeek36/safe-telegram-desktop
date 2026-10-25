@@ -45,7 +45,8 @@ private:
 Hero::Hero(QWidget *parent, QString title, QString subtitle)
 : RpWidget(parent)
 , _title(std::move(title))
-, _subtitle(st::defaultTextStyle, subtitle) {
+, _subtitle(1) {
+	_subtitle.setText(st::defaultTextStyle, subtitle);
 }
 
 int Hero::resizeGetHeight(int newWidth) {

@@ -105,8 +105,9 @@ private:
 	QString _head;
 	QString _hint;
 	int _heat = 0;
-	Ui::Text::String _main;
-	Ui::Text::String _yours;
+	// A String measures unwrapped below its minimum resize width.
+	Ui::Text::String _main = Ui::Text::String(1);
+	Ui::Text::String _yours = Ui::Text::String(1);
 	std::vector<Ui::Text::String> _notes;
 	QString _calmLabel;
 	std::vector<Laid> _buttons;
