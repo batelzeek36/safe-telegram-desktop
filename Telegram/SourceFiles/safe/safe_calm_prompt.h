@@ -6,6 +6,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+class QJsonArray;
+class QJsonObject;
+
 // What one calm check sends and what comes back, for both ways of asking:
 // the runner on MAINGEAR (POST /v1/check, calm-runner/calm_runner.py in the
 // control repo) and the Messages API fallback, which carries the runner's own
@@ -58,6 +61,9 @@ inline constexpr auto kMaxAgo = 16;
 inline constexpr auto kApiEndpoint = "https://api.anthropic.com/v1/messages";
 inline constexpr auto kApiVersion = "2023-06-01";
 inline constexpr auto kApiModel = "claude-sonnet-5-5";
+
+// The chat context as both endpoints take it: the last kMaxContext lines.
+[[nodiscard]] QJsonArray ContextJson(const std::vector<ContextLine> &context);
 
 [[nodiscard]] QByteArray RunnerBody(const Request &request);
 [[nodiscard]] QByteArray ApiBody(const Request &request);

@@ -6,6 +6,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+class PeerData;
+
 namespace Safe::Calm {
 
 class Client;
@@ -15,5 +17,8 @@ class Client;
 
 // The name the runner knows Zach by (calm-runner/judge.py OWNER).
 [[nodiscard]] QString OwnerName();
+
+// How a chat or a sender is named to the model: the short name of a person.
+[[nodiscard]] QString DisplayName(not_null<PeerData*> peer);
 
 } // namespace Safe::Calm

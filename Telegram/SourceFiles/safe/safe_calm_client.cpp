@@ -38,11 +38,11 @@ namespace {
 	return result;
 }
 
-[[nodiscard]] QByteArray RunnerCheckUrl(QByteArray base) {
+[[nodiscard]] QByteArray RunnerBase(QByteArray base) {
 	while (base.endsWith('/')) {
 		base.chop(1);
 	}
-	return base.isEmpty() ? QByteArray() : (base + "/v1/check");
+	return base;
 }
 
 } // namespace
@@ -50,12 +50,14 @@ namespace {
 struct Client::Call {
 	Request request;
 	Fn<void(Result)> done;
+	std::optional<SuggestRequest> suggest; // a suggestions call when set
+	Fn<void(SuggestResult)> suggested;
 	QPointer<QNetworkReply> reply;
 	bool finished = false;
 };
 
 Client::Client()
-: _runnerUrl(RunnerCheckUrl(QByteArray(kCalmUrl)))
+: _runnerUrl(RunnerBase(QByteArray(kCalmUrl)))
 , _runnerKey(QByteArray(kCalmKey))
 , _apiKey(QByteArray(kJudgeKey)) {
 }
@@ -85,10 +87,23 @@ not_null<QNetworkAccessManager*> Client::manager() {
 }
 
 uint64 Client::check(Request request, Fn<void(Result)> done) {
-	const auto id = ++_nextId;
 	auto call = std::make_unique<Call>();
 	call->request = std::move(request);
 	call->done = std::move(done);
+	return start(std::move(call));
+}
+
+uint64 Client::suggest(
+		SuggestRequest request,
+		Fn<void(SuggestResult)> done) {
+	auto call = std::make_unique<Call>();
+	call->suggest = std::move(request);
+	call->suggested = std::move(done);
+	return start(std::move(call));
+}
+
+uint64 Client::start(std::unique_ptr<Call> call) {
+	const auto id = ++_nextId;
 	_calls.emplace(id, std::move(call));
 	if (hasRunner()) {
 		askRunner(id);
@@ -117,6 +132,17 @@ void Client::askRunner(uint64 id) {
 		if (i == end(_calls)) {
 			return;
 		}
+		if (i->second->suggest) {
+			auto result = failure.isEmpty()
+				? ParseSuggestRunner(status, body)
+				: SuggestResult{ .failure = u"runner "_q + failure };
+			if (!result.list.empty()) {
+				finishSuggest(id, std::move(result));
+			} else {
+				askApi(id, result.failure);
+			}
+			return;
+		}
 		auto result = failure.isEmpty()
 			? ParseRunner(status, body, i->second->request)
 			: Result{ .failure = u"runner "_q + failure };
@@ -129,13 +155,33 @@ void Client::askRunner(uint64 id) {
 }
 
 void Client::askApi(uint64 id, QString runnerFailure) {
+	const auto i = _calls.find(id);
+	if (i == end(_calls)) {
+		return;
+	}
+	const auto suggesting = i->second->suggest.has_value();
 	if (!hasApi()) {
-		finish(id, { .failure = runnerFailure + u", no api key"_q });
+		const auto failure = runnerFailure + u", no api key"_q;
+		if (suggesting) {
+			finishSuggest(id, { .failure = failure });
+		} else {
+			finish(id, { .failure = failure });
+		}
 		return;
 	}
 	post(id, true, [=](int status, QByteArray body, QString failure) {
 		const auto i = _calls.find(id);
 		if (i == end(_calls)) {
+			return;
+		}
+		if (suggesting) {
+			auto result = failure.isEmpty()
+				? ParseSuggestApi(status, body)
+				: SuggestResult{ .failure = u"api "_q + failure };
+			if (result.list.empty()) {
+				result.failure = runnerFailure + u", "_q + result.failure;
+			}
+			finishSuggest(id, std::move(result));
 			return;
 		}
 		auto result = failure.isEmpty()
@@ -158,8 +204,10 @@ void Client::post(
 	}
 	const auto call = i->second.get();
 	const auto timeoutMs = api ? kApiTimeoutMs : kRunnerTimeoutMs;
+	const auto runnerUrl = _runnerUrl
+		+ (call->suggest ? "/v1/suggest" : "/v1/check");
 	auto request = Prepare(
-		QUrl(QString::fromLatin1(api ? QByteArray(kApiEndpoint) : _runnerUrl)),
+		QUrl(QString::fromLatin1(api ? QByteArray(kApiEndpoint) : runnerUrl)),
 		timeoutMs);
 	if (api) {
 		request.setRawHeader("x-api-key", _apiKey);
@@ -167,7 +215,11 @@ void Client::post(
 	} else {
 		request.setRawHeader("Authorization", "Bearer " + _runnerKey);
 	}
-	const auto body = api
+	const auto body = call->suggest
+		? (api
+			? SuggestApiBody(*call->suggest)
+			: SuggestRunnerBody(*call->suggest))
+		: api
 		? ApiBody(call->request)
 		: RunnerBody(call->request);
 	const auto reply = manager()->post(request, body);
@@ -212,6 +264,19 @@ void Client::post(
 			reply->abort();
 		}
 	});
+}
+
+void Client::finishSuggest(uint64 id, SuggestResult result) {
+	const auto i = _calls.find(id);
+	if (i == end(_calls)) {
+		return;
+	}
+	const auto call = std::move(i->second);
+	_calls.erase(i);
+	if (!call->finished) {
+		call->finished = true;
+		call->suggested(std::move(result));
+	}
 }
 
 void Client::finish(uint64 id, Result result) {

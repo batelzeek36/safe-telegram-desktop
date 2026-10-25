@@ -81,12 +81,12 @@ void Answer(const DraftKey &key, const Result &result) {
 	return QString::number(seconds / 86400) + QChar('d');
 }
 
-[[nodiscard]] QString DisplayName(not_null<PeerData*> peer) {
+} // namespace
+
+QString DisplayName(not_null<PeerData*> peer) {
 	const auto &name = peer->isUser() ? peer->shortName() : peer->name();
 	return name.isEmpty() ? peer->name() : name;
 }
-
-} // namespace
 
 Client &SharedClient() {
 	static auto result = Client();

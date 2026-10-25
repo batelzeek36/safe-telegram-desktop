@@ -1900,6 +1900,10 @@ PRIVATE
     safe/safe_calm_shared.h
     safe/safe_calm_store.cpp
     safe/safe_calm_store.h
+    safe/safe_calm_suggest.cpp
+    safe/safe_calm_suggest.h
+    safe/safe_calm_suggest_prompt.cpp
+    safe/safe_calm_suggest_prompt.h
     safe/safe_discovery.cpp
     safe/safe_discovery.h
     safe/safe_drop.cpp

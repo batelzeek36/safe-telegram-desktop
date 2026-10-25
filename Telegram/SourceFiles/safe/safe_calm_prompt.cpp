@@ -67,23 +67,7 @@ const auto kSchema = QByteArray(R"({"type":"object","properties":{"verdict":{"ty
 	if (const auto recipient = Name(request.recipient); !recipient.isEmpty()) {
 		result.insert(u"recipient"_q, recipient);
 	}
-	auto context = QJsonArray();
-	const auto from = std::max(
-		int(request.context.size()) - kMaxContext,
-		0);
-	for (auto i = from; i < int(request.context.size()); ++i) {
-		const auto &line = request.context[i];
-		const auto name = Name(line.from);
-		auto item = QJsonObject{
-			{ u"from"_q, name.isEmpty() ? u"them"_q : name },
-			{ u"text"_q, line.text.left(kMaxContextText) },
-		};
-		if (const auto ago = line.ago.trimmed(); !ago.isEmpty()) {
-			item.insert(u"ago"_q, ago.left(kMaxAgo));
-		}
-		context.push_back(item);
-	}
-	result.insert(u"context"_q, context);
+	result.insert(u"context"_q, ContextJson(request.context));
 	return result;
 }
 
@@ -111,6 +95,24 @@ const auto kSchema = QByteArray(R"({"type":"object","properties":{"verdict":{"ty
 }
 
 } // namespace
+
+QJsonArray ContextJson(const std::vector<ContextLine> &context) {
+	auto result = QJsonArray();
+	const auto from = std::max(int(context.size()) - kMaxContext, 0);
+	for (auto i = from; i < int(context.size()); ++i) {
+		const auto &line = context[i];
+		const auto name = Name(line.from);
+		auto item = QJsonObject{
+			{ u"from"_q, name.isEmpty() ? u"them"_q : name },
+			{ u"text"_q, line.text.left(kMaxContextText) },
+		};
+		if (const auto ago = line.ago.trimmed(); !ago.isEmpty()) {
+			item.insert(u"ago"_q, ago.left(kMaxAgo));
+		}
+		result.push_back(item);
+	}
+	return result;
+}
 
 QByteArray RunnerBody(const Request &request) {
 	return QJsonDocument(RequestObject(request)).toJson(
