@@ -120,6 +120,8 @@ private:
 	std::vector<int> _noteTops;
 	int _boxTop = 0;
 	int _boxHeight = 0;
+	int _laidWidth = 0;
+	int _relayoutFor = 0;
 
 	Ui::Animations::Simple _shown;
 	Ui::Animations::Basic _ticker;

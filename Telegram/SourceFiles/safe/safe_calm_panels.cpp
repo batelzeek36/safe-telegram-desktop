@@ -286,7 +286,7 @@ int Panel::layoutBody(int top, int width) {
 	case Kind::Sheet: {
 		for (const auto &note : _notes) {
 			_noteTops.push_back(top);
-			top += note.countHeight(inner - S(13)) + S(6);
+			top += note.countHeight(inner - S(13) - S(2)) + S(6);
 		}
 		_boxTop = top + S(4);
 		const auto label = SmallFont()->height + S(3);
@@ -332,6 +332,7 @@ void Panel::relayout() {
 		return;
 	}
 	const auto width = contentWidth();
+	_laidWidth = width;
 	auto height = 0;
 	if (_kind == Kind::Toast) {
 		height = S(kToastHeight);
@@ -367,11 +368,16 @@ void Panel::paintEvent(QPaintEvent *e) {
 	if (_kind == Kind::None) {
 		return;
 	}
+	const auto box = rect().marginsRemoved(
+		{ S(kShadow), S(kShadow), S(kShadow), S(kShadow) });
+	if (box.width() != _laidWidth && _relayoutFor != box.width()) {
+		_relayoutFor = box.width();
+		relayout();
+		return;
+	}
 	auto p = QPainter(this);
 	auto hq = PainterHighQualityEnabler(p);
 	const auto progress = _shown.value(_hiding ? 0. : 1.);
-	const auto box = rect().marginsRemoved(
-		{ S(kShadow), S(kShadow), S(kShadow), S(kShadow) });
 	if (progress < 1.) {
 		const auto scale = 0.96 + 0.04 * progress;
 		const auto origin = (_kind == Kind::Toast || _kind == Kind::Pill)
@@ -455,11 +461,16 @@ void Panel::paintBody(QPainter &p, int width) {
 	const auto hot = (_kind == Kind::Sheet || _kind == Kind::Failed);
 	const auto headColor = hot ? EmberColor() : JadeColor();
 	{
-		PaintLeaf(
-			p,
-			QRectF(left, _headTop + (S(kHeadHeight) - S(kLeafHead)) / 2., S(kLeafHead), S(kLeafHead)),
+		const auto leafRect = QRectF(
+			left,
+			_headTop + (S(kHeadHeight) - S(kLeafHead)) / 2.,
 			S(kLeafHead),
-			headColor);
+			S(kLeafHead));
+		const auto opacity = p.opacity();
+		p.setOpacity(opacity * 0.55);
+		PaintLeafGlow(p, leafRect.center(), S(kLeafHead), headColor);
+		p.setOpacity(opacity);
+		PaintLeaf(p, leafRect, S(kLeafHead), headColor);
 		p.setFont(HeadFont());
 		p.setPen(hot ? EmberColor() : st::windowSubTextFg->c);
 		const auto baseline = _headTop
@@ -545,7 +556,7 @@ void Panel::paintBody(QPainter &p, int width) {
 			p.setPen(Qt::NoPen);
 			p.setBrush(EmberColor(0.82));
 			p.drawEllipse(QRectF(left + S(1), _noteTops[i] + S(6), S(5), S(5)));
-			drawText(_notes[i], left + S(13), _noteTops[i], inner - S(13), st::windowFg);
+			drawText(_notes[i], left + S(13), _noteTops[i], inner - S(13) - S(2), st::windowFg);
 		}
 		p.setBrush(JadeColor(0.10));
 		p.setPen(QPen(JadeColor(0.18), st::lineWidth));

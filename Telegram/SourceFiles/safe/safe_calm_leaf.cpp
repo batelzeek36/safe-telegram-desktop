@@ -6,6 +6,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "safe/safe_calm_leaf.h"
 
+#include "ui/image/image_prepare.h"
 #include "ui/painter.h"
 
 namespace Safe::Calm {
@@ -110,6 +111,9 @@ constexpr auto kLeafPath = ""
 constexpr auto kCenter = 54.;
 constexpr auto kSpan = 47.;
 constexpr auto kMarkSize = 11;
+constexpr auto kGlowRoom = 0.7; // canvas margin per side, in leaf sizes
+constexpr auto kGlowRadius = 5;
+constexpr auto kGlowCache = 12;
 constexpr auto kGold = 0xE9BE4F;
 constexpr auto kOrange = 0xF0884A;
 constexpr auto kFlame = 0xEC5246;
@@ -192,6 +196,56 @@ void PaintLeaf(QPainter &p, QRectF rect, float64 size, const QColor &color) {
 	p.setBrush(color);
 	p.drawPath(LeafPath());
 	p.restore();
+}
+
+void PaintLeafGlow(
+		QPainter &p,
+		QPointF center,
+		float64 size,
+		const QColor &color) {
+	struct Cached {
+		int size = 0;
+		QRgb rgb = 0;
+		int ratio = 0;
+		QImage image;
+	};
+	static auto cache = std::deque<Cached>();
+	const auto ratio = style::DevicePixelRatio();
+	const auto pixels = int(base::SafeRound(size));
+	const auto rgb = color.rgb();
+	auto found = (QImage*)nullptr;
+	for (auto &entry : cache) {
+		if (entry.size == pixels && entry.rgb == rgb && entry.ratio == ratio) {
+			found = &entry.image;
+		}
+	}
+	if (!found) {
+		const auto logical = pixels * (1. + 2. * kGlowRoom);
+		const auto full = int(std::ceil(logical * ratio));
+		auto image = QImage(full, full, QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		{
+			auto q = QPainter(&image);
+			auto solid = color;
+			solid.setAlpha(255);
+			PaintLeaf(q, QRectF(0, 0, full, full), pixels * ratio * 1.1, solid);
+		}
+		image = Images::BlurLargeImage(std::move(image), kGlowRadius * ratio);
+		image.setDevicePixelRatio(ratio);
+		cache.push_back({ pixels, rgb, ratio, std::move(image) });
+		if (int(cache.size()) > kGlowCache) {
+			cache.pop_front();
+		}
+		found = &cache.back().image;
+	}
+	const auto logical = found->width() / float64(ratio);
+	p.drawImage(
+		QRectF(
+			center.x() - logical / 2.,
+			center.y() - logical / 2.,
+			logical,
+			logical),
+		*found);
 }
 
 int LeafMarkWidth() {

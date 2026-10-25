@@ -116,10 +116,10 @@ void LeafButton::paintEvent(QPaintEvent *e) {
 		p.rotate(-9. * wave);
 		p.scale(1. + 0.07 * wave, 1. + 0.07 * wave);
 		p.translate(-center);
-		auto glow = EmberColor(0.22 + 0.18 * wave);
-		p.setPen(Qt::NoPen);
-		p.setBrush(glow);
-		p.drawEllipse(center, size * 0.62, size * 0.62);
+		const auto opacity = p.opacity();
+		p.setOpacity(opacity * (0.55 + 0.45 * wave));
+		PaintLeafGlow(p, center, size, HeatColor(heat));
+		p.setOpacity(opacity);
 	}
 	const auto alpha = (isOver() || isDown()) ? 1. : 0.88;
 	PaintLeaf(

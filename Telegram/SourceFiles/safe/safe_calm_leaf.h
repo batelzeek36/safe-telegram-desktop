@@ -25,6 +25,14 @@ inline constexpr auto kEmber = 0xF0A35E;
 [[nodiscard]] const QPainterPath &LeafPath();
 void PaintLeaf(QPainter &p, QRectF rect, float64 size, const QColor &color);
 
+// A soft glow in the leaf's own shape (the mocks' drop-shadow), `size`
+// across like the leaf, centered on `center`. Rendered images are cached.
+void PaintLeafGlow(
+	QPainter &p,
+	QPointF center,
+	float64 size,
+	const QColor &color);
+
 // The small leaf by a message's time (HistoryView::BottomInfo): the room it
 // takes left of the date, and the leaf in it, on the date's line.
 [[nodiscard]] int LeafMarkWidth();
