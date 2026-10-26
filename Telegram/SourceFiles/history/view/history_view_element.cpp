@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "safe/safe_reactions.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_quiet_media.h"
 
 #include "apiwrap.h"
 #include "api/api_transcribes.h"
@@ -1726,6 +1727,14 @@ void Element::refreshMedia(Element *replacing) {
 		_media = nullptr;
 		return;
 	}
+	if (const auto quiet = Safe::Quiet::BubbleOf(item)
+		; quiet != Safe::Quiet::Bubble::Normal) {
+		_media = nullptr; // Safe (d27): the kind word, see validateText.
+		if (quiet == Safe::Quiet::Bubble::HiddenInAlbum) {
+			_flags |= Flag::HiddenByGroup;
+		}
+		return;
+	}
 	if (const auto media = item->media()) {
 		if (media->canBeGrouped()) {
 			if (const auto group = history()->owner().groups().find(item)) {
@@ -2202,6 +2211,17 @@ void Element::validateText() {
 			}
 			return;
 		}
+	}
+
+	if (!_media
+		&& Safe::Quiet::ReplacesMedia(item)
+		&& item->computeUnavailableReason().isEmpty()) {
+		_textItem = Safe::Quiet::CaptionItem(item);
+		clearRichPage();
+		if (_text.isEmpty()) {
+			setTextWithLinks(Safe::Quiet::Placeholder(item));
+		}
+		return;
 	}
 
 	// Albums may show text of a different item than the parent one.

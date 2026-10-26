@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_story_mention.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_quiet_media.h"
 
 #include "core/click_handler_types.h" // ClickHandlerContext
 #include "data/data_document.h"
@@ -102,7 +103,8 @@ void StoryMention::draw(
 		const PaintContext &context,
 		const QRect &geometry) {
 	const auto showStory = (_story->forbidsForward()
-		|| Safe::HoldsStory(_story)) ? 0 : 1;
+		|| Safe::HoldsStory(_story)
+		|| Safe::Quiet::Item(_parent->data())) ? 0 : 1;
 	if (!_thumbnail || _thumbnailFromStory != showStory) {
 		const auto item = _parent->data();
 		const auto history = item->history();

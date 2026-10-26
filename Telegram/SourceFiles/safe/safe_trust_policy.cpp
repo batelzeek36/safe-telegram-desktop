@@ -374,6 +374,18 @@ private:
 	return result;
 }
 
+// An optional id list: missing = empty; anything but a list of non-zero
+// integer ids is an error like a required list's.
+[[nodiscard]] std::optional<std::set<std::int64_t>> OptionalIdSet(
+		const JsonValue &root,
+		std::string_view key,
+		std::string &error) {
+	if (!root.find(key)) {
+		return std::set<std::int64_t>();
+	}
+	return IdSet(root, key, error);
+}
+
 } // namespace
 
 Tier TierOfStatus(Status status) {
@@ -516,11 +528,19 @@ PolicyResult Policy::Parse(std::string_view json, Overrides overrides) {
 	if (!known) {
 		return result;
 	}
+	auto quietMedia = OptionalIdSet(
+		*parsed.value,
+		kKeyQuietMedia,
+		result.error);
+	if (!quietMedia) {
+		return result;
+	}
 	auto lists = std::make_shared<Lists>();
 	lists->loaded = true;
 	lists->trusted = std::move(*trusted);
 	lists->allowed = std::move(*allowed);
 	lists->known = std::move(*known);
+	lists->quietMedia = std::move(*quietMedia);
 	result.policy = Policy(std::move(lists), std::move(overrides), {});
 	return result;
 }
@@ -547,6 +567,14 @@ std::size_t Policy::allowedCount() const {
 
 std::size_t Policy::knownCount() const {
 	return _lists->known.size();
+}
+
+std::size_t Policy::quietMediaCount() const {
+	return _lists->quietMedia.size();
+}
+
+bool Policy::quietMedia(std::int64_t dialogId) const {
+	return _lists->quietMedia.contains(dialogId);
 }
 
 std::size_t Policy::overrideCount() const {

@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_emoji.h"
 #include "safe/safe_media_covers.h"
 #include "safe/safe_notices.h"
+#include "safe/safe_quiet_media.h"
 #include "safe/safe_trust.h"
 #include "ui/text/text.h"
 #include "ui/userpic_view.h"
@@ -226,24 +227,32 @@ MediaKey KeyOf(not_null<const HistoryItem*> item) {
 	return {};
 }
 
+// The quiet chats (safe_quiet_media.h) come first: they hold incoming
+// pictures whatever the tier says (they are Trusted chats), and they are
+// never sent to the picture check.
+
 bool HidesItem(not_null<const HistoryItem*> item) {
-	return OutcomeOf(item) == MediaOutcome::Hide;
+	return Quiet::HidesItem(item)
+		|| (OutcomeOf(item) == MediaOutcome::Hide);
 }
 
 bool HoldsItem(not_null<const HistoryItem*> item) {
-	return !Shows(OutcomeOf(item), KeyOf(item));
+	return Quiet::HoldsItem(item)
+		|| !Shows(OutcomeOf(item), KeyOf(item));
 }
 
 bool Holds(
 		not_null<const HistoryItem*> item,
 		not_null<const PhotoData*> photo) {
-	return !Shows(OutcomeOf(item), KeyOf(photo));
+	return Quiet::Holds(item, photo)
+		|| !Shows(OutcomeOf(item), KeyOf(photo));
 }
 
 bool Holds(
 		not_null<const HistoryItem*> item,
 		not_null<const DocumentData*> document) {
-	return !Shows(OutcomeOf(item), KeyOf(document));
+	return Quiet::Holds(item, document)
+		|| !Shows(OutcomeOf(item), KeyOf(document));
 }
 
 bool HoldsUserpic(not_null<const PeerData*> peer) {
@@ -297,6 +306,10 @@ bool PaintHeld(
 		not_null<PhotoData*> photo,
 		QRect rect,
 		const HoldShape &shape) {
+	if (Quiet::Holds(item, photo)) {
+		PaintQuiet(p, rect, shape, Quiet::Word(photo));
+		return true;
+	}
 	const auto outcome = OutcomeOf(item);
 	const auto key = KeyOf(photo);
 	if (Shows(outcome, key)) {
@@ -325,6 +338,10 @@ bool PaintHeld(
 		not_null<DocumentData*> document,
 		QRect rect,
 		const HoldShape &shape) {
+	if (Quiet::Holds(item, document)) {
+		PaintQuiet(p, rect, shape, Quiet::Word(document));
+		return true;
+	}
 	const auto outcome = OutcomeOf(item);
 	const auto key = KeyOf(document);
 	if (Shows(outcome, key)) {
@@ -362,6 +379,9 @@ bool PaintHeldItem(
 		return PaintHeld(p, item, document, rect, shape);
 	} else if (const auto photo = page ? page->photo : nullptr) {
 		return PaintHeld(p, item, photo, rect, shape);
+	} else if (Quiet::HoldsItem(item)) {
+		PaintQuiet(p, rect, shape, QString());
+		return true;
 	} else if (HoldsItem(item)) {
 		PaintFog(p, rect, shape);
 		return true;

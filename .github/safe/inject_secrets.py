@@ -7,8 +7,10 @@ Reads two environment variables (GitHub Actions secrets):
 
   SAFE_TRUST_JSON  the "android" block of the trust list: an object with
                    trusted_dialogs / allowed_dialogs / known_dialogs, each an
-                   array of non-zero integer dialog ids. Nothing else is
-                   allowed through: names and picks never leave the Mac.
+                   array of non-zero integer dialog ids, and optionally
+                   quiet_media_dialogs (chats whose incoming pictures are not
+                   displayed, d27). Nothing else is allowed through: names and
+                   picks never leave the Mac.
   SAFE_JUDGE_KEY   the picture check's API key.
   SAFE_CALM_URL    Calm mode's runner (https://calm.zakkbates.com).
   SAFE_CALM_KEY    the runner's key.
@@ -28,6 +30,7 @@ import sys
 from pathlib import Path
 
 KEYS = ("trusted_dialogs", "allowed_dialogs", "known_dialogs")
+OPTIONAL_KEYS = ("quiet_media_dialogs",)
 
 
 def write_header(path, name, value, comment):
@@ -58,7 +61,9 @@ def clean_trust(raw):
     if not isinstance(doc, dict):
         sys.exit("SAFE_TRUST_JSON is not an object")
     out = {}
-    for key in KEYS:
+    for key in KEYS + OPTIONAL_KEYS:
+        if key in OPTIONAL_KEYS and key not in doc:
+            continue
         ids = doc.get(key)
         if not isinstance(ids, list):
             sys.exit("SAFE_TRUST_JSON: %s is missing or not a list" % key)
@@ -67,8 +72,9 @@ def clean_trust(raw):
                 sys.exit("SAFE_TRUST_JSON: %s holds a value that is not a "
                          "dialog id" % key)
         out[key] = sorted(set(ids))
-    print("==> trust list: %d trusted, %d allowed, %d known"
-          % tuple(len(out[k]) for k in KEYS))
+    print("==> trust list: %d trusted, %d allowed, %d known, %d quiet"
+          % (tuple(len(out[k]) for k in KEYS)
+             + (len(out.get("quiet_media_dialogs", [])),)))
     return json.dumps(out, separators=(",", ":"))
 
 

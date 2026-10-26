@@ -335,6 +335,34 @@ void PaintFog(QPainter &p, QRect rect, const HoldShape &shape) {
 	p.drawPath(ShapePath(rect, shape));
 }
 
+void PaintQuiet(
+		QPainter &p,
+		QRect rect,
+		const HoldShape &shape,
+		const QString &word) {
+	if (rect.isEmpty()) {
+		return;
+	}
+	{
+		auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(Colors().base);
+		p.drawPath(ShapePath(rect, shape));
+	}
+	if (word.isEmpty()) {
+		return;
+	}
+	const auto &font = st::normalFont;
+	const auto padding = style::ConvertScale(6);
+	if (rect.width() < font->width(word) + 2 * padding
+		|| rect.height() < font->height + 2 * padding) {
+		return;
+	}
+	p.setFont(font);
+	p.setPen(st::windowSubTextFg);
+	p.drawText(rect, Qt::AlignCenter, word);
+}
+
 void PaintJudged(
 		QPainter &p,
 		QRect rect,

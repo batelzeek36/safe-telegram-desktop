@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_calm.h"
 #include "safe/safe_calm_chip.h"
+#include "safe/safe_quiet_media.h"
 
 #include "api/api_suggest_post.h"
 #include "api/api_transcribes.h"
@@ -7253,7 +7254,9 @@ bool Message::hasVisibleText() const {
 		return false;
 	}
 	const auto media = this->media();
-	if (hasRichPage()) {
+	if (!media && Safe::Quiet::ReplacesMedia(data())) {
+		return true; // Safe (d27): the kind word in place of the media.
+	} else if (hasRichPage()) {
 		return !media || !media->hideMessageText();
 	} else if (textItem->emptyText()) {
 		if (const auto media = textItem->media()) {
@@ -7285,7 +7288,9 @@ void Message::refreshInfoSkipBlock(HistoryItem *textItem) {
 	const auto media = this->media();
 	const auto hasTextSkipBlock = [&] {
 		if (!textItem || textItem->_text.empty()) {
-			if (const auto media = data()->media()) {
+			if (!media && Safe::Quiet::ReplacesMedia(data())) {
+				return true; // Safe (d27): the time after the kind word.
+			} else if (const auto media = data()->media()) {
 				return media->storyExpired() || media->storyUnsupported();
 			}
 			return false;

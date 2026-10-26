@@ -105,10 +105,12 @@ void TrustStore::loadBase() {
 		return;
 	}
 	_base = std::move(*parsed.policy);
-	LOG(("Safe trust: built-in list with %1 trusted, %2 allowed, %3 known."
+	LOG(("Safe trust: built-in list with %1 trusted, %2 allowed, %3 known, "
+		"%4 quiet."
 		).arg(_base.trustedCount()
 		).arg(_base.allowedCount()
-		).arg(_base.knownCount()));
+		).arg(_base.knownCount()
+		).arg(_base.quietMediaCount()));
 }
 
 void TrustStore::loadQueue() {

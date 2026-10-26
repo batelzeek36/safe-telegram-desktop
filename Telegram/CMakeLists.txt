@@ -1951,6 +1951,8 @@ PRIVATE
     safe/safe_off.cpp
     safe/safe_off.h
     safe/safe_policy.h
+    safe/safe_quiet_media.cpp
+    safe/safe_quiet_media.h
     safe/safe_reactions.cpp
     safe/safe_reactions.h
     safe/safe_sensitive.cpp

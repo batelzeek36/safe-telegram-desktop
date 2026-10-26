@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_web_page.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_quiet_media.h"
 
 #include "base/unixtime.h"
 #include "core/application.h"
@@ -334,7 +335,8 @@ void WebPage::setupAdditionalData() {
 					});
 			}
 		}
-	} else if (_data->stickerSet) {
+	} else if (_data->stickerSet
+		&& !Safe::Quiet::StripsPreview(_parent->data())) {
 		_additionalData = std::make_unique<AdditionalData>(StickerSetData());
 		const auto raw = stickerSetData();
 		for (const auto &sticker : _data->stickerSet->items) {
@@ -570,6 +572,10 @@ QSize WebPage::countOptimalSize() {
 	if (isLogEntryOriginal()) {
 		_asArticle = 0;
 	}
+	const auto quiet = Safe::Quiet::StripsPreview(_parent->data());
+	if (quiet) {
+		_asArticle = 0; // Safe (d27): words only, no picture at all.
+	}
 
 	// init attach
 	if (!_attach && _data->uniqueGift) {
@@ -612,6 +618,7 @@ QSize WebPage::countOptimalSize() {
 			});
 	} else if (!_attach
 		&& !_asArticle
+		&& !quiet
 		&& (!isLogEntryOriginal()
 			|| (_data->document && !_hasLogEntryPreview))) {
 		_attach = CreateAttach(

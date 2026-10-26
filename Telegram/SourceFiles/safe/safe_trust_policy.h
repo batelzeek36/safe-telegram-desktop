@@ -30,6 +30,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // may then only turn chats Off, never open them (the own-chat rule is off
 // too: which of his chats he turned Off is not known then).
 //
+// Quiet chats (Zach, 2026-10-26: the family group with Michelle and Taüsín
+// and his private chats with each of them): the optional
+// "quiet_media_dialogs" array names chats whose incoming pictures and videos
+// are not displayed at all (safe_quiet_media.h). It is apart from the tiers:
+// a quiet chat keeps its tier, and only that display rule changes. Missing =
+// no quiet chats; present but malformed = a broken base list (fail closed).
+//
 // Own chats (Zach, 2026-10-19: "the groups i make should show automatically"):
 // the creator flag is read live by the caller, so a group made today is
 // Trusted at once. It is only the default: an override or the base list still
@@ -56,6 +63,7 @@ inline constexpr int kMaxJsonDepth = 32;
 inline constexpr std::string_view kKeyTrusted = "trusted_dialogs";
 inline constexpr std::string_view kKeyAllowed = "allowed_dialogs";
 inline constexpr std::string_view kKeyKnown = "known_dialogs";
+inline constexpr std::string_view kKeyQuietMedia = "quiet_media_dialogs";
 
 enum class Tier : unsigned char {
 	Trusted,
@@ -159,6 +167,7 @@ public:
 	[[nodiscard]] std::size_t trustedCount() const;
 	[[nodiscard]] std::size_t allowedCount() const;
 	[[nodiscard]] std::size_t knownCount() const;
+	[[nodiscard]] std::size_t quietMediaCount() const;
 	[[nodiscard]] std::size_t overrideCount() const;
 	[[nodiscard]] std::size_t requestCount() const;
 
@@ -203,6 +212,10 @@ public:
 		PeerKind channelKind,
 		std::int64_t selfUserId) const;
 
+	// The base list names `dialogId` in quiet_media_dialogs: its incoming
+	// pictures and videos are not displayed. Overrides never change it.
+	[[nodiscard]] bool quietMedia(std::int64_t dialogId) const;
+
 	// No override and no base list entry names `dialogId`: its tier is the
 	// rule-5 default (a person New, his own chat Trusted, anything else Off).
 	[[nodiscard]] bool isUnlisted(std::int64_t dialogId) const;
@@ -225,6 +238,7 @@ private:
 		std::set<std::int64_t> trusted;
 		std::set<std::int64_t> allowed;
 		std::set<std::int64_t> known;
+		std::set<std::int64_t> quietMedia;
 	};
 
 	Policy(

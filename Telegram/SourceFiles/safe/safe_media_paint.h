@@ -49,6 +49,15 @@ enum class HeldLook : uchar {
 // Not one pixel of the picture goes into it.
 void PaintFog(QPainter &p, QRect rect, const HoldShape &shape);
 
+// A quiet chat's held picture (safe_quiet_media.h) where it is painted in
+// place, such as a shared media tile or a file's thumbnail: a flat panel,
+// with the kind word ("photo", "video") when it fits. Never the picture.
+void PaintQuiet(
+	QPainter &p,
+	QRect rect,
+	const HoldShape &shape,
+	const QString &word);
+
 // A Judge picture before it is cleared: the tiny inline thumbnail washed out
 // to a few colors (fog when there is none, and always fog once flagged),
 // plus a small label when the space allows.
