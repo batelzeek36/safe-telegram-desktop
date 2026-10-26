@@ -47,6 +47,9 @@ jobs:
           submodules: recursive
           path: ${{ env.REPO_NAME }}
 
+      - name: Apply submodule patches.
+        run: ${{ env.REPO_NAME }}/.github/safe/apply_submodule_patches.sh ${{ env.REPO_NAME }}
+
       - name: First set up.
         run: |
           sudo chown -R `whoami`:admin /usr/local/share
@@ -122,6 +125,9 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.REPO_NAME }}
+
+      - name: Apply submodule patches.
+        run: ${{ env.REPO_NAME }}/.github/safe/apply_submodule_patches.sh ${{ env.REPO_NAME }}
 
       - name: First set up.
         run: |

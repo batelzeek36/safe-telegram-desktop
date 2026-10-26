@@ -39,6 +39,9 @@ jobs:
           submodules: recursive
           path: ${{ env.REPO_NAME }}
 
+      - name: Apply submodule patches.
+        run: ${{ env.REPO_NAME }}/.github/safe/apply_submodule_patches.sh ${{ env.REPO_NAME }}
+
       - name: First set up.
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1

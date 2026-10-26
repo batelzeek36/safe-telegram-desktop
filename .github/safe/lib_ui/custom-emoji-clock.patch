@@ -1,0 +1,56 @@
+diff --git a/ui/text/custom_emoji_clock.h b/ui/text/custom_emoji_clock.h
+new file mode 100644
+index 0000000..a1bc40c
+--- /dev/null
++++ b/ui/text/custom_emoji_clock.h
+@@ -0,0 +1,25 @@
++// This file is part of Desktop App Toolkit,
++// a set of libraries for developing nice desktop applications.
++//
++// For license and copyright information please follow this link:
++// https://github.com/desktop-app/legal/blob/master/LEGAL
++//
++#pragma once
++
++#include <cstdint>
++
++namespace Ui::CustomEmoji {
++
++// WHY: a repaint asked for at the due time lands on the next screen refresh,
++// so counting each frame from its paint played emoji at two thirds speed;
++// the clock restarts at the paint only after a hitch as long as a frame.
++[[nodiscard]] inline std::int64_t FrameStarted(
++		std::int64_t finished,
++		std::int64_t now,
++		std::int64_t nextDuration) {
++	return (nextDuration > 0 && now - finished < nextDuration)
++		? finished
++		: now;
++}
++
++} // namespace Ui::CustomEmoji
+diff --git a/ui/text/custom_emoji_instance.cpp b/ui/text/custom_emoji_instance.cpp
+index 15d42ec..980e3e5 100644
+--- a/ui/text/custom_emoji_instance.cpp
++++ b/ui/text/custom_emoji_instance.cpp
+@@ -6,6 +6,8 @@
+ //
+ #include "ui/text/custom_emoji_instance.h"
+ 
++#include "ui/text/custom_emoji_clock.h"
++
+ #include "ui/effects/animation_value.h"
+ #include "ui/effects/frame_generator.h"
+ #include "ui/dynamic_image.h"
+@@ -393,7 +395,10 @@ PaintFrameResult Cache::paintCurrentFrame(
+ 					last = true;
+ 				}
+ 			}
+-			_shown = now;
++			_shown = FrameStarted(
++				finishes,
++				now,
++				(_frame < _durations.size()) ? _durations[_frame] : 0);
+ 		} else if (!_shown) {
+ 			_shown = now;
+ 		}
