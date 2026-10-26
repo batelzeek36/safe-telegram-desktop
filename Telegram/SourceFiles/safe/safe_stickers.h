@@ -23,9 +23,9 @@ namespace Safe {
 // - A guarded word (or a guarded emoji typed alone) searches his own packs
 //   only: no server sticker search, no server pack search, no stickers by
 //   emoji from the server.
-// - Free (shown at once): from a pack he installed, archived or that is
-//   Telegram's own (official); one he sent (recent, recent attached, local
-//   recent) or saved as a favorite.
+// - Free (shown at once): from a pack he chose (IsChosenSet: installed or
+//   archived before 2026-10-26 HST) or that is Telegram's own (official); one
+//   he sent (recent, recent attached, local recent) or saved as a favorite.
 // - Everything else is held: foggy glass (nothing of it loads, no animation
 //   starts) until the picture check clears its WebP thumbnail, once ever per
 //   document id (the verdict book). No click, preview or menu while held.
@@ -61,5 +61,29 @@ bool PaintHeldSetCover(
 	QRect rect,
 	not_null<const Data::StickersSet*> set,
 	DocumentData *cover);
+
+// A sticker or emoji of an opened pack (StickerSetBox): every one is fog
+// while the pack is not installed (PaintHeldSetSticker), and in an installed
+// pack he did not choose each one is judged like a panel sticker. No send,
+// preview or menu (faved or set as a status it would count as his) while held.
+[[nodiscard]] bool HoldsBoxSticker(
+	bool notInstalled,
+	const DocumentData *document);
+bool PaintHeldBoxSticker(
+	QPainter &p,
+	bool notInstalled,
+	DocumentData *document,
+	QRect rect);
+
+// "Add" on a pack he did not choose (Zach, 2026-10-26: the Add button of a
+// fogged pack installed it, and every sticker in it then showed unjudged).
+// Refused while any of its stickers or emoji is still waiting for the picture
+// check (the missing checks are queued, a pack not loaded yet is fetched and
+// queued) or one was flagged, or its title is guarded; the reason goes to
+// notice. A pack he chose (IsChosenSet) is never refused. True = refused,
+// send no install request.
+bool RefuseSetInstall(
+	not_null<Data::StickersSet*> set,
+	Fn<void(const QString &)> notice);
 
 } // namespace Safe

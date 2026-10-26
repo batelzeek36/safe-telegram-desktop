@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/sticker_set_box.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_stickers.h"
 
 #include "api/api_common.h"
 #include "api/api_stickers_creator.h"
@@ -1553,6 +1554,9 @@ void StickerSetBox::Inner::showPreviewAt(QPoint globalPos) {
 	}
 	const auto index = stickerFromGlobalPos(globalPos);
 	const auto document = elementDocument(index);
+	if (Safe::HoldsBoxSticker(false, document)) {
+		return;
+	}
 	if (document && index != _previewShown) {
 		_previewShown = index;
 		_show->showMediaPreview(
@@ -1720,6 +1724,9 @@ void StickerSetBox::Inner::chosen(
 		int index,
 		not_null<DocumentData*> sticker,
 		Api::SendOptions options) {
+	if (Safe::HoldsBoxSticker(notInstalled(), sticker)) {
+		return;
+	}
 	const auto animation = options.scheduled
 		? Ui::MessageSendingAnimationFrom()
 		: messageSentAnimationInfo(index, sticker);
@@ -1755,7 +1762,9 @@ auto StickerSetBox::Inner::messageSentAnimationInfo(
 void StickerSetBox::Inner::contextMenuEvent(QContextMenuEvent *e) {
 	const auto index = stickerFromGlobalPos(e->globalPos());
 	const auto chosenDocument = elementDocument(index);
-	if (!chosenDocument || setType() == Data::StickersType::Masks) {
+	if (!chosenDocument
+		|| setType() == Data::StickersType::Masks
+		|| Safe::HoldsBoxSticker(notInstalled(), chosenDocument)) {
 		return;
 	}
 	_previewTimer.cancel();
@@ -2391,9 +2400,10 @@ void StickerSetBox::Inner::paintSticker(
 		}
 	}
 
-	if (Safe::PaintHeldSetSticker(
+	if (Safe::PaintHeldBoxSticker(
 			p,
 			notInstalled(),
+			_elements[index].document.get(),
 			style::rtlrect(QRect(position, _singleSize), width()))) {
 		return;
 	}
@@ -2524,6 +2534,12 @@ QString StickerSetBox::Inner::shortName() const {
 
 void StickerSetBox::Inner::install() {
 	if (_installRequest) {
+		return;
+	}
+	const auto &sets = _session->data().stickers().sets();
+	const auto i = sets.find(_setId);
+	const auto notice = [=](const QString &text) { _show->showToast(text); };
+	if (i != end(sets) && Safe::RefuseSetInstall(i->second.get(), notice)) {
 		return;
 	}
 	_installRequest = _api.request(MTPmessages_InstallStickerSet(

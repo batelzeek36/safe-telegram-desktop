@@ -2892,7 +2892,9 @@ base::unique_qptr<Ui::PopupMenu> FillStickerSetContextMenu(
 				? tr::lng_stickers_add_masks
 				: tr::lng_stickers_add_pack)(tr::now),
 			[=] {
-				localSetsManager->install(setId);
+				if (!localSetsManager->install(setId)) {
+					return;
+				}
 				if (isMasks) {
 					show->showToast({
 						.text = { tr::lng_masks_installed(tr::now) },

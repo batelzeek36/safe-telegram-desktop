@@ -940,6 +940,11 @@ void StickersBox::installSet(uint64 setId) {
 	}
 
 	const auto set = it->second.get();
+	if (Safe::RefuseSetInstall(set, [=](const QString &text) {
+			showToast(text);
+		})) {
+		return;
+	}
 	if (_localRemoved.contains(setId)) {
 		_localRemoved.removeOne(setId);
 		for (const auto &widget : widgets()) {

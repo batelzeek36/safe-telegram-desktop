@@ -30,6 +30,11 @@ namespace {
 
 using SetFlag = Data::StickersSetFlag;
 
+// The day the pack guard began, 2026-10-26 00:00 HST. Zach, 10-26: the
+// "Add" button of a fogged pack installed it, and an installed pack showed
+// unjudged; a pack added from now on stays judged sticker by sticker.
+constexpr auto kChosenBefore = TimeId(1793008800);
+
 [[nodiscard]] bool FreeSet(
 		not_null<Data::Session*> owner,
 		const StickerSetIdentifier &identifier) {
@@ -38,13 +43,7 @@ using SetFlag = Data::StickersSetFlag;
 	}
 	const auto &sets = owner->stickers().sets();
 	const auto i = sets.find(identifier.id);
-	if (i == end(sets)) {
-		return false;
-	}
-	const auto flags = i->second->flags;
-	return (flags & SetFlag::Installed)
-		|| (flags & SetFlag::Archived)
-		|| (flags & SetFlag::Official);
+	return (i != end(sets)) && IsChosenSet(i->second.get());
 }
 
 [[nodiscard]] bool InRecentEmoji(DocumentId id) {
@@ -176,10 +175,23 @@ bool DropsEmoji(not_null<const DocumentData*> document) {
 		&& !IsFreeEmoji(document);
 }
 
+bool IsChosenSet(const Data::StickersSet *set) {
+	if (!set) {
+		return false;
+	} else if (set->flags & SetFlag::Official) {
+		return true;
+	} else if (!(set->flags & SetFlag::Installed)
+		&& !(set->flags & SetFlag::Archived)) {
+		return false;
+	}
+	// Telegram dates every installed pack (installed_date); a pack this app
+	// installs gets "now", one read from an old local cache without a date
+	// gets 1. No date at all: not his choice as far as this app can tell.
+	return (set->installDate > 0) && (set->installDate < kChosenBefore);
+}
+
 bool DropsEmojiSet(not_null<const Data::StickersSet*> set) {
-	if ((set->flags & SetFlag::Installed)
-		|| (set->flags & SetFlag::Archived)
-		|| (set->flags & SetFlag::Official)) {
+	if (IsChosenSet(set)) {
 		return false;
 	}
 	return IsGuardedQuery(set->title)

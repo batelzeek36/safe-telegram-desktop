@@ -23,9 +23,10 @@ namespace Safe {
 // - A guarded word (IsGuardedQuery, the GIF search guard) searches his own
 //   packs only: no server emoji search, no server pack search, no featured
 //   packs in the results.
-// - Free (shown at once): from a pack he installed, archived or that is
-//   Telegram's own (official); one of his recent emoji, recent or top
-//   reactions, recent or default emoji statuses.
+// - Free (shown at once): from a pack he chose (IsChosenSet: installed or
+//   archived before 2026-10-26 HST) or that is Telegram's own (official);
+//   one of his recent emoji, recent or top reactions, recent or default
+//   emoji statuses.
 // - Everything else is held: foggy glass (nothing of it loads) until the
 //   picture check clears its WebP thumbnail, once ever per document id (the
 //   verdict book). No click, no long-press preview, no menu while held.
@@ -44,8 +45,15 @@ namespace Safe {
 // Shown without a check (see above). False for nullptr.
 [[nodiscard]] bool IsFreeEmoji(const DocumentData *document);
 
-// From a pack he installed, archived or that is Telegram's own (official).
-// False for nullptr and for a pack this app has not loaded.
+// A pack he chose: installed or archived before the pack guard began
+// (2026-10-26 00:00 HST, by Telegram's own install date), or Telegram's own
+// (official). A pack added later is judged sticker by sticker like a
+// stranger's (Zach, 10-26: "Add" on a fogged pack used to make it free).
+// False for nullptr.
+[[nodiscard]] bool IsChosenSet(const Data::StickersSet *set);
+
+// From a pack he chose (IsChosenSet). False for nullptr and for a pack this
+// app has not loaded.
 [[nodiscard]] bool IsInFreeSet(const DocumentData *document);
 
 // Not shown right now: not free and not cleared. False for nullptr.

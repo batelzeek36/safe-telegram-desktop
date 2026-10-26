@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "data/stickers/data_stickers_set.h"
 #include "safe/safe_emoji.h"
+#include "safe/safe_stickers.h"
+#include "ui/toast/toast.h"
 #include "data/stickers/data_stickers.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_file_origin.h"
@@ -1518,18 +1520,23 @@ LocalStickersManager::LocalStickersManager(not_null<Main::Session*> session)
 , _api(&session->mtp()) {
 }
 
-void LocalStickersManager::install(uint64 setId) {
+bool LocalStickersManager::install(uint64 setId) {
 	const auto &sets = _session->data().stickers().sets();
 	const auto it = sets.find(setId);
 	if (it == sets.cend()) {
-		return;
+		return false;
 	}
 	const auto set = it->second.get();
+	if (Safe::RefuseSetInstall(set, [](const QString &text) {
+			Ui::Toast::Show(text);
+		})) {
+		return false;
+	}
 	const auto input = set->mtpInput();
 	if (!(set->flags & Data::StickersSetFlag::NotLoaded)
 		&& !set->stickers.empty()) {
 		sendInstallRequest(setId, input);
-		return;
+		return true;
 	}
 	_api.request(MTPmessages_GetStickerSet(
 		input,
@@ -1542,6 +1549,7 @@ void LocalStickersManager::install(uint64 setId) {
 		});
 		sendInstallRequest(setId, input);
 	}).send();
+	return true;
 }
 
 bool LocalStickersManager::isInstalledLocally(uint64 setId) const {

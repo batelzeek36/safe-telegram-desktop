@@ -6,6 +6,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "safe/safe_stickers.h"
 
+#include "apiwrap.h"
+#include "base/weak_ptr.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
 #include "data/stickers/data_stickers.h"
@@ -16,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_media_gate.h"
 #include "safe/safe_media_paint.h"
 #include "safe/safe_words.h"
+#include "main/main_session.h"
 #include "settings.h"
 
 namespace Safe {
@@ -30,6 +33,64 @@ namespace {
 	const auto i = sets.find(setId);
 	return (i != end(sets))
 		&& i->second->stickers.contains(const_cast<DocumentData*>(document));
+}
+
+[[nodiscard]] QString CheckingText() {
+	return u"Checking this pack first. Try Add again in a moment."_q;
+}
+
+[[nodiscard]] QString NotAddedText() {
+	return u"This pack can't be added."_q;
+}
+
+[[nodiscard]] QString NoCheckText() {
+	return u"This pack can't be added while the picture check is off."_q;
+}
+
+[[nodiscard]] bool OwnOrFree(not_null<const DocumentData*> document) {
+	const auto sticker = document->sticker();
+	return (sticker && sticker->setType == Data::StickersType::Emoji)
+		? IsFreeEmoji(document)
+		: IsFreeSticker(document);
+}
+
+// Queues the check of every sticker of a pack that is not his; true when one
+// is still waiting, false when all are cleared or flagged.
+bool WantSetChecks(not_null<const Data::StickersSet*> set) {
+	auto waiting = false;
+	for (const auto document : set->stickers) {
+		if (OwnOrFree(document)) {
+			continue;
+		} else if (Verdict(KeyOf(document)) == VerdictState::Waiting) {
+			Covers::WantEmoji(document);
+			waiting = true;
+		}
+	}
+	return waiting;
+}
+
+// A pack seen only by its covers: fetched whole, then every sticker queued.
+void LoadAndCheckSet(not_null<Data::StickersSet*> set) {
+	const auto session = &set->session();
+	const auto weak = base::make_weak(session);
+	const auto setId = set->id;
+	session->api().request(MTPmessages_GetStickerSet(
+		set->mtpInput(),
+		MTP_int(0) // hash
+	)).done([=](const MTPmessages_StickerSet &result) {
+		const auto strong = weak.get();
+		if (!strong) {
+			return;
+		}
+		result.match([&](const MTPDmessages_stickerSet &data) {
+			strong->data().stickers().feedSetFull(data);
+		}, [](const MTPDmessages_stickerSetNotModified &) {
+		});
+		const auto &sets = strong->data().stickers().sets();
+		if (const auto i = sets.find(setId); i != end(sets)) {
+			WantSetChecks(i->second.get());
+		}
+	}).send();
 }
 
 // Sent by him or saved as a favorite: his own choice.
@@ -105,10 +166,7 @@ bool PaintHeldSetCover(
 		QRect rect,
 		not_null<const Data::StickersSet*> set,
 		DocumentData *cover) {
-	using Flag = Data::StickersSetFlag;
-	if ((set->flags & Flag::Installed)
-		|| (set->flags & Flag::Archived)
-		|| (set->flags & Flag::Official)) {
+	if (IsChosenSet(set)) {
 		return false;
 	} else if (cover && PaintHeldPanelSticker(p, rect, cover)) {
 		return true;
@@ -120,6 +178,50 @@ bool PaintHeldSetCover(
 		rect,
 		HoldShape::Rounded(std::min(rect.width(), rect.height()) / 8));
 	return true;
+}
+
+bool HoldsBoxSticker(bool notInstalled, const DocumentData *document) {
+	return HidesStickerSetPreview(notInstalled)
+		|| HoldsPanelSticker(document);
+}
+
+bool PaintHeldBoxSticker(
+		QPainter &p,
+		bool notInstalled,
+		DocumentData *document,
+		QRect rect) {
+	return PaintHeldSetSticker(p, notInstalled, rect)
+		|| PaintHeldPanelSticker(p, rect, document);
+}
+
+bool RefuseSetInstall(
+		not_null<Data::StickersSet*> set,
+		Fn<void(const QString &)> notice) {
+	if (IsChosenSet(set)) {
+		return false;
+	}
+	const auto refuse = [&](const QString &text) {
+		if (notice) {
+			notice(text);
+		}
+		return true;
+	};
+	if (IsGuardedQuery(set->title) || IsGuardedQuery(set->shortName)) {
+		return refuse(NotAddedText());
+	} else if (!JudgeAvailable()) {
+		return refuse(NoCheckText());
+	} else if ((set->flags & Data::StickersSetFlag::NotLoaded)
+		|| set->stickers.empty()) {
+		LoadAndCheckSet(set);
+		return refuse(CheckingText());
+	}
+	for (const auto document : set->stickers) {
+		if (!OwnOrFree(document)
+			&& Verdict(KeyOf(document)) == VerdictState::Flagged) {
+			return refuse(NotAddedText());
+		}
+	}
+	return WantSetChecks(set) ? refuse(CheckingText()) : false;
 }
 
 } // namespace Safe

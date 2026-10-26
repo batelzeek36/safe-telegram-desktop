@@ -326,7 +326,7 @@ class LocalStickersManager final {
 public:
 	explicit LocalStickersManager(not_null<Main::Session*> session);
 
-	void install(uint64 setId);
+	bool install(uint64 setId);
 	[[nodiscard]] bool isInstalledLocally(uint64 setId) const;
 	void removeInstalledLocally(uint64 setId);
 	bool clearInstalledLocally();
