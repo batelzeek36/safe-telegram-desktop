@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "main/main_session.h"
 #include "safe/safe_calm_client.h"
+#include "safe/safe_calm_marks.h"
 #include "safe/safe_calm_shared.h"
 #include "safe/safe_calm_store.h"
 #include "window/notifications_manager.h"
@@ -44,15 +45,23 @@ struct Held {
 	int tries = 0;
 };
 
+// Zach 10-25: the held bubble shows a soft shimmer, not the word "softening"
+// (the chat list and notifications keep the placeholder text).
+constexpr auto kShimmerFrame = crl::time(40);
+
 void Ask(FullMsgId id);
 void RetryFailed();
+void ShimmerTick();
 
 struct State {
-	State() : retry([] { RetryFailed(); }) {
+	State()
+	: retry([] { RetryFailed(); })
+	, shimmer([] { ShimmerTick(); }) {
 	}
 
 	base::flat_map<FullMsgId, Held> items;
 	base::Timer retry;
+	base::Timer shimmer;
 };
 
 [[nodiscard]] State &Instance() {
@@ -193,6 +202,26 @@ void RetryFailed() {
 	return (i != end(items)) ? &i->second : nullptr;
 }
 
+// Repaints every bubble still being softened so its shimmer moves; stops
+// once none is left.
+void ShimmerTick() {
+	auto &state = Instance();
+	auto any = false;
+	for (const auto &[id, held] : state.items) {
+		if (held.stage != Stage::Asking) {
+			continue;
+		}
+		const auto session = held.session.get();
+		if (const auto item = session ? session->data().message(id) : nullptr) {
+			session->data().requestItemRepaint(item);
+			any = true;
+		}
+	}
+	if (any) {
+		state.shimmer.callOnce(kShimmerFrame);
+	}
+}
+
 } // namespace
 
 TextWithEntities FilterIncoming(
@@ -243,6 +272,9 @@ TextWithEntities FilterIncoming(
 	held.shown = shown.text;
 	state.items.emplace(id, std::move(held));
 	Ask(id);
+	if (!state.shimmer.isActive()) {
+		state.shimmer.callOnce(kShimmerFrame);
+	}
 	return shown;
 }
 
@@ -255,6 +287,30 @@ bool IsHeld(not_null<const HistoryItem*> item) {
 	const auto held = Find(item);
 	return held
 		&& (held->stage == Stage::Asking || held->stage == Stage::Failed);
+}
+
+bool PaintHeldText(
+		QPainter &p,
+		not_null<const HistoryItem*> item,
+		QRect textRect,
+		int textWidth,
+		int lineHeight,
+		const QColor &color) {
+	const auto held = Find(item);
+	if (!held || held->stage != Stage::Asking) {
+		return false;
+	}
+	const auto height = lineHeight * 0.5;
+	const auto width = std::min(textWidth, textRect.width());
+	PaintShimmerBar(
+		p,
+		QRectF(
+			textRect.x(),
+			textRect.y() + (lineHeight - height) / 2.,
+			width,
+			height),
+		color);
+	return true;
 }
 
 bool IsSoftenedIncoming(not_null<const HistoryItem*> item) {

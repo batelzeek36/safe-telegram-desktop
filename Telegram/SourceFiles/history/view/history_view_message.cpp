@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_message.h"
 
+#include "safe/safe_calm.h"
 #include "safe/safe_calm_chip.h"
 
 #include "api/api_suggest_post.h"
@@ -3034,6 +3035,15 @@ void Message::paintText(
 	if (!context.clip.intersects(trect)
 		&& context.skipDrawingParts == PaintContext::SkipDrawingParts::None
 		&& !context.gestureHorizontal.translation) {
+		return;
+	}
+	if (Safe::Calm::PaintHeldText(
+			p,
+			data(),
+			trect,
+			textRealWidth(),
+			st::msgFont->height,
+			stm->historyTextFg->c)) {
 		return;
 	}
 	prepareCustomEmojiPaint(p, context, text());

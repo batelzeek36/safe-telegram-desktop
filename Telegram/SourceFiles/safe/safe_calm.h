@@ -71,6 +71,15 @@ void MarkSentSoftened(
 // HistoryItem::notificationReady: no notification until the verdict.
 [[nodiscard]] bool HoldsNotification(not_null<const HistoryItem*> item);
 [[nodiscard]] bool IsHeld(not_null<const HistoryItem*> item);
+// Message::paintText: a bubble still being softened paints a soft shimmer
+// bar in place of its placeholder text. True when it painted (skip the text).
+bool PaintHeldText(
+	QPainter &p,
+	not_null<const HistoryItem*> item,
+	QRect textRect,
+	int textWidth,
+	int lineHeight,
+	const QColor &color);
 // A softened message to Zach: never forwarded, translated or copied raw.
 [[nodiscard]] bool IsSoftenedIncoming(not_null<const HistoryItem*> item);
 
