@@ -41,7 +41,7 @@ inline constexpr std::string_view kEffort = "low";
 
 // The rubric's identity, stored with every answer: bump it with the phone's
 // SafeJudge.NAME whenever the rubric changes (tools/judge_rubric.py checks).
-inline constexpr std::string_view kJudgeName = "haiku55-1";
+inline constexpr std::string_view kJudgeName = "haiku55-2";
 
 inline constexpr std::string_view kVerdictShow = "show";
 inline constexpr std::string_view kVerdictHide = "hide";
@@ -56,7 +56,7 @@ inline constexpr int kStrippedMaxSide = 64;
 inline constexpr std::size_t kMaxTextUnits = 1024;
 inline constexpr std::size_t kMaxPictureBytes = 1024 * 1024;
 inline constexpr std::size_t kMaxResponseBytes = 256 * 1024;
-inline constexpr int kMaxInFlight = 4;
+inline constexpr int kMaxInFlight = 8; // Emoji search screens: ~40 tiles at once.
 inline constexpr int kTimeoutMs = 20 * 1000;
 
 // What the picture is, in the phone's words ("Kind: photo.").
