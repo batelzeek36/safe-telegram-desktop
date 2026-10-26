@@ -69,7 +69,8 @@ namespace Safe {
 [[nodiscard]] bool HoldsStory(not_null<const Data::Story*> story);
 
 // Custom emoji in a message's text: hidden from senders who are not Trusted
-// outside Trusted and Allowed chats (the outcome is Hide).
+// outside Trusted and Allowed chats (the outcome is Hide). In Allowed chats
+// each one is judged too: Safe::HoldsMessageEmoji (safe_emoji.h).
 [[nodiscard]] bool HidesCustomEmoji(not_null<const HistoryItem*> item);
 
 // Inline-bot results (@gif and the like): held for every bot, Trusted bots

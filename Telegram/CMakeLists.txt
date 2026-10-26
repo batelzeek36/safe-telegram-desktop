@@ -1916,6 +1916,8 @@ PRIVATE
     safe/safe_drop.h
     safe/safe_drop_mac.h
     safe/safe_drop_mac.mm
+    safe/safe_emoji.cpp
+    safe/safe_emoji.h
     safe/safe_gate.cpp
     safe/safe_gate.h
     safe/safe_gifs.cpp

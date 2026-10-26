@@ -56,6 +56,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "core/core_settings.h"
 #include "core/application.h"
+#include "safe/safe_emoji.h"
+#include "safe/safe_media.h"
 #include "settings/sections/settings_premium.h"
 #include "window/window_session_controller.h"
 #include "styles/style_chat_helpers.h"
@@ -76,6 +78,26 @@ constexpr auto kPreloadSearchPages = 4;
 
 using Core::RecentEmojiId;
 using Core::RecentEmojiDocument;
+
+[[nodiscard]] bool SafeHeldTile(
+		EmojiListMode mode,
+		DocumentData *document,
+		bool collectible) {
+	return (mode != EmojiListMode::MessageEffects)
+		&& !collectible
+		&& Safe::HoldsEmoji(document);
+}
+
+bool SafePaintHeldTile(
+		QPainter &p,
+		EmojiListMode mode,
+		QRect rect,
+		DocumentData *document,
+		bool collectible) {
+	return (mode != EmojiListMode::MessageEffects)
+		&& !collectible
+		&& Safe::PaintHeldEmoji(p, rect, document);
+}
 
 } // namespace
 
@@ -546,6 +568,11 @@ EmojiListWidget::EmojiListWidget(
 		}, lifetime());
 	}
 
+	Safe::VerdictChanges(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
+
 	_customSingleSize = Data::FrameSizeFromTag(
 		Data::CustomEmojiManager::SizeTag::Large
 	) / style::DevicePixelRatio();
@@ -756,6 +783,11 @@ void EmojiListWidget::applyNextSearchQuery() {
 		}
 		_searchNextRequestQuery = _searchQueryText;
 		_searchRequestQuery = _searchQueryText;
+		if (Safe::IsGuardedEmojiSearch(_searchQuery)) {
+			_searchCloudCache[_searchQueryText].clear();
+			_searchSetsCache[_searchQueryText].clear();
+			_searchCloudNextOffset.erase(_searchQueryText);
+		}
 		refreshSearchShortcuts();
 		const auto cloudCached = _searchCloudCache.find(_searchRequestQuery)
 			!= _searchCloudCache.cend();
@@ -775,7 +807,12 @@ void EmojiListWidget::applyNextSearchQuery() {
 
 void EmojiListWidget::showPreview() {
 	if (const auto over = std::get_if<OverEmoji>(&_pressed)) {
-		if (const auto custom = lookupCustomEmoji(over)) {
+		if (const auto custom = lookupCustomEmoji(over)
+			; custom
+			&& !SafeHeldTile(
+				_mode,
+				custom.document,
+				!!custom.collectible)) {
 			_previewShown = showPreviewFor(custom.document);
 		}
 	}
@@ -853,9 +890,16 @@ void EmojiListWidget::appendPremiumSearchResults() {
 			_searchResults.push_back(recent);
 		}
 	}
+	const auto safeGuarded = Safe::IsGuardedEmojiSearch(_searchQuery);
 	for (const auto &set : _custom) {
+		if (safeGuarded && !set.canRemove) {
+			continue;
+		}
 		for (const auto &one : set.list) {
 			const auto id = one.document->id;
+			if (!set.canRemove && Safe::DropsEmoji(one.document)) {
+				continue;
+			}
 			if (checkCustom(one.emoji, id)) {
 				_searchResults.push_back({
 					.custom = one.custom,
@@ -1094,7 +1138,8 @@ void EmojiListWidget::searchSetsResultsDone(
 		for (const auto &setData : data.vsets().v) {
 			const auto set
 				= session().data().stickers().feedSet(setData);
-			if (set->stickers.empty() && set->covers.empty()) {
+			if ((set->stickers.empty() && set->covers.empty())
+				|| Safe::DropsEmojiSet(set)) {
 				continue;
 			}
 			it->second.push_back(set->id);
@@ -1160,7 +1205,7 @@ void EmojiListWidget::fillCloudSearchResults() {
 		}
 		const auto document = session().data().document(id);
 		const auto sticker = document->sticker();
-		if (!sticker) {
+		if (!sticker || Safe::DropsEmoji(document)) {
 			continue;
 		}
 		const auto statusId = EmojiStatusId{ id };
@@ -1222,7 +1267,8 @@ bool EmojiListWidget::addSearchShortcut(not_null<Data::StickersSet*> set) {
 		: set->stickers;
 	auto list = std::vector<CustomOne>();
 	for (const auto document : documents) {
-		if (const auto sticker = document->sticker()) {
+		if (const auto sticker = document->sticker()
+			; sticker && !Safe::DropsEmoji(document)) {
 			list.push_back({
 				.custom = resolveCustomEmoji(
 					EmojiStatusId{ document->id },
@@ -1258,7 +1304,8 @@ std::vector<EmojiListWidget::CustomOne> EmojiListWidget::collectSearchSet(
 	auto result = std::vector<CustomOne>();
 	result.reserve(documents.size());
 	for (const auto document : documents) {
-		if (const auto sticker = document->sticker()) {
+		if (const auto sticker = document->sticker()
+			; sticker && !Safe::DropsEmoji(document)) {
 			const auto statusId = EmojiStatusId{ document->id };
 			result.push_back({
 				.custom = resolveCustomEmoji(
@@ -1994,6 +2041,11 @@ base::unique_qptr<Ui::PopupMenu> EmojiListWidget::fillContextMenu(
 	}
 	const auto section = over->section;
 	const auto index = over->index;
+	if (const auto custom = lookupCustomEmoji(index, section)
+		; custom
+		&& SafeHeldTile(_mode, custom.document, !!custom.collectible)) {
+		return nullptr;
+	}
 	auto menu = base::make_unique_q<Ui::PopupMenu>(
 		this,
 		(_mode == Mode::Full
@@ -2328,6 +2380,14 @@ void EmojiListWidget::paintSearchShortcutIcon(
 		QRect rect) {
 	if (set.list.empty()) {
 		return;
+	} else if (!set.canRemove
+		&& SafePaintHeldTile(
+			p,
+			_mode,
+			rect,
+			set.list.front().document,
+			!!set.list.front().collectible)) {
+		return;
 	}
 	using SizeTag = Data::CustomEmojiManager::SizeTag;
 	const auto native = Data::FrameSizeFromTag(SizeTag::Isolated)
@@ -2631,6 +2691,19 @@ void EmojiListWidget::drawRecent(
 		const auto exactPosition = position
 			+ _innerPosition
 			+ _customPosition;
+		const auto safeId = std::get_if<RecentEmojiDocument>(
+			&recent.id.data);
+		if (safeId
+			&& SafePaintHeldTile(
+				p,
+				_mode,
+				QRect(
+					exactPosition,
+					QSize(_customSingleSize, _customSingleSize)),
+				session().data().document(safeId->id),
+				!!recent.collectible)) {
+			return;
+		}
 		_emojiPaintContext->scale = context.progress;
 		if (_mode == Mode::ChannelStatus) {
 			_emojiPaintContext->internal.forceFirstFrame
@@ -2701,6 +2774,17 @@ void EmojiListWidget::drawCustom(
 	_emojiPaintContext->position = position
 		+ _innerPosition
 		+ _customPosition;
+	if (!custom.canRemove
+		&& SafePaintHeldTile(
+			p,
+			_mode,
+			QRect(
+				_emojiPaintContext->position,
+				QSize(_customSingleSize, _customSingleSize)),
+			entry.document,
+			!!entry.collectible)) {
+		return;
+	}
 	entry.custom->paint(p, *_emojiPaintContext);
 }
 
@@ -2717,6 +2801,17 @@ void EmojiListWidget::drawSearchSetCustom(
 	_emojiPaintContext->position = position
 		+ _innerPosition
 		+ _customPosition;
+	if (!custom.canRemove
+		&& SafePaintHeldTile(
+			p,
+			_mode,
+			QRect(
+				_emojiPaintContext->position,
+				QSize(_customSingleSize, _customSingleSize)),
+			entry.document,
+			!!entry.collectible)) {
+		return;
+	}
 	entry.custom->paint(p, *_emojiPaintContext);
 }
 
@@ -2875,7 +2970,12 @@ void EmojiListWidget::mousePressEvent(QMouseEvent *e) {
 				_previewTimer.cancel();
 				_showPickerTimer.callOnce(kColorPickerDelay);
 			}
-		} else if (lookupCustomEmoji(over)) {
+		} else if (const auto custom = lookupCustomEmoji(over)
+			; custom
+			&& !SafeHeldTile(
+				_mode,
+				custom.document,
+				!!custom.collectible)) {
 			_showPickerTimer.cancel();
 			_previewTimer.callOnce(QApplication::startDragTime());
 		}
@@ -2949,7 +3049,12 @@ void EmojiListWidget::mouseReleaseEvent(QMouseEvent *e) {
 			}
 			selectEmoji(lookupChosen(emoji, over));
 		} else if (const auto custom = lookupCustomEmoji(over)) {
-			selectCustom(lookupChosen(custom, over));
+			if (!SafeHeldTile(
+					_mode,
+					custom.document,
+					!!custom.collectible)) {
+				selectCustom(lookupChosen(custom, over));
+			}
 		}
 	} else if (const auto set = std::get_if<OverSet>(&pressed)) {
 		const auto setId = (_searchMode && set->section > 0)
@@ -3533,6 +3638,7 @@ void EmojiListWidget::refreshCustom() {
 		auto it = sets.find(lookupId);
 		if (it == sets.cend()
 			|| it->second->stickers.isEmpty()
+			|| Safe::DropsEmojiSet(it->second.get())
 			|| (_mode == Mode::BackgroundEmoji && !it->second->textColor())
 			|| (_mode == Mode::ChannelStatus
 				&& !it->second->channelStatus())) {
@@ -4071,7 +4177,12 @@ void EmojiListWidget::setSelected(OverState newSelected) {
 		}
 	} else if (_previewShown && _pressed != _selected) {
 		if (const auto over = std::get_if<OverEmoji>(&_selected)) {
-			if (const auto custom = lookupCustomEmoji(over)) {
+			if (const auto custom = lookupCustomEmoji(over)
+				; custom
+				&& !SafeHeldTile(
+					_mode,
+					custom.document,
+					!!custom.collectible)) {
 				_pressed = _selected;
 				_previewShown = showPreviewFor(custom.document);
 			}

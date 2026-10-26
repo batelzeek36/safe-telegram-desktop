@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/reactions/history_view_reactions.h"
 #include "safe/look_reactions.h"
+#include "safe/safe_emoji.h"
 #include "safe/safe_media_gate.h"
 
 #include "history/history_item.h"
@@ -251,9 +252,11 @@ InlineList::Dimension InlineList::countDimension(int width) const {
 InlineList::Button InlineList::prepareButtonWithId(const ReactionId &id) {
 	auto result = Button{ .id = id, .paid = id.paid()};
 	if (const auto customId = id.custom()) {
-		result.custom = _owner->owner().customEmojiManager().create(
-			customId,
-			_customEmojiRepaint);
+		result.custom = Safe::MakeGatedEmoji(
+			_owner->owner().customEmojiManager().create(
+				customId,
+				_customEmojiRepaint),
+			[=] { return _data.safeHolds && _data.safeHolds(customId); });
 	} else {
 		_owner->preloadReactionImageFor(id);
 	}
@@ -926,6 +929,7 @@ InlineListData InlineListDataFromMessage(not_null<Element*> view) {
 	result.reactions = Safe::GateReactions(
 		item,
 		item->reactionsWithLocal());
+	result.safeHolds = Safe::ReactionEmojiHolds(item);
 
 	const auto shouldAddEmptyPaidButton = [&] {
 		if (view->context() == Context::ChatPreview) {

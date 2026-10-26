@@ -26,6 +26,8 @@ constexpr auto kAnywhere = std::array{
 	"upskirt", "topless", "seggs", "nympho", "whore", "slutty", "sluts",
 	"hooker", "jizz", "fetish", "kinky", "erection", "testicle", "scrotum",
 	"nipple", "areola", "seks", "golaya", "golye", "siski", "pizda",
+	"poledanc", "lapdanc", "stripclub", "bubblebutt", "buttplug", "sideboob",
+	"underboob",
 };
 
 // A word that starts with one of these counts ("sexy", "nudes").
@@ -37,7 +39,8 @@ constexpr auto kPrefix = std::array{
 	"nsfl", "playboy", "escort", "hoes", "hoez", "twerk", "thicc", "titty",
 	"tittie", "tities", "naughty", "spank", "strapon", "bikini", "thong",
 	"nudez", "pussi", "pusy", "fck", "smut", "wank", "spunk", "horny",
-	"hornie", "boner", "labia",
+	"hornie", "boner", "labia", "buttock", "buttcheek", "asscheek", "panty",
+	"cleavag", "busty", "nalga",
 };
 
 // Whole words only, so "ass" never catches "class" or "assistant".
@@ -49,7 +52,9 @@ constexpr auto kWord = std::array{
 	"fapping", "jerkoff", "bj", "gspot", "69", "strip", "stripping", "puss",
 	"nood", "noods", "nudie", "nudies", "shlong", "schlong", "peen",
 	"peepee", "ballsack", "humping", "booba", "bewbs", "milf", "milfs",
-	"dilf", "pron", "fuk", "fukk", "fuks", "fuq", "phuk",
+	"dilf", "pron", "fuk", "fukk", "fuks", "fuq", "phuk", "bum", "bums",
+	"derriere", "gyat", "gyatt", "pawg", "undies", "knickers", "gstring",
+	"gstrings", "culo", "culos", "tetas",
 };
 
 constexpr auto kEmoji = std::array{

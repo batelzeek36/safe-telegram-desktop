@@ -16,6 +16,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
+#include "data/stickers/data_stickers.h"
+#include "data/stickers/data_stickers_set.h"
 #include "ffmpeg/ffmpeg_frame_generator.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -28,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/userpic_view.h"
 
 #include <QtCore/QFile>
+#include <QtGui/QPainter>
 #include <QtWidgets/QApplication>
 
 #include <deque>
@@ -43,6 +46,8 @@ constexpr auto kWatchedPerKey = 8;
 constexpr auto kRepaintDelay = crl::time(150);
 constexpr auto kMaxFileBytes = int64(16 * 1024 * 1024);
 constexpr auto kMaxDecodedFrames = 1200;
+constexpr auto kEmojiRetryDelay = crl::time(1500);
+constexpr auto kEmojiGrey = 128;
 
 struct Pending {
 	base::weak_ptr<Main::Session> session;
@@ -54,6 +59,7 @@ struct Pending {
 	QString fileName;
 	QString mime;
 	bool fromFile = false; // Frames decoded from the downloaded file.
+	bool emoji = false; // A custom emoji: see EmojiCover.
 };
 
 struct Watched {
@@ -69,11 +75,13 @@ struct State {
 	base::flat_map<MediaKey, std::vector<Watched>> watched;
 	base::flat_set<not_null<Main::Session*>> sessions;
 	base::Timer repaintTimer;
+	base::Timer emojiRetryTimer;
 	rpl::lifetime lifetime;
 };
 
 void RefreshWatched(State &state, std::optional<MediaKey> only);
 void ScheduleRepaint(State &state);
+void RetryPending();
 
 [[nodiscard]] State &Instance() {
 	// Never destroyed: the app may still paint while statics go away.
@@ -85,6 +93,10 @@ void ScheduleRepaint(State &state);
 					Ui::ForceFullRepaint(widget);
 				}
 			}
+		});
+		// An emoji document can arrive with no download finishing after it.
+		result->emojiRetryTimer.setCallback([] {
+			RetryPending();
 		});
 		VerdictChanges(
 		) | rpl::on_next([=](MediaKey key) {
@@ -289,6 +301,62 @@ void Asked(State &state, MediaKey key) {
 	return true;
 }
 
+// A custom emoji thumbnail is about 100 px and often white line art on a
+// transparent background: the check gets it at its full side, on mid grey
+// (the plain white flattening would leave such art an empty picture).
+[[nodiscard]] QImage EmojiCover(const QImage &cover) {
+	if (cover.isNull() || cover.width() <= 0 || cover.height() <= 0) {
+		return QImage();
+	}
+	const auto side = JudgeProtocol::kMaxSide;
+	auto scaled = cover.scaled(
+		QSize(side, side),
+		Qt::KeepAspectRatio,
+		Qt::SmoothTransformation);
+	if (scaled.isNull()) {
+		return QImage();
+	}
+	scaled.setDevicePixelRatio(1.);
+	auto result = QImage(scaled.size(), QImage::Format_RGB32);
+	result.setDevicePixelRatio(1.);
+	result.fill(QColor(kEmojiGrey, kEmojiGrey, kEmojiGrey));
+	auto p = QPainter(&result);
+	p.drawImage(0, 0, scaled);
+	p.end();
+	return result;
+}
+
+// An emoji document can be filled in (or its thumbnail found) after it was
+// queued: ask for the thumbnail each time it is retried.
+void WantEmojiThumbnail(const Pending &entry) {
+	if (!entry.emoji || !entry.document) {
+		return;
+	}
+	const auto document = entry.document->owner();
+	if (document->hasThumbnail() && !entry.document->thumbnail()) {
+		document->loadThumbnail(document->stickerSetOrigin());
+	}
+}
+
+// Only the thumbnail, or a static emoji's own small picture: an animated
+// emoji file is never downloaded before it is cleared.
+[[nodiscard]] QImage EmojiCoverOf(const Pending &entry) {
+	const auto media = entry.document;
+	if (!media) {
+		return QImage();
+	} else if (const auto thumbnail = media->thumbnail()) {
+		return thumbnail->original();
+	}
+	const auto document = media->owner();
+	const auto sticker = document->sticker();
+	if (!sticker || !sticker->isStatic() || document->hasThumbnail()) {
+		return QImage();
+	}
+	media->checkStickerLarge();
+	const auto image = media->getStickerSmall();
+	return image ? image->original() : QImage();
+}
+
 // True when the entry is finished with (sent, answered or gone).
 [[nodiscard]] bool TrySend(State &state, Pending &entry) {
 	const auto session = entry.session.get();
@@ -297,7 +365,10 @@ void Asked(State &state, MediaKey key) {
 	} else if (entry.fromFile) {
 		return TrySendFromFile(state, entry);
 	}
-	const auto cover = CoverOf(entry);
+	WantEmojiThumbnail(entry);
+	const auto cover = entry.emoji
+		? EmojiCover(EmojiCoverOf(entry))
+		: CoverOf(entry);
 	if (cover.isNull()) {
 		return false;
 	}
@@ -318,12 +389,17 @@ void Asked(State &state, MediaKey key) {
 
 void RetryPending() {
 	auto &state = Instance();
+	auto emoji = false;
 	for (auto i = begin(state.pending); i != end(state.pending);) {
 		if (TrySend(state, *i)) {
 			i = state.pending.erase(i);
 		} else {
+			emoji = emoji || i->emoji;
 			++i;
 		}
+	}
+	if (emoji && !state.emojiRetryTimer.isActive()) {
+		state.emojiRetryTimer.callOnce(kEmojiRetryDelay);
 	}
 }
 
@@ -362,6 +438,9 @@ void Queue(State &state, not_null<Main::Session*> session, Pending entry) {
 		return;
 	}
 	WatchSession(state, session);
+	if (entry.emoji && !state.emojiRetryTimer.isActive()) {
+		state.emojiRetryTimer.callOnce(kEmojiRetryDelay);
+	}
 	state.pending.push_back(std::move(entry));
 	while (state.pending.size() > kPendingLimit) {
 		state.pending.pop_front();
@@ -370,6 +449,25 @@ void Queue(State &state, not_null<Main::Session*> session, Pending entry) {
 
 [[nodiscard]] QString CaptionOf(not_null<const HistoryItem*> item) {
 	return item->originalText().text;
+}
+
+// The pack title and the emoji it stands for: the pack owner's own words.
+[[nodiscard]] QString EmojiCaption(not_null<DocumentData*> document) {
+	const auto sticker = document->sticker();
+	if (!sticker) {
+		return QString();
+	}
+	auto result = QString();
+	if (const auto id = sticker->set.id) {
+		const auto &sets = document->owner().stickers().sets();
+		if (const auto i = sets.find(id); i != end(sets)) {
+			result = i->second->title;
+		}
+	}
+	if (!sticker->alt.isEmpty()) {
+		result = result.isEmpty() ? sticker->alt : (result + ' ' + sticker->alt);
+	}
+	return result;
 }
 
 } // namespace
@@ -502,6 +600,30 @@ bool WantSearchedGif(not_null<DocumentData*> document, MediaKey key) {
 		QString(),
 		LoadFromCloudOrLocal,
 		true);
+	Queue(state, session, std::move(entry));
+	return true;
+}
+
+bool WantEmoji(not_null<DocumentData*> document) {
+	const auto key = KeyOf(document);
+	if (!JudgeAvailable() || !key) {
+		return false;
+	}
+	auto &state = Instance();
+	if (Known(state, key)) {
+		return true;
+	}
+	const auto session = &document->session();
+	auto entry = Pending{
+		.session = base::make_weak(session),
+		.key = key,
+		.document = document->createMediaView(),
+		.caption = EmojiCaption(document),
+		// The picture judged is the emoji's WebP thumbnail: a sticker, as on
+		// the phone (patch 25), whatever the emoji file itself is.
+		.mime = u"image/webp"_q,
+		.emoji = true,
+	};
 	Queue(state, session, std::move(entry));
 	return true;
 }

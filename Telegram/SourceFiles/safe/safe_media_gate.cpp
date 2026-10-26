@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "history/history_item_components.h"
 #include "main/main_session.h"
+#include "safe/safe_emoji.h"
 #include "safe/safe_media_covers.h"
 #include "safe/safe_notices.h"
 #include "safe/safe_trust.h"
@@ -381,7 +382,7 @@ bool PaintHeldSticker(
 	const auto shape = HoldShape::Rounded(
 		std::min(rect.width(), rect.height()) / 8);
 	if (customEmojiPart) {
-		if (!HidesCustomEmoji(item)) {
+		if (!HoldsMessageEmoji(item, document->id)) {
 			return false;
 		}
 		PaintFog(p, rect, shape);
@@ -450,11 +451,6 @@ Ui::Text::MarkedContext GateCustomEmoji(
 	const auto session = &item->history()->session();
 	const auto weak = base::make_weak(session);
 	const auto id = item->fullId();
-	auto hidden = [=] {
-		const auto strong = weak.get();
-		const auto found = strong ? strong->data().message(id) : nullptr;
-		return !found || HidesCustomEmoji(found);
-	};
 	auto original = std::move(context.customEmojiFactory);
 	context.customEmojiFactory = [=](
 			QStringView data,
@@ -463,9 +459,19 @@ Ui::Text::MarkedContext GateCustomEmoji(
 		auto result = original(data, inner);
 		// Only real custom emoji (a document id). The text's own helper
 		// icons (the quote mark, inline images) are the app's, not a
-		// sender's, and keep showing.
-		if (result && Data::ParseCustomEmojiData(data) != 0) {
-			return MakeGatedEmoji(std::move(result), hidden);
+		// sender's, and keep showing. Hide chats hide them all, Allowed
+		// chats judge each one (d25-emoji-guard), Trusted ones show.
+		const auto documentId = result
+			? Data::ParseCustomEmojiData(data)
+			: DocumentId();
+		if (documentId) {
+			return MakeGatedEmoji(std::move(result), [=] {
+				const auto strong = weak.get();
+				const auto found = strong
+					? strong->data().message(id)
+					: nullptr;
+				return !found || HoldsMessageEmoji(found, documentId);
+			});
 		}
 		return result;
 	};

@@ -34,5 +34,9 @@ bool WantDocument(
 bool WantUserpic(not_null<const PeerData*> peer, MediaKey key);
 // A GIF search result (no message): judged by frames of the clip.
 bool WantSearchedGif(not_null<DocumentData*> document, MediaKey key);
+// A custom emoji (a panel tile or one in a message): judged by its WebP
+// thumbnail (a static one by its own picture), enlarged and laid on grey,
+// with the pack title and the emoji it stands for as untrusted text.
+bool WantEmoji(not_null<DocumentData*> document);
 
 } // namespace Safe::Covers

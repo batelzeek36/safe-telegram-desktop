@@ -50,6 +50,7 @@ struct InlineListData {
 	std::vector<MessageReaction> reactions;
 	base::flat_map<ReactionId, std::vector<not_null<PeerData*>>> recent;
 	Flags flags = {};
+	Fn<bool(DocumentId)> safeHolds; // Safe::ReactionEmojiHolds
 };
 
 class InlineList final : public Object {
