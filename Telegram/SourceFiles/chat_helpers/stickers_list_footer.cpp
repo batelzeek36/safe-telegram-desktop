@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/stickers_lottie.h"
 #include "core/application.h"
 #include "data/stickers/data_stickers_set.h"
+#include "safe/safe_emoji.h"
 #include "data/stickers/data_stickers.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_file_origin.h"
@@ -1288,6 +1289,17 @@ void StickersListFooter::paintSetIcon(
 		crl::time now,
 		bool paused) const {
 	const auto &icon = _icons[info.index];
+	if (icon.sticker
+		&& icon.set
+		&& (icon.set->flags & Data::StickersSetFlag::Emoji)
+		&& Safe::PaintHeldEmoji(
+			p,
+			QRect(
+				QPoint(info.adjustedLeft, _iconsTop) + _areaPosition,
+				QSize(st().iconArea, st().iconArea)),
+			icon.sticker)) {
+		return;
+	}
 	const auto expandingShift = context.expanding
 		? QPoint(
 			0,

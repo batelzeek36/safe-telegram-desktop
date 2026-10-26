@@ -56,19 +56,38 @@ using SetFlag = Data::StickersSetFlag;
 	});
 }
 
+// His recent, top and tag reactions, and every animation of Telegram's own
+// standard reactions (the reaction picker shows those by document id).
 [[nodiscard]] bool InReactions(
 		not_null<Data::Session*> owner,
 		DocumentId id) {
 	using Type = Data::Reactions::Type;
 	const auto &reactions = owner->reactions();
-	const auto has = [&](Type type) {
+	const auto telegrams = [&](const Data::Reaction &reaction) {
+		const auto is = [&](const DocumentData *document) {
+			return document && (document->id == id);
+		};
+		return is(reaction.selectAnimation)
+			|| is(reaction.appearAnimation)
+			|| is(reaction.centerIcon)
+			|| is(reaction.aroundAnimation);
+	};
+	const auto has = [&](Type type, bool customToo) {
 		return ranges::any_of(
 			reactions.list(type),
 			[&](const Data::Reaction &reaction) {
-				return reaction.id.custom() == id;
+				if (const auto custom = reaction.id.custom()) {
+					return customToo && (custom == id);
+				}
+				return telegrams(reaction);
 			});
 	};
-	return has(Type::Recent) || has(Type::Top);
+	return has(Type::Recent, true)
+		|| has(Type::Top, true)
+		|| has(Type::MyTags, true)
+		|| has(Type::Tags, true)
+		|| has(Type::Active, false)
+		|| has(Type::All, false);
 }
 
 [[nodiscard]] bool InStatuses(
