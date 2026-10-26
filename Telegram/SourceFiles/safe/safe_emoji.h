@@ -44,6 +44,10 @@ namespace Safe {
 // Shown without a check (see above). False for nullptr.
 [[nodiscard]] bool IsFreeEmoji(const DocumentData *document);
 
+// From a pack he installed, archived or that is Telegram's own (official).
+// False for nullptr and for a pack this app has not loaded.
+[[nodiscard]] bool IsInFreeSet(const DocumentData *document);
+
 // Not shown right now: not free and not cleared. False for nullptr.
 [[nodiscard]] bool HoldsEmoji(const DocumentData *document);
 

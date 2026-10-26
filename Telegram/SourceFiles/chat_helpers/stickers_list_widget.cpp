@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "base/timer_rpl.h"
 #include "core/application.h"
+#include "safe/safe_media.h"
+#include "safe/safe_stickers.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_session.h"
@@ -150,7 +152,8 @@ auto StickersListWidget::PrepareStickers(
 	return ranges::views::all(
 		pack
 	) | ranges::views::filter([&](DocumentData *document) {
-		return !skipPremium || !document->isPremiumSticker();
+		return (!skipPremium || !document->isPremiumSticker())
+			&& !Safe::DropsPanelSticker(document);
 	}) | ranges::views::transform([](DocumentData *document) {
 		return Sticker{ document };
 	}) | ranges::to_vector;
@@ -254,6 +257,10 @@ StickersListWidget::StickersListWidget(
 	st::stickersPremiumLock))
 , _searchRequestTimer([=] { sendSearchRequest(); }) {
 	setMouseTracking(true);
+	Safe::VerdictChanges(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
 	if (st().bg->c.alpha() > 0) {
 		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
@@ -625,7 +632,8 @@ void StickersListWidget::sendSearchRequest() {
 	_searchRequestTimer.cancel();
 	_searchQuery = _searchNextQuery;
 
-	if (_searchQuery == Ui::PremiumGroupFakeEmoticon()) {
+	if (_searchQuery == Ui::PremiumGroupFakeEmoticon()
+		|| Safe::IsGuardedStickerSearch(_searchQuery)) {
 		toggleSearchLoading(false);
 		_searchSetsCache.emplace(_searchQuery, std::vector<uint64>());
 		_searchStickersCache.emplace(_searchQuery, std::vector<DocumentId>());
@@ -709,7 +717,8 @@ void StickersListWidget::searchForSets(
 		_filteredStickers = session().data().stickers().getListByEmoji(
 			std::move(emoji),
 			0,
-			true);
+			true,
+			Safe::IsGuardedStickerSearch(cleaned));
 	}
 	if (_searchQuery != cleaned) {
 		toggleSearchLoading(false);
@@ -1205,7 +1214,8 @@ void StickersListWidget::fillFoundStickersRow(
 	auto elements = std::vector<Sticker>();
 	elements.reserve(stickerIds.size());
 	for (const auto id : stickerIds) {
-		if (const auto document = session().data().document(id)) {
+		if (const auto document = session().data().document(id)
+			; !Safe::DropsPanelSticker(document)) {
 			elements.push_back(Sticker{ document });
 		}
 	}
@@ -1225,6 +1235,16 @@ void StickersListWidget::fillFoundStickersRow(
 }
 
 void StickersListWidget::fillFilteredStickersRow() {
+	if (!_isEffects) {
+		// Effects keep a parallel corner emoji list; they are never held.
+		_filteredStickers.erase(
+			ranges::remove_if(
+				_filteredStickers,
+				[](not_null<DocumentData*> document) {
+					return Safe::DropsPanelSticker(document);
+				}),
+			end(_filteredStickers));
+	}
 	if (_filteredStickers.empty()) {
 		return;
 	}
@@ -1461,7 +1481,8 @@ void StickersListWidget::searchResultsDone(
 		}
 		for (const auto &setData : data.vsets().v) {
 			const auto set = session().data().stickers().feedSet(setData);
-			if (set->stickers.empty() && set->covers.empty()) {
+			if ((set->stickers.empty() && set->covers.empty())
+				|| Safe::DropsStickerSet(set)) {
 				continue;
 			}
 			it->second.push_back(set->id);
@@ -1641,6 +1662,12 @@ void StickersListWidget::paintSearchShortcutIcon(
 		Set &set,
 		QRect rect) {
 	if (set.stickers.empty()) {
+		return;
+	} else if (!_isEffects
+		&& Safe::PaintHeldPanelSticker(
+			p,
+			myrtlrect(rect),
+			set.stickers.front().document)) {
 		return;
 	}
 	auto &sticker = set.stickers.front();
@@ -2291,6 +2318,21 @@ void StickersListWidget::paintSticker(
 		bool selected,
 		bool deleteSelected) {
 	auto &sticker = set.stickers[index];
+	if (!_isEffects && Safe::HoldsPanelSticker(sticker.document)) {
+		const auto box = boundingBoxSize();
+		const auto tile = QPoint(
+			stickersLeft() + (index % _columnCount) * _singleSize.width(),
+			y + (index / _columnCount) * _singleSize.height());
+		Safe::PaintHeldPanelSticker(
+			p,
+			myrtlrect(QRect(
+				tile + QPoint(
+					(_singleSize.width() - box.width()) / 2,
+					(_singleSize.height() - box.height()) / 2),
+				box)),
+			sticker.document);
+		return;
+	}
 	sticker.ensureMediaCreated();
 	const auto document = sticker.document;
 	const auto &media = sticker.documentMedia;
@@ -2512,8 +2554,19 @@ void StickersListWidget::mousePressEvent(QMouseEvent *e) {
 		_searchShortcutsDragging = false;
 	}
 	ClickHandler::pressed();
-	if (std::get_if<OverSticker>(&_selected)) {
-		_previewTimer.callOnce(QApplication::startDragTime());
+	if (const auto sticker = std::get_if<OverSticker>(&_selected)) {
+		const auto &sets = shownSets();
+		const auto held = !_isEffects
+			&& (sticker->section >= 0)
+			&& (sticker->section < int(sets.size()))
+			&& (sticker->index >= 0)
+			&& (sticker->index
+				< int(sets[sticker->section].stickers.size()))
+			&& Safe::HoldsPanelSticker(
+				sets[sticker->section].stickers[sticker->index].document);
+		if (!held) {
+			_previewTimer.callOnce(QApplication::startDragTime());
+		}
 	}
 }
 
@@ -2720,6 +2773,10 @@ base::unique_qptr<Ui::PopupMenu> StickersListWidget::fillContextMenu(
 	Assert(section >= 0 && section < sets.size());
 	const auto &set = sets[section];
 	Assert(index >= 0 && index < set.stickers.size());
+	if (!_isEffects
+		&& Safe::HoldsPanelSticker(set.stickers[index].document)) {
+		return nullptr;
+	}
 
 	auto menu = base::make_unique_q<Ui::PopupMenu>(this, st().menu);
 
@@ -2959,7 +3016,9 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 				return;
 			}
 			const auto document = set.stickers[sticker->index].document;
-			if (_features.openStickerSets
+			if (!_isEffects && Safe::HoldsPanelSticker(document)) {
+				return;
+			} else if (_features.openStickerSets
 				&& (e->modifiers() & Qt::ControlModifier)) {
 				showStickerSetBox(document, set.id);
 			} else {
@@ -3855,9 +3914,11 @@ void StickersListWidget::setSelected(OverState newSelected) {
 				Assert(sticker->index >= 0
 					&& sticker->index < set.stickers.size());
 				const auto document = set.stickers[sticker->index].document;
-				_show->showMediaPreview(
-					document->stickerSetOrigin(),
-					document);
+				if (_isEffects || !Safe::HoldsPanelSticker(document)) {
+					_show->showMediaPreview(
+						document->stickerSetOrigin(),
+						document);
+				}
 			}
 		}
 	}
@@ -3870,6 +3931,9 @@ void StickersListWidget::showPreview() {
 		const auto &set = sets[sticker->section];
 		Assert(sticker->index >= 0 && sticker->index < set.stickers.size());
 		const auto document = set.stickers[sticker->index].document;
+		if (!_isEffects && Safe::HoldsPanelSticker(document)) {
+			return;
+		}
 		_show->showMediaPreview(document->stickerSetOrigin(), document);
 		_previewShown = true;
 	}

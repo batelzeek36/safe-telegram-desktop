@@ -1290,7 +1290,8 @@ std::vector<not_null<DocumentData*>> Stickers::getPremiumList(uint64 seed) {
 std::vector<not_null<DocumentData*>> Stickers::getListByEmoji(
 		std::vector<EmojiPtr> emoji,
 		uint64 seed,
-		bool forceAllResults) {
+		bool forceAllResults,
+		bool safeLocalOnly) {
 	auto all = base::flat_set<EmojiPtr>();
 	for (const auto &one : emoji) {
 		all.emplace(one->original());
@@ -1456,7 +1457,10 @@ std::vector<not_null<DocumentData*>> Stickers::getListByEmoji(
 		session().api().requestStickerSets();
 	}
 
-	if (forceAllResults || Core::App().settings().suggestStickersByEmoji()) {
+	// Safe: a guarded search keeps his own stickers, no server request.
+	if (!safeLocalOnly
+		&& (forceAllResults
+			|| Core::App().settings().suggestStickersByEmoji())) {
 		const auto key = ranges::accumulate(
 			all,
 			QString(),

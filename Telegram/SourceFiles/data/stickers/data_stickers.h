@@ -245,7 +245,8 @@ public:
 	[[nodiscard]] std::vector<not_null<DocumentData*>> getListByEmoji(
 		std::vector<EmojiPtr> emoji,
 		uint64 seed,
-		bool forceAllResults = false);
+		bool forceAllResults = false,
+		bool safeLocalOnly = false);
 	[[nodiscard]] auto getEmojiListFromSet(not_null<DocumentData*> document)
 		-> std::optional<std::vector<not_null<EmojiPtr>>>;
 

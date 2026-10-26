@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/stickers_box.h"
 
+#include "safe/safe_stickers.h"
+
 #include "apiwrap.h"
 #include "base/timer.h"
 #include "boxes/peers/edit_peer_color_box.h"
@@ -1552,6 +1554,18 @@ void StickersBox::Inner::paintRowThumbnail(
 		Painter &p,
 		not_null<Row*> row,
 		int left) {
+	if (Safe::PaintHeldSetCover(
+			p,
+			style::rtlrect(
+				left,
+				_st.photoPosition.y(),
+				_st.photoSize,
+				_st.photoSize,
+				width()),
+			row->set,
+			row->sticker)) {
+		return;
+	}
 	const auto origin = Data::FileOriginStickerSet(
 		row->set->id,
 		row->set->accessHash);

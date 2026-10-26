@@ -153,13 +153,15 @@ bool IsFreeEmoji(const DocumentData *document) {
 	if (!document || !document->id) {
 		return false;
 	}
-	const auto owner = &document->owner();
-	if (const auto sticker = document->sticker()) {
-		if (FreeSet(owner, sticker->set)) {
-			return true;
-		}
+	return IsInFreeSet(document) || IsMine(&document->owner(), document->id);
+}
+
+bool IsInFreeSet(const DocumentData *document) {
+	if (!document || !document->id) {
+		return false;
 	}
-	return IsMine(owner, document->id);
+	const auto sticker = document->sticker();
+	return sticker && FreeSet(&document->owner(), sticker->set);
 }
 
 bool HoldsEmoji(const DocumentData *document) {

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/field_autocomplete.h"
 #include "safe/safe_off.h"
+#include "safe/safe_stickers.h"
 
 #include "api/api_chat_participants.h"
 #include "api/api_common.h"
@@ -462,10 +463,16 @@ bool FieldAutocomplete::clearFilteredBotCommands() {
 
 FieldAutocomplete::StickerRows FieldAutocomplete::getStickerSuggestions() {
 	const auto data = &_session->data().stickers();
-	const auto list = data->getListByEmoji({ _emoji }, _stickersSeed);
+	const auto list = data->getListByEmoji(
+		{ _emoji },
+		_stickersSeed,
+		false,
+		Safe::IsGuardedStickerSearch(_emoji->text()));
 	auto result = ranges::views::all(
 		list
-	) | ranges::views::transform([](not_null<DocumentData*> sticker) {
+	) | ranges::views::filter([](not_null<DocumentData*> sticker) {
+		return !Safe::DropsPanelSticker(sticker);
+	}) | ranges::views::transform([](not_null<DocumentData*> sticker) {
 		return StickerSuggestion{
 			sticker,
 			sticker->createMediaView()
@@ -1170,6 +1177,20 @@ void FieldAutocomplete::Inner::paintStickers(Painter &p, QRect clip) {
 			const auto info = document->sticker();
 			if (!info) {
 				continue;
+			} else if (Safe::HoldsPanelSticker(document)) {
+				const auto box = stickerBoundingBox();
+				const auto tile = QPoint(
+					padding + column * single.width(),
+					padding + row * single.height());
+				Safe::PaintHeldPanelSticker(
+					p,
+					myrtlrect(QRect(
+						tile + QPoint(
+							(single.width() - box.width()) / 2,
+							(single.height() - box.height()) / 2),
+						box)),
+					document);
+				continue;
 			}
 
 			if (media->loaded()) {
@@ -1578,6 +1599,9 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 	if (!_srows->empty()) {
 		if (index < _srows->size()) {
 			const auto document = (*_srows)[index].document;
+			if (Safe::HoldsPanelSticker(document)) {
+				return true;
+			}
 
 			const auto from = [&]() -> Ui::MessageSendingAnimationFrom {
 				if (options.scheduled) {
@@ -1695,6 +1719,9 @@ void FieldAutocomplete::Inner::mouseReleaseEvent(QMouseEvent *e) {
 
 void FieldAutocomplete::Inner::contextMenuEvent(QContextMenuEvent *e) {
 	if (_sel < 0 || _srows->empty() || _down >= 0) {
+		return;
+	} else if (_sel < int(_srows->size())
+		&& Safe::HoldsPanelSticker((*_srows)[_sel].document)) {
 		return;
 	}
 	const auto index = _sel;
@@ -1951,6 +1978,9 @@ void FieldAutocomplete::Inner::onParentGeometryChanged() {
 void FieldAutocomplete::Inner::showPreview() {
 	if (_down >= 0 && _down < _srows->size()) {
 		const auto document = (*_srows)[_down].document;
+		if (Safe::HoldsPanelSticker(document)) {
+			return;
+		}
 		_show->showMediaPreview(document->stickerSetOrigin(), document);
 		_previewShown = true;
 	}
