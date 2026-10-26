@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
+#include "data/stickers/data_custom_emoji.h"
 #include "data/stickers/data_stickers.h"
 #include "data/stickers/data_stickers_set.h"
 #include "ffmpeg/ffmpeg_frame_generator.h"
@@ -76,12 +77,15 @@ struct State {
 	base::flat_set<not_null<Main::Session*>> sessions;
 	base::Timer repaintTimer;
 	base::Timer emojiRetryTimer;
+	// Custom emoji known only by id, being fetched (see ResolveEmoji).
+	base::flat_map<MediaKey, rpl::lifetime> resolving;
 	rpl::lifetime lifetime;
 };
 
 void RefreshWatched(State &state, std::optional<MediaKey> only);
 void ScheduleRepaint(State &state);
 void RetryPending();
+[[nodiscard]] QString EmojiCaption(not_null<DocumentData*> document);
 
 [[nodiscard]] State &Instance() {
 	// Never destroyed: the app may still paint while statics go away.
@@ -366,6 +370,11 @@ void WantEmojiThumbnail(const Pending &entry) {
 		return TrySendFromFile(state, entry);
 	}
 	WantEmojiThumbnail(entry);
+	if (entry.emoji && entry.caption.isEmpty() && entry.document) {
+		// Queued before the document was fetched: its pack title and
+		// alt emoji are known now.
+		entry.caption = EmojiCaption(entry.document->owner());
+	}
 	const auto cover = entry.emoji
 		? EmojiCover(EmojiCoverOf(entry))
 		: CoverOf(entry);
@@ -452,7 +461,7 @@ void Queue(State &state, not_null<Main::Session*> session, Pending entry) {
 }
 
 // The pack title and the emoji it stands for: the pack owner's own words.
-[[nodiscard]] QString EmojiCaption(not_null<DocumentData*> document) {
+QString EmojiCaption(not_null<DocumentData*> document) {
 	const auto sticker = document->sticker();
 	if (!sticker) {
 		return QString();
@@ -468,6 +477,31 @@ void Queue(State &state, not_null<Main::Session*> session, Pending entry) {
 		result = result.isEmpty() ? sticker->alt : (result + ' ' + sticker->alt);
 	}
 	return result;
+}
+
+// A custom emoji known only by its id (one in a held message's text is
+// never painted, so Telegram's own loader never fetches it): fetch the
+// document, else it would have no thumbnail to judge and stay held forever.
+void ResolveEmoji(State &state, not_null<DocumentData*> document) {
+	const auto key = KeyOf(document);
+	if (document->sticker() || !key || state.resolving.contains(key)) {
+		return;
+	}
+	const auto finish = [=] {
+		// Never inside the lifetime's own callback.
+		crl::on_main([=] {
+			Instance().resolving.remove(key);
+			RetryPending();
+		});
+	};
+	auto &lifetime = state.resolving[key];
+	document->owner().customEmojiManager().resolve(
+		document->id
+	) | rpl::take(1) | rpl::on_next_error([=](not_null<DocumentData*>) {
+		finish();
+	}, [=] {
+		finish();
+	}, lifetime);
 }
 
 } // namespace
@@ -610,6 +644,7 @@ bool WantEmoji(not_null<DocumentData*> document) {
 		return false;
 	}
 	auto &state = Instance();
+	ResolveEmoji(state, document);
 	if (Known(state, key)) {
 		return true;
 	}
