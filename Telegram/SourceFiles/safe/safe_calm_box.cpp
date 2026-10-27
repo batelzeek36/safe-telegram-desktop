@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm.h"
 #include "safe/safe_calm_leaf.h"
 #include "safe/safe_calm_marks.h"
+#include "safe/safe_calm_voice.h"
 #include "ui/layers/generic_box.h"
 #include "ui/painter.h"
 #include "ui/vertical_list.h"
@@ -447,7 +448,8 @@ void AddSuggestReplyAction(
 		|| IsOwn(item)
 		|| !item->isRegular()
 		|| IsHeld(item)
-		|| item->originalText().text.trimmed().isEmpty()) {
+		|| (item->originalText().text.trimmed().isEmpty()
+			&& !IsVoiceNote(item))) {
 		return;
 	}
 	menu->addAction(base::make_unique_q<LeafAction>(

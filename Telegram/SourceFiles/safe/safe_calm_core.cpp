@@ -112,4 +112,44 @@ OfferDecision DecideOffer(
 	return { .offer = Offer::Ask };
 }
 
+HearPlan PlanHearing(const std::vector<VoiceSlot> &newestFirst, int max) {
+	auto result = HearPlan();
+	auto counted = 0;
+	for (auto i = 0; i != int(newestFirst.size()); ++i) {
+		const auto &slot = newestFirst[i];
+		if (!slot.voice) {
+			continue;
+		}
+		const auto inWindow = (counted < max);
+		if (inWindow) {
+			++counted;
+		}
+		if (!inWindow && !slot.picked) {
+			continue;
+		}
+		if (slot.heard == Heard::None) {
+			result.ask.push_back(i);
+			result.waiting = true;
+		} else if (slot.heard == Heard::Asking) {
+			result.waiting = true;
+		}
+	}
+	return result;
+}
+
+std::string VoiceLine(bool round, Heard heard, const std::string &text) {
+	const auto label = std::string(round ? "video note" : "voice note");
+	auto trimmed = text;
+	while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\n')) {
+		trimmed.pop_back();
+	}
+	while (!trimmed.empty() && (trimmed.front() == ' ' || trimmed.front() == '\n')) {
+		trimmed.erase(trimmed.begin());
+	}
+	if (heard == Heard::Text && !trimmed.empty()) {
+		return "[" + label + "] " + trimmed;
+	}
+	return "[" + label + ", not heard]";
+}
+
 } // namespace Safe::Calm::Core

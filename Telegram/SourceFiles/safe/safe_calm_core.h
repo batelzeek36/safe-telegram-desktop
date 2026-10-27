@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <vector>
 
 // The pure decisions behind Calm's send queue and its one-message offers,
@@ -128,5 +129,35 @@ struct OfferDecision {
 	std::int64_t now,
 	const Kept *kept,
 	const RunRules &rules = {});
+
+// Voice notes in reply ideas (Zach 10-27: "suggest a reply doesnt work for
+// voice messages"): before asking, Telegram's own transcription (Premium,
+// the voice bubble's button) of the newest voice and video notes in the
+// chat; each goes to the model as "[voice note] <what was said>", or
+// "[voice note, not heard]" so the model never pretends to know.
+inline constexpr auto kMaxHeard = 5;
+enum class Heard : std::uint8_t {
+	None, // never asked
+	Asking, // asked, not back yet (or still being transcribed)
+	Text,
+	Failed,
+};
+struct VoiceSlot {
+	bool voice = false; // a voice note or a round video
+	Heard heard = Heard::None;
+	bool picked = false; // the message he asked ideas for: always heard
+};
+struct HearPlan {
+	std::vector<int> ask; // indexes of the notes to ask Telegram for now
+	bool waiting = false; // some of the notes are still on their way
+};
+// `newestFirst`: the context window from the bottom up.
+[[nodiscard]] HearPlan PlanHearing(
+	const std::vector<VoiceSlot> &newestFirst,
+	int max = kMaxHeard);
+[[nodiscard]] std::string VoiceLine(
+	bool round,
+	Heard heard,
+	const std::string &text);
 
 } // namespace Safe::Calm::Core

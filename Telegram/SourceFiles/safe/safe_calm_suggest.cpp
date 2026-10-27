@@ -12,6 +12,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm.h"
 #include "safe/safe_calm_client.h"
 #include "safe/safe_calm_shared.h"
+#include "safe/safe_calm_voice.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
 
 namespace Safe::Calm {
 namespace {
@@ -57,6 +60,13 @@ void Remember(const Key &key, const SuggestResult &result) {
 	return last ? last->id : MsgId();
 }
 
+void Ask(
+	uint64 id,
+	Key key,
+	not_null<History*> history,
+	HistoryItem *replyTo,
+	Fn<void(const SuggestResult&)> done);
+
 } // namespace
 
 uint64 Suggest(
@@ -83,21 +93,60 @@ uint64 Suggest(
 			return id;
 		}
 	}
+	// Registered first: with no runner and no key the answer comes at once.
+	state.calls.emplace(id, 0);
+	// Voice notes first: Telegram transcribes them, then the model reads what
+	// was said (Zach 10-27: "suggest a reply doesnt work for voice messages").
+	const auto weak = base::make_weak(&history->session());
+	const auto peer = history->peer->id;
+	const auto replyId = replyTo ? replyTo->fullId() : FullMsgId();
+	HearVoices(history, replyTo, [=, done = std::move(done)]() mutable {
+		const auto session = weak.get();
+		const auto history = session
+			? session->data().historyLoaded(peer)
+			: nullptr;
+		const auto replyTo = (session && replyId)
+			? session->data().message(replyId)
+			: nullptr;
+		if (!State().calls.contains(id)) {
+			return; // cancelled while the notes were heard
+		} else if (!history || (replyId && !replyTo)) {
+			State().calls.remove(id);
+			done({ .failure = u"chat gone"_q });
+			return;
+		}
+		Ask(id, key, history, replyTo, std::move(done));
+	});
+	return id;
+}
+
+namespace {
+
+void Ask(
+		uint64 id,
+		Key key,
+		not_null<History*> history,
+		HistoryItem *replyTo,
+		Fn<void(const SuggestResult&)> done) {
+	auto &state = State();
 	auto request = SuggestRequest{
 		.recipient = DisplayName(history->peer),
 		.context = MakeRequest(history, Direction::Out, QString()).context,
 		.chat = ChatKey(history->peer),
 	};
 	if (replyTo) {
+		auto text = replyTo->originalText().text;
+		if (IsVoiceNote(replyTo)) {
+			const auto voice = VoiceContextText(replyTo);
+			text = text.trimmed().isEmpty() ? voice : (voice + u"\n"_q + text);
+		}
 		request.replyTo = ContextLine{
 			.from = IsOwn(replyTo)
 				? OwnerName()
 				: DisplayName(replyTo->from()),
-			.text = replyTo->originalText().text,
+			.text = text,
 		};
 	}
-	// Registered first: with no runner and no key the answer comes at once.
-	state.calls.emplace(id, 0);
 	const auto call = SharedClient().suggest(
 		std::move(request),
 		[=](SuggestResult result) {
@@ -112,8 +161,9 @@ uint64 Suggest(
 	if (const auto i = state.calls.find(id); i != end(state.calls)) {
 		i->second = call;
 	}
-	return id;
 }
+
+} // namespace
 
 void CancelSuggest(uint64 id) {
 	auto &calls = State().calls;

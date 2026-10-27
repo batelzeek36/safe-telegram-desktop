@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm_client.h"
 #include "safe/safe_calm_shared.h"
 #include "safe/safe_calm_store.h"
+#include "safe/safe_calm_voice.h"
 
 namespace Safe::Calm {
 namespace {
@@ -159,7 +160,12 @@ Request MakeRequest(
 			} else if (item->isService() || IsHeld(item)) {
 				continue;
 			}
-			const auto line = item->originalText().text.trimmed();
+			auto line = item->originalText().text.trimmed();
+			if (IsVoiceNote(item)) {
+				// What was said, as Telegram transcribed it (Zach 10-27).
+				const auto voice = VoiceContextText(item);
+				line = line.isEmpty() ? voice : (voice + u"\n"_q + line);
+			}
 			if (line.isEmpty()) {
 				continue;
 			}
