@@ -103,9 +103,13 @@ void Panel::showSummary(
 	_main.setText(st::defaultTextStyle, text);
 	_line.setText(st::defaultTextStyle, line);
 	if (!_label) {
-		_label = base::make_unique_q<Ui::FlatLabel>(
-			this,
-			st::defaultFlatLabel);
+		// minWidth 0 would make the label's text one line that never wraps.
+		static const auto style = [] {
+			auto result = st::defaultFlatLabel;
+			result.minWidth = 1;
+			return result;
+		}();
+		_label = base::make_unique_q<Ui::FlatLabel>(this, style);
 		_label->setSelectable(true);
 		_label->setTextColorOverride(st::historyTextOutFg->c);
 		_label->hide();

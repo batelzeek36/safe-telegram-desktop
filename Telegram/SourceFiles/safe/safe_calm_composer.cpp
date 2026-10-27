@@ -270,10 +270,10 @@ void Composer::watchQueue() {
 	QueueEvents(
 		_history->peer->id
 	) | rpl::on_next([=](const QueueEvent &event) {
-		if (event.fine && !_panel->showing()) {
-			_panel->showPill(event.held
-				? u"Fine as is"_q
-				: u"Fine as is, sent straight"_q);
+		// A held one says nothing: its clock and the hold tell it already,
+		// and a pill would cover the "Send these N as one" pill.
+		if (event.fine && !event.held && !_panel->showing()) {
+			_panel->showPill(u"Fine as is, sent straight"_q);
 		}
 		queueCardSync();
 	}, _queueLifetime);
