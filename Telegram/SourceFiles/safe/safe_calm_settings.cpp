@@ -82,6 +82,8 @@ void Save(const Settings &settings) {
 		{ u"incomingSince"_q, double(settings.incomingSince) },
 		{ u"suggest"_q, settings.suggest },
 		{ u"ready"_q, settings.ready },
+		{ u"merge"_q, settings.merge },
+		{ u"hold"_q, settings.hold },
 		{ u"chats"_q, chats },
 	}).toJson(QJsonDocument::Indented));
 }
@@ -106,6 +108,8 @@ void Load(State &state) {
 	settings.incoming = object.value(u"incoming"_q).toBool(true);
 	settings.suggest = object.value(u"suggest"_q).toBool(true);
 	settings.ready = object.value(u"ready"_q).toBool(false);
+	settings.merge = object.value(u"merge"_q).toBool(true);
+	settings.hold = object.value(u"hold"_q).toBool(true);
 	settings.incomingSince = TimeId(
 		object.value(u"incomingSince"_q).toDouble());
 	if (settings.incoming && settings.incomingSince <= 0) {
@@ -206,6 +210,8 @@ Modes ModesFor(not_null<PeerData*> peer) {
 			: i->second.since,
 		.suggest = settings.suggest,
 		.ready = settings.suggest && settings.ready,
+		.merge = settings.merge,
+		.hold = settings.hold,
 	};
 	case ChatRule::Default: break;
 	}
@@ -221,6 +227,8 @@ Modes ModesFor(not_null<PeerData*> peer) {
 		.incomingSince = settings.incomingSince,
 		.suggest = settings.suggest,
 		.ready = settings.suggest && settings.ready && peer->isUser(),
+		.merge = settings.merge,
+		.hold = settings.hold,
 	};
 }
 

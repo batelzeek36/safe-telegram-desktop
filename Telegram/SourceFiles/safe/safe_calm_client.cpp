@@ -52,6 +52,8 @@ struct Client::Call {
 	Fn<void(Result)> done;
 	std::optional<SuggestRequest> suggest; // a suggestions call when set
 	Fn<void(SuggestResult)> suggested;
+	std::optional<SummaryRequest> summary; // a one-message call when set
+	Fn<void(SummaryResult)> summarized;
 	QPointer<QNetworkReply> reply;
 	bool finished = false;
 };
@@ -102,10 +104,25 @@ uint64 Client::suggest(
 	return start(std::move(call));
 }
 
+uint64 Client::summarize(
+		SummaryRequest request,
+		Fn<void(SummaryResult)> done) {
+	auto call = std::make_unique<Call>();
+	call->summary = std::move(request);
+	call->summarized = std::move(done);
+	return start(std::move(call));
+}
+
 uint64 Client::start(std::unique_ptr<Call> call) {
 	const auto id = ++_nextId;
+	const auto summary = call->summary.has_value();
 	_calls.emplace(id, std::move(call));
-	if (hasRunner()) {
+	if (summary && !hasRunner()) {
+		// Never the paid API for this one: no runner, no offer.
+		crl::on_main([=] {
+			finishSummary(id, { .failure = u"no runner"_q });
+		});
+	} else if (hasRunner()) {
 		askRunner(id);
 	} else {
 		askApi(id, u"no runner"_q);
@@ -130,6 +147,12 @@ void Client::askRunner(uint64 id) {
 	post(id, false, [=](int status, QByteArray body, QString failure) {
 		const auto i = _calls.find(id);
 		if (i == end(_calls)) {
+			return;
+		}
+		if (i->second->summary) {
+			finishSummary(id, failure.isEmpty()
+				? ParseSummaryRunner(status, body, *i->second->summary)
+				: SummaryResult{ .failure = u"runner "_q + failure });
 			return;
 		}
 		if (i->second->suggest) {
@@ -203,9 +226,17 @@ void Client::post(
 		return;
 	}
 	const auto call = i->second.get();
-	const auto timeoutMs = api ? kApiTimeoutMs : kRunnerTimeoutMs;
+	const auto timeoutMs = api
+		? kApiTimeoutMs
+		: call->summary
+		? kSummaryTimeoutMs
+		: kRunnerTimeoutMs;
 	const auto runnerUrl = _runnerUrl
-		+ (call->suggest ? "/v1/suggest" : "/v1/check");
+		+ (call->summary
+			? "/v1/summarize"
+			: call->suggest
+			? "/v1/suggest"
+			: "/v1/check");
 	auto request = Prepare(
 		QUrl(QString::fromLatin1(api ? QByteArray(kApiEndpoint) : runnerUrl)),
 		timeoutMs);
@@ -215,7 +246,9 @@ void Client::post(
 	} else {
 		request.setRawHeader("Authorization", "Bearer " + _runnerKey);
 	}
-	const auto body = call->suggest
+	const auto body = call->summary
+		? SummaryRunnerBody(*call->summary)
+		: call->suggest
 		? (api
 			? SuggestApiBody(*call->suggest)
 			: SuggestRunnerBody(*call->suggest))
@@ -276,6 +309,19 @@ void Client::finishSuggest(uint64 id, SuggestResult result) {
 	if (!call->finished) {
 		call->finished = true;
 		call->suggested(std::move(result));
+	}
+}
+
+void Client::finishSummary(uint64 id, SummaryResult result) {
+	const auto i = _calls.find(id);
+	if (i == end(_calls)) {
+		return;
+	}
+	const auto call = std::move(i->second);
+	_calls.erase(i);
+	if (!call->finished) {
+		call->finished = true;
+		call->summarized(std::move(result));
 	}
 }
 

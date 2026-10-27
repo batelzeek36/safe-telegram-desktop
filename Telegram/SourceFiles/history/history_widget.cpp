@@ -592,6 +592,7 @@ HistoryWidget::HistoryWidget(
 			},
 			.relayout = [=] { updateFieldSize(); },
 			.reserve = [=] { updateControlsGeometry(); },
+			.mainChat = true,
 		});
 	_autoBar = base::make_unique_q<Safe::Auto::Bar>(
 		Safe::Auto::Bar::Args{
@@ -5869,7 +5870,9 @@ void HistoryWidget::send(Api::SendOptions options) {
 	}
 	if (_calm
 		&& !_voiceRecordBar->isListenState()
-		&& _calm->interceptSend([=] { send(options); })) {
+		&& _calm->interceptSend(
+			[=] { send(options); },
+			options.scheduled != 0)) {
 		return;
 	}
 	if (!options.scheduled) {

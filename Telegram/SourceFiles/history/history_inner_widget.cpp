@@ -68,6 +68,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "safe/safe_calm.h"
 #include "safe/safe_calm_box.h"
+#include "safe/safe_calm_queue.h"
 #include "window/notifications_manager.h"
 #include "info/info_memento.h"
 #include "info/statistics/info_statistics_widget.h"
@@ -3684,6 +3685,11 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 									Box(Safe::Calm::WhatYouTypedBox, item));
 							}
 						}, &st::menuIconInfo);
+					}
+					if (Safe::Calm::QueueHeld(item)) {
+						_menu->addAction(u"Send now"_q, [=] {
+							Safe::Calm::QueueReleaseHeld(itemId.peer);
+						}, &st::menuIconSend);
 					}
 					if ((!item->translation() || !_history->translatedTo())
 						&& (view->hasVisibleText() || mediaHasTextForCopy)) {

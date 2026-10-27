@@ -13,7 +13,9 @@ class PeerData;
 // Calm mode's choices (Settings > Chat Settings > Calm mode, docs/CALM.md
 // "Modes"), kept in safe_calm.json in the app's data folder. Defaults are
 // Zach's picks of 2026-10-25: Second look, leaf on, their side on, reply
-// suggestions on, ready ideas off.
+// suggestions on, ready ideas off; and of 2026-10-27: "Too many in a row:
+// offer one message" on, "Hold my messages while I'm typing" on
+// (docs/desktop/STATE-SUMMARIZE.md).
 namespace Safe::Calm {
 
 enum class SendMode : uchar {
@@ -40,6 +42,8 @@ struct Settings {
 	TimeId incomingSince = 0; // when their side was last switched on
 	bool suggest = true; // reply suggestions on demand (S2 and S)
 	bool ready = false; // S2 on its own when a message lands
+	bool merge = true; // a run of unread messages: offer one message
+	bool hold = true; // his texts wait while he keeps typing
 	base::flat_map<PeerId, ChatEntry> chats;
 };
 
@@ -51,6 +55,8 @@ struct Modes {
 	TimeId incomingSince = 0;
 	bool suggest = false;
 	bool ready = false;
+	bool merge = false;
+	bool hold = false;
 
 	[[nodiscard]] bool outgoing() const {
 		return (send != SendMode::Off) || typing;

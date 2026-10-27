@@ -27,12 +27,17 @@ class LeafButton;
 class HeatLine;
 class Panel;
 class Ideas;
+class RunCards;
+struct QueueCard;
 
 // Calm on one message composer (HistoryWidget's own and ComposeControls'):
 // the leaf in the bar with its heat line and the wavy underline (B), the
-// send intercept for Second look (A) and Autopilot (C), and reply ideas:
-// the leaf with an empty field, one message from its menu, and Ready ideas
-// when a message lands.
+// send intercept for Second look (A) and Autopilot (C), both on the send
+// queue (Zach 10-27: the bubble goes out at once, Second look cards come one
+// at a time, oldest first), reply ideas: the leaf with an empty field, one
+// message from its menu, and Ready ideas when a message lands; and on the
+// main chat's composer the hold and one message instead of many
+// (safe_calm_run_cards, docs/desktop/STATE-SUMMARIZE.md).
 class Composer final : public base::has_weak_ptr {
 public:
 	struct Args {
@@ -46,6 +51,9 @@ public:
 		// The host moves the chat up by reservedHeight(); without it the
 		// pieces float over the chat.
 		Fn<void()> reserve;
+		// HistoryWidget's composer: the hold and one message instead of
+		// many (topics, replies and scheduled have neither).
+		bool mainChat = false;
 	};
 	explicit Composer(Args &&args);
 	~Composer();
@@ -65,9 +73,13 @@ public:
 	void suggestFor(not_null<HistoryItem*> item);
 
 	// True when Calm took this send; `resend` runs again (and passes) once
-	// Zach chose. Autopilot never takes it: the send goes out as a bubble at
-	// once and its network send waits in the queue (safe_calm_queue).
-	[[nodiscard]] bool interceptSend(Fn<void()> resend);
+	// Zach chose. Second look and Autopilot never take it: the send goes out
+	// as a bubble at once and its network send waits in the queue
+	// (safe_calm_queue). A scheduled send cannot wait there, so its Second
+	// look card still holds the draft in the field.
+	[[nodiscard]] bool interceptSend(
+		Fn<void()> resend,
+		bool scheduled = false);
 	bool handleEscape();
 
 private:
@@ -101,6 +113,15 @@ private:
 	[[nodiscard]] int computeReserve() const;
 	void reserveChanged();
 	void queueReserveCheck();
+	void panelChanged();
+
+	void watchQueue();
+	void queueCardSync();
+	void syncQueueCard();
+	void showQueueCard(const QueueCard &card);
+	void editQueued(FullMsgId id);
+	void closeQueueCard();
+	void stepBackForCard();
 
 	const not_null<Ui::RpWidget*> _parent;
 	const not_null<Ui::InputField*> _field;
@@ -114,6 +135,7 @@ private:
 	base::unique_qptr<HeatLine> _heatLine;
 	base::unique_qptr<Panel> _panel;
 	base::unique_qptr<Ideas> _ideas;
+	std::unique_ptr<RunCards> _runs;
 	QRect _composeRect;
 	bool _leafShown = false;
 	bool _typing = false;
@@ -138,6 +160,9 @@ private:
 	QString _verdictText;
 	bool _sheetWanted = false;
 	std::optional<QString> _approved;
+	FullMsgId _cardFor; // the queued message whose Second look card shows
+	bool _cardSyncQueued = false;
+	rpl::lifetime _queueLifetime;
 	rpl::lifetime _lifetime;
 
 };

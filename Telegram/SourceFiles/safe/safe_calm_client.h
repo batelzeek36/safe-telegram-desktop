@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_calm_prompt.h"
 #include "safe/safe_calm_suggest_prompt.h"
+#include "safe/safe_calm_summary.h"
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -16,7 +17,9 @@ namespace Safe::Calm {
 
 // One check (or one set of reply suggestions) = the runner on MAINGEAR first (Bearer key, kRunnerTimeoutMs),
 // then on any failure the Messages API with Sonnet 5.5 on the picture-check
-// key (kApiTimeoutMs), then a failure Calm holds on. No redirects, no cache,
+// key (kApiTimeoutMs), then a failure Calm holds on. One message instead of
+// a run (summarize) asks the runner only: no answer means no offer, and it
+// never spends the paid API. No redirects, no cache,
 // no cookies; each key goes in its own header and nowhere else.
 // Main thread only; `done` runs on the main thread exactly once, unless the
 // returned id is cancelled first.
@@ -27,6 +30,7 @@ public:
 
 	uint64 check(Request request, Fn<void(Result)> done);
 	uint64 suggest(SuggestRequest request, Fn<void(SuggestResult)> done);
+	uint64 summarize(SummaryRequest request, Fn<void(SummaryResult)> done);
 	void cancel(uint64 id);
 
 	[[nodiscard]] bool hasRunner() const;
@@ -43,6 +47,7 @@ private:
 		Fn<void(int status, QByteArray body, QString failure)> done);
 	void finish(uint64 id, Result result);
 	void finishSuggest(uint64 id, SuggestResult result);
+	void finishSummary(uint64 id, SummaryResult result);
 	uint64 start(std::unique_ptr<Call> call);
 	[[nodiscard]] not_null<QNetworkAccessManager*> manager();
 

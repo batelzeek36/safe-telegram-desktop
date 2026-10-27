@@ -1903,6 +1903,8 @@ PRIVATE
     safe/safe_calm_client.h
     safe/safe_calm_composer.cpp
     safe/safe_calm_composer.h
+    safe/safe_calm_core.cpp
+    safe/safe_calm_core.h
     safe/safe_calm_data.h
     safe/safe_calm_files.cpp
     safe/safe_calm_files.h
@@ -1913,12 +1915,20 @@ PRIVATE
     safe/safe_calm_leaf.h
     safe/safe_calm_marks.cpp
     safe/safe_calm_marks.h
+    safe/safe_calm_merge.cpp
+    safe/safe_calm_merge.h
     safe/safe_calm_panels.cpp
     safe/safe_calm_panels.h
     safe/safe_calm_prompt.cpp
     safe/safe_calm_prompt.h
     safe/safe_calm_queue.cpp
     safe/safe_calm_queue.h
+    safe/safe_calm_run.cpp
+    safe/safe_calm_run.h
+    safe/safe_calm_run_cards.cpp
+    safe/safe_calm_run_cards.h
+    safe/safe_calm_run_mark.cpp
+    safe/safe_calm_run_mark.h
     safe/safe_calm_settings.cpp
     safe/safe_calm_settings.h
     safe/safe_calm_shared.h
@@ -1928,6 +1938,8 @@ PRIVATE
     safe/safe_calm_suggest.h
     safe/safe_calm_suggest_prompt.cpp
     safe/safe_calm_suggest_prompt.h
+    safe/safe_calm_summary.cpp
+    safe/safe_calm_summary.h
     safe/safe_discovery.cpp
     safe/safe_discovery.h
     safe/safe_drop.cpp

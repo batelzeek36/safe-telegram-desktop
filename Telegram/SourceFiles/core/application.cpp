@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/application.h"
 
+#include "safe/safe_calm_queue.h"
+
 #include "data/data_abstract_structure.h"
 #include "data/data_channel.h"
 #include "data/data_forum.h"
@@ -1179,6 +1181,9 @@ bool Application::downloadPreventsQuit() {
 }
 
 bool Application::preventsQuit(QuitReason reason) {
+	if (Safe::Calm::QueuePreventsQuit()) {
+		return true;
+	}
 	if (exportPreventsQuit()
 		|| uploadPreventsQuit()
 		|| downloadPreventsQuit()) {

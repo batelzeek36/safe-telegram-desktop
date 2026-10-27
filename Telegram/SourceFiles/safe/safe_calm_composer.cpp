@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm_leaf.h"
 #include "safe/safe_calm_panels.h"
 #include "safe/safe_calm_queue.h"
+#include "safe/safe_calm_run_cards.h"
 #include "safe/safe_calm_suggest.h"
 #include "ui/abstract_button.h"
 #include "ui/effects/animations.h"
@@ -221,7 +222,20 @@ Composer::Composer(Args &&args)
 }))
 , _readyTimer([=] { readyCheck(); })
 , _typingTimer([=] { checkTyping(); }) {
-	_panel->setChangedCallback([=] { reserveChanged(); });
+	if (args.mainChat) {
+		_runs = std::make_unique<RunCards>(RunCards::Args{
+			.panel = _panel.get(),
+			.text = _text,
+			.setText = [=](TextWithTags text) {
+				_setText(std::move(text));
+				_field->rawTextEdit()->moveCursor(QTextCursor::End);
+			},
+			.focus = [=] { _field->setFocus(); },
+			.takePanel = [=] { stepBackForCard(); },
+			.panelFree = [=] { queueCardSync(); },
+		});
+	}
+	_panel->setChangedCallback([=] { panelChanged(); });
 	_leaf->hide();
 	_leaf->setClickedCallback([=] { leafClicked(); });
 	_field->changes() | rpl::on_next([=] {
@@ -235,6 +249,131 @@ Composer::Composer(Args &&args)
 Composer::~Composer() {
 	cancelChecks();
 	CancelSuggest(base::take(_suggestCall));
+	_runs = nullptr;
+}
+
+void Composer::panelChanged() {
+	reserveChanged();
+	if (_runs) {
+		_runs->panelChanged();
+	}
+	if (!_panel->showing()) {
+		queueCardSync();
+	}
+}
+
+void Composer::watchQueue() {
+	_queueLifetime.destroy();
+	if (!_history) {
+		return;
+	}
+	QueueEvents(
+		_history->peer->id
+	) | rpl::on_next([=](const QueueEvent &event) {
+		if (event.fine && !_panel->showing()) {
+			_panel->showPill(event.held
+				? u"Fine as is"_q
+				: u"Fine as is, sent straight"_q);
+		}
+		queueCardSync();
+	}, _queueLifetime);
+}
+
+void Composer::queueCardSync() {
+	if (_cardSyncQueued) {
+		return;
+	}
+	_cardSyncQueued = true;
+	crl::on_main(this, [=] {
+		_cardSyncQueued = false;
+		syncQueueCard();
+	});
+}
+
+// Second look on the queue: one card at a time, for the oldest message
+// waiting for his pick (QueueCardFor), never over his own reading (the
+// sheet, reply ideas, the one message card).
+void Composer::syncQueueCard() {
+	if (!_history) {
+		return;
+	}
+	const auto card = QueueCardFor(_history->peer->id);
+	const auto showing = _cardFor && _panel->isCard();
+	if (!card) {
+		if (showing) {
+			closeQueueCard();
+		}
+		_cardFor = FullMsgId();
+		return;
+	} else if (showing && _cardFor == card->id) {
+		return;
+	} else if (_ideas->showing()
+		|| _panel->isSheet()
+		|| _panel->isSummary()
+		|| (_panel->isCard() && !_cardFor)) {
+		return; // his own reading first; the card waits for it to close
+	}
+	showQueueCard(*card);
+}
+
+void Composer::showQueueCard(const QueueCard &card) {
+	const auto id = card.id;
+	_cardFor = id;
+	_sendText = QString();
+	if (card.failed) {
+		_panel->showFailed(u"Couldn't check this one"_q, [=] {
+			closeQueueCard();
+			QueueSendAsIs(id);
+		}, [=] {
+			editQueued(id);
+		});
+		return;
+	}
+	_panel->showCard(Verdict{
+		.soften = true,
+		.text = card.calm,
+	}, card.original, [=] {
+		closeQueueCard();
+		QueuePickCalm(id);
+	}, [=] {
+		closeQueueCard();
+		QueuePickMine(id);
+	}, [=] {
+		editQueued(id);
+	});
+}
+
+void Composer::editQueued(FullMsgId id) {
+	closeQueueCard();
+	const auto words = QueueEdit(id);
+	if (!words) {
+		return;
+	}
+	// His words back in the field, before anything he typed since.
+	const auto current = currentText();
+	_setText({ current.trimmed().isEmpty()
+		? *words
+		: (*words + QChar('\n') + current) });
+	_field->setFocus();
+	_field->rawTextEdit()->moveCursor(QTextCursor::End);
+}
+
+void Composer::closeQueueCard() {
+	_cardFor = FullMsgId();
+	if (_panel->isCard()) {
+		_panel->hideAnimated();
+	}
+}
+
+// The one message card is about to show: the Second look card steps back
+// (it comes again after), the sheet and the ideas close.
+void Composer::stepBackForCard() {
+	if (_ideas->showing()) {
+		closeIdeas();
+	}
+	CancelDraft(base::take(_sendWaiter));
+	_sendText = QString();
+	_cardFor = FullMsgId();
 }
 
 void Composer::setHistory(History *history) {
@@ -250,7 +389,13 @@ void Composer::setHistory(History *history) {
 	_ideasAuto = false;
 	_leaf->setLit(false);
 	_ideas->hideFast();
+	_cardFor = FullMsgId();
+	if (_runs) {
+		_runs->setHistory(history);
+	}
 	_history = history;
+	watchQueue();
+	queueCardSync();
 	_verdict.reset();
 	_verdictText = QString();
 	_approved.reset();
@@ -267,6 +412,9 @@ void Composer::refreshModes() {
 	_typing = modes.typing;
 	_suggest = modes.suggest;
 	_ready = modes.ready;
+	if (_runs) {
+		_runs->setModes(modes.merge, modes.hold);
+	}
 	if (!_suggest && _ideas->showing()) {
 		closeIdeas();
 	}
@@ -353,6 +501,9 @@ QString Composer::currentText() const {
 
 void Composer::textChanged() {
 	const auto text = currentText();
+	if (_runs) {
+		_runs->fieldChanged(!text.isEmpty());
+	}
 	if (!text.isEmpty() && _ideas->showing()) {
 		closeIdeas(); // the ideas give way to his own words
 	}
@@ -362,7 +513,8 @@ void Composer::textChanged() {
 	if (_panel->isSheet()) {
 		_panel->hideAnimated();
 	}
-	if (_panel->isCard() && text != _sendText) {
+	if (_panel->isCard() && !_cardFor && text != _sendText) {
+		// The draft the scheduled card holds changed; queued cards stay.
 		CancelDraft(base::take(_sendWaiter));
 		closePanel();
 	}
@@ -456,12 +608,15 @@ void Composer::showSheet(const Verdict &verdict) {
 	});
 }
 
-bool Composer::interceptSend(Fn<void()> resend) {
+bool Composer::interceptSend(Fn<void()> resend, bool scheduled) {
 	if (!_history) {
 		return false;
 	}
 	const auto draft = _text();
 	const auto &text = draft.text;
+	if (_runs && !scheduled && _runs->interceptSend(draft)) {
+		return true; // the replace he armed with Edit
+	}
 	if (_approved) {
 		const auto approved = (*base::take(_approved) == text);
 		if (approved) {
@@ -469,14 +624,36 @@ bool Composer::interceptSend(Fn<void()> resend) {
 		}
 	}
 	const auto modes = ModesFor(_history->peer);
-	if (modes.send == SendMode::Off || !Checkable(text)) {
+	if (_cardFor && _panel->isCard() && text.trimmed().isEmpty()) {
+		_panel->activatePrimary(); // Enter on an empty field: the card's pick
+		return true;
+	}
+	const auto checkable = (modes.send != SendMode::Off) && Checkable(text);
+	if (!scheduled) {
+		const auto hold = _runs && modes.hold;
+		if (!checkable && !hold) {
+			return false;
+		}
+		CancelDraft(base::take(_sendWaiter));
+		if (_panel->isSheet() || (_panel->isCard() && !_cardFor)) {
+			closePanel();
+		}
+		QueueNext(_history, text, QueueSend{
+			.check = checkable,
+			.review = (modes.send == SendMode::Review),
+			.hold = hold,
+		});
 		return false;
 	}
-	if (modes.send == SendMode::Autopilot) {
-		CancelDraft(base::take(_sendWaiter));
-		closePanel();
-		QueueNext(_history, text);
+	// A scheduled send cannot wait in the queue: what was held goes now, and
+	// Second look holds this draft in the field as before.
+	QueueReleaseHeld(_history->peer->id);
+	if (!checkable) {
 		return false;
+	}
+	if (_cardFor) {
+		_cardFor = FullMsgId();
+		_panel->hideFast();
 	}
 	if (_panel->isCard()) {
 		if (_sendText == text) {
@@ -563,6 +740,15 @@ bool Composer::handleEscape() {
 	if (_ideas->showing()) {
 		closeIdeas();
 		return true;
+	} else if (_runs && _runs->handleEscape()) {
+		return true;
+	} else if (_cardFor && _panel->isCard()) {
+		// Put away: the row under the bubble offers Open; the next card
+		// (if any) comes up.
+		const auto id = base::take(_cardFor);
+		_panel->hideAnimated();
+		QueuePutAway(id, true);
+		return true;
 	} else if (!_panel->showing()) {
 		return false;
 	}
@@ -573,6 +759,7 @@ bool Composer::handleEscape() {
 
 void Composer::closePanel() {
 	_sendText = QString();
+	_cardFor = FullMsgId();
 	_panel->hideAnimated();
 }
 
@@ -629,9 +816,10 @@ void Composer::showIdeas(HistoryItem *replyTo, bool fresh, bool automatic) {
 		return;
 	}
 	CancelSuggest(base::take(_suggestCall));
-	if (_panel->isCard() || _panel->isSheet()) {
+	if (_panel->isCard() || _panel->isSheet() || _panel->isSummary()) {
 		CancelDraft(base::take(_sendWaiter));
 		_sendText = QString();
+		_cardFor = FullMsgId(); // a queued card comes back after the ideas
 		_panel->hideFast();
 	}
 	_ideasFor = replyTo ? replyTo->fullId() : FullMsgId();
@@ -669,6 +857,7 @@ void Composer::closeIdeas() {
 	_ideasAuto = false;
 	_leaf->setLit(false);
 	_ideas->hideAnimated();
+	queueCardSync();
 }
 
 void Composer::pickIdea(const QString &text) {
@@ -731,6 +920,7 @@ void Composer::readyCheck() {
 		|| !currentText().isEmpty()
 		|| _panel->isCard()
 		|| _panel->isSheet()
+		|| _panel->isSummary()
 		|| (_ideas->showing() && !_ideasAuto)
 		|| _field->isHidden()
 		|| !_field->window()->isActiveWindow()) {

@@ -205,6 +205,38 @@ void AddSuggestionRows(not_null<Ui::VerticalLayout*> container) {
 			"typing hides them."_q));
 }
 
+// Zach 10-27 (docs/desktop/STATE-SUMMARIZE.md): the hold while he types,
+// and one message instead of a run nobody has read.
+void AddManyRows(not_null<Ui::VerticalLayout*> container) {
+	Ui::AddSkip(container);
+	Ui::AddSubsectionTitle(container, rpl::single(u"Many in a row"_q));
+	container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Hold my messages while I'm typing"_q),
+		st::settingsButtonNoIcon
+	))->toggleOn(rpl::single(Current().hold))->toggledChanges(
+	) | rpl::on_next([=](bool on) {
+		Update([&](Settings &settings) { settings.hold = on; });
+	}, container->lifetime());
+	container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Too many in a row: offer one message"_q),
+		st::settingsButtonNoIcon
+	))->toggleOn(rpl::single(Current().merge))->toggledChanges(
+	) | rpl::on_next([=](bool on) {
+		Update([&](Settings &settings) { settings.merge = on; });
+	}, container->lifetime());
+	Ui::AddSkip(container);
+	Ui::AddDividerText(
+		container,
+		rpl::single(u"Your texts wait on your side while you keep typing, "
+			"and go out in order about 12 s after you stop. Three or more "
+			"waiting, or five or more sent that nobody has read yet, get a "
+			"leaf pill: tap it for one calm message in your voice that says "
+			"it all. Your GIFs and photos stay. Nothing changes until you "
+			"tap."_q));
+}
+
 [[nodiscard]] QString RuleText(ChatRule rule) {
 	switch (rule) {
 	case ChatRule::Default: return u"Default"_q;
@@ -297,6 +329,8 @@ void SettingsBox(
 	AddRadio(container, group, SendMode::Autopilot, u"Autopilot: hot messages go out calm, 4 s to undo"_q);
 	Ui::AddSkip(container);
 	Ui::AddDivider(container);
+
+	AddManyRows(container);
 
 	Ui::AddSkip(container);
 	Ui::AddSubsectionTitle(container, rpl::single(u"While you type"_q));

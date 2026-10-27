@@ -2206,7 +2206,7 @@ rpl::producer<Api::SendOptions> ComposeControls::sendRequests() const {
 		const auto that = const_cast<ComposeControls*>(this);
 		return !_calm || !_calm->interceptSend([=] {
 			that->_sendCustomRequests.fire_copy(options);
-		});
+		}, (_mode == Mode::Scheduled) || (options.scheduled != 0));
 	}) | rpl::filter([=] {
 		if (!_chosenStarsCount) {
 			return true;

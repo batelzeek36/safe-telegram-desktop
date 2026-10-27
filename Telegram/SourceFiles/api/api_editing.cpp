@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_editing.h"
 
+#include "safe/safe_calm_queue.h"
+
 #include "apiwrap.h"
 #include "api/api_media.h"
 #include "api/api_text_entities.h"
@@ -536,6 +538,7 @@ mtpRequestId EditTextMessage(
 		Fn<void(const QString &error, mtpRequestId requestId)> fail,
 		bool spoilered,
 		VideoCoverEdit videoCover) {
+	Safe::Calm::QueueReleaseHeld(item->history()->peer->id);
 	if (item->isWelcomeTemplate()) {
 		const auto history = item->history();
 		auto &welcome = history->session().welcomeMessages();

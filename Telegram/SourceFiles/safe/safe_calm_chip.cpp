@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm_leaf.h"
 #include "safe/safe_calm_marks.h"
 #include "safe/safe_calm_queue.h"
+#include "safe/safe_calm_run_mark.h"
 #include "ui/chat/chat_style.h"
 #include "ui/painter.h"
 #include "styles/style_chat.h"
@@ -43,6 +44,7 @@ enum class Action : uchar {
 	SendAsIs,
 	Delete,
 	LetGo,
+	Open,
 };
 
 struct Links {
@@ -50,6 +52,7 @@ struct Links {
 	ClickHandlerPtr sendAsIs;
 	ClickHandlerPtr remove;
 	ClickHandlerPtr letGo;
+	ClickHandlerPtr open;
 };
 
 struct Button {
@@ -86,6 +89,7 @@ struct Layout {
 	const auto state = QueueStateOf(item->fullId());
 	if (!state
 		|| (state->state != QueueState::Softened
+			&& state->state != QueueState::Review
 			&& state->state != QueueState::Failed)) {
 		return std::nullopt;
 	}
@@ -134,7 +138,20 @@ void PlaceButtons(
 	auto second = std::vector<Button>();
 	auto lineWidth = 0;
 	auto waitWidth = 0;
-	if (state->state == QueueState::Softened) {
+	if (state->state == QueueState::Review) {
+		result.title = u"Second look"_q;
+		if (state->away) {
+			first.push_back({ .action = Action::Open, .text = u"Open"_q });
+		}
+		lineWidth = S(kPadSoftened)
+			+ S(kRing)
+			+ S(kGap)
+			+ TextFont()->width(result.title)
+			+ (first.empty()
+				? S(kPadSoftened)
+				: (S(kGap) + ButtonWidth(first.back().text)))
+			+ S(kPadRight);
+	} else if (state->state == QueueState::Softened) {
 		result.title = u"Softened"_q;
 		first.push_back({ .action = Action::Undo, .text = u"Undo"_q });
 		lineWidth = S(kPadSoftened)
@@ -230,6 +247,7 @@ void PlaceButtons(
 			.sendAsIs = make(QueueSendAsIs),
 			.remove = make(QueueDelete),
 			.letGo = make(QueueStepAside),
+			.open = make([](FullMsgId id) { QueuePutAway(id, false); }),
 		}).first;
 	}
 	return i->second;
@@ -243,6 +261,7 @@ void PlaceButtons(
 	case Action::SendAsIs: return links.sendAsIs;
 	case Action::Delete: return links.remove;
 	case Action::LetGo: return links.letGo;
+	case Action::Open: return links.open;
 	}
 	Unexpected("Safe::Calm::Action in LinkFor.");
 }
@@ -278,14 +297,47 @@ void PaintButton(
 
 } // namespace
 
-int QueueChipHeight(not_null<const HistoryItem*> item) {
+namespace {
+
+[[nodiscard]] int QueueRowHeight(not_null<const HistoryItem*> item) {
 	const auto state = Shown(item);
 	return state
 		? (S(kAbove) + PillHeight(*state) + S(kBelow))
 		: 0;
 }
 
+[[nodiscard]] int RunChipTop(
+		not_null<const HistoryView::Element*> view,
+		QRect bubble) {
+	return bubble.y() + bubble.height() + QueueRowHeight(view->data());
+}
+
+void PaintQueueRow(
+	Painter &p,
+	not_null<const HistoryView::Element*> view,
+	QRect bubble,
+	const Ui::ChatPaintContext &context);
+
+} // namespace
+
+int QueueChipHeight(not_null<const HistoryItem*> item) {
+	return QueueRowHeight(item) + RunChipHeight(item);
+}
+
 void PaintQueueChip(
+		Painter &p,
+		not_null<const HistoryView::Element*> view,
+		QRect bubble,
+		const Ui::ChatPaintContext &context) {
+	// Under the bubble, which paints right after this.
+	PaintRunEdge(p, view, bubble);
+	PaintQueueRow(p, view, bubble, context);
+	PaintRunChip(p, view, bubble, RunChipTop(view, bubble), context);
+}
+
+namespace {
+
+void PaintQueueRow(
 		Painter &p,
 		not_null<const HistoryView::Element*> view,
 		QRect bubble,
@@ -308,7 +360,19 @@ void PaintQueueChip(
 	const auto baseline = [&](const QRect &row, const style::font &font) {
 		return row.y() + (row.height() - font->height) / 2 + font->ascent;
 	};
-	if (state.state == QueueState::Softened) {
+	if (state.state == QueueState::Review) {
+		auto x = line.x() + S(kPadSoftened);
+		const auto leaf = S(kRing) * 0.62;
+		PaintLeaf(
+			p,
+			QRectF(x, line.y() + (line.height() - S(kRing)) / 2., S(kRing), S(kRing)),
+			leaf,
+			TickColor(pillText));
+		x += S(kRing) + S(kGap);
+		p.setFont(TextFont());
+		p.setPen(pillText);
+		p.drawText(x, baseline(line, TextFont()), layout->title);
+	} else if (state.state == QueueState::Softened) {
 		const auto remaining = (state.until - crl::now())
 			/ float64(kHoldMs);
 		auto x = line.x() + S(kPadSoftened);
@@ -354,10 +418,19 @@ void PaintQueueChip(
 	}
 }
 
+} // namespace
+
 ClickHandlerPtr QueueChipLink(
 		not_null<const HistoryView::Element*> view,
 		QPoint point,
 		QRect bubble) {
+	if (const auto link = RunChipLink(
+			view,
+			point,
+			bubble,
+			RunChipTop(view, bubble))) {
+		return link;
+	}
 	const auto layout = Compute(view, bubble);
 	if (!layout || !layout->pill.contains(point)) {
 		return nullptr;

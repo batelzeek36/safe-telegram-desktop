@@ -28,6 +28,9 @@ namespace Safe::Calm {
 // as his unless they are a forward of someone else's.
 [[nodiscard]] bool IsOwn(not_null<const HistoryItem*> item);
 
+// "now", "4m", "3h", "2d": a context line's age for the model.
+[[nodiscard]] QString AgoText(TimeId seconds);
+
 // The request for `text` in `history`: names and the last kMaxContext
 // messages loaded before `before` (all of them when it is zero), each with
 // its age, for tone.

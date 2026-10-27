@@ -7,12 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm_queue.h"
 
 #include "base/timer.h"
+#include "core/application.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_item_components.h"
 #include "main/main_session.h"
 #include "safe/safe_calm.h"
+#include "safe/safe_calm_core.h"
 
 namespace Safe::Calm {
 namespace {
@@ -20,11 +23,16 @@ namespace {
 // A QueueNext() that no send picked up within this time is dropped.
 constexpr auto kArmedFor = crl::time(3000);
 constexpr auto kRebuildsKept = 64;
+// Quitting waits this long at most for released messages to reach the
+// server (and for checks still on their way).
+constexpr auto kQuitWait = crl::time(8000);
+constexpr auto kQuitPoll = crl::time(250);
 
 struct Ticket {
 	uint64 id = 0;
 	PeerId peer = 0;
 	QString text;
+	QueueSend how;
 	crl::time at = 0;
 	uint64 waiter = 0;
 	std::optional<Result> result; // came back before its bubble existed
@@ -34,11 +42,12 @@ enum class Step : uchar {
 	Checking,
 	Ready,
 	Softened,
+	Review,
 	Failed,
 };
 
 struct Entry {
-	uint64 ticket = 0; // 0: not checked (sent behind a waiting message)
+	uint64 ticket = 0; // 0: not armed (sent behind a waiting message)
 	FullMsgId id; // the local bubble; empty when the send had none
 	uint64 randomId = 0;
 	QString original;
@@ -49,13 +58,20 @@ struct Entry {
 	Step step = Step::Checking;
 	crl::time until = 0;
 	bool aside = false; // Failed and stepped aside: does not block
+	bool review = false; // Second look: a card asks, no 4 s hold
+	bool away = false; // its card was put away
+	bool useCalm = false; // goes out rebuilt with `calm` (picked or merged)
+	bool hold = false; // waits for the chat's hold
+	bool text = false; // one of his texts (armed), not media sent behind
 };
 
 struct PeerQueue {
 	base::weak_ptr<Main::Session> session;
 	std::deque<Entry> entries;
+	Core::HoldGate gate;
 	base::Timer timer; // the next Softened entry's Undo window ends
 	base::Timer ring; // repaints the countdown rings while any is Softened
+	base::Timer holdTimer; // the hold ends
 };
 
 struct Queues {
@@ -66,6 +82,12 @@ struct Queues {
 	rpl::event_stream<std::pair<PeerId, QueueEvent>> events;
 	uint64 nextTicket = 0;
 	bool releasing = false;
+
+	// Quitting: released bubbles not yet on the server.
+	std::vector<std::pair<base::weak_ptr<Main::Session>, FullMsgId>> inflight;
+	std::unique_ptr<base::Timer> quitTimer;
+	crl::time quitStarted = 0;
+	bool quitDone = false;
 };
 
 [[nodiscard]] Queues &State() {
@@ -75,10 +97,28 @@ struct Queues {
 
 void Pump(PeerId peer);
 
+// Released bubbles leave this list once the server took them (their local id
+// is gone) or they were deleted; it only matters while quitting.
+void PruneInflight() {
+	auto &inflight = State().inflight;
+	for (auto i = begin(inflight); i != end(inflight);) {
+		const auto session = i->first.get();
+		const auto item = session
+			? session->data().message(i->second)
+			: nullptr;
+		if (!item || item->isRegular()) {
+			i = inflight.erase(i);
+		} else {
+			++i;
+		}
+	}
+}
+
 [[nodiscard]] QueueState Public(const Entry &entry, bool first) {
 	switch (entry.step) {
 	case Step::Checking: return QueueState::Checking;
 	case Step::Softened: return QueueState::Softened;
+	case Step::Review: return QueueState::Review;
 	case Step::Failed: return QueueState::Failed;
 	case Step::Ready: break;
 	}
@@ -111,7 +151,12 @@ void Refresh(HistoryItem *item) {
 	}
 }
 
-void Emit(PeerId peer, FullMsgId id, QueueState state, crl::time until = 0) {
+void Emit(
+		PeerId peer,
+		FullMsgId id,
+		QueueState state,
+		crl::time until = 0,
+		bool fine = false) {
 	if (!id) {
 		return;
 	}
@@ -120,7 +165,11 @@ void Emit(PeerId peer, FullMsgId id, QueueState state, crl::time until = 0) {
 		event.holding = now->holding;
 		event.behind = now->behind;
 		event.aside = now->aside;
+		event.review = now->review;
+		event.away = now->away;
+		event.held = now->held;
 	}
+	event.fine = fine;
 	State().events.fire({ peer, event });
 }
 
@@ -177,6 +226,17 @@ void ShowText(
 	}
 }
 
+// The bubble goes before anything left the Mac.
+void DestroyBubble(PeerQueue &queue, const Entry &entry) {
+	if (const auto item = Bubble(queue, entry.id)) {
+		if (entry.randomId) {
+			item->history()->owner().unregisterMessageRandomId(
+				entry.randomId);
+		}
+		item->destroy();
+	}
+}
+
 void ExpireArmed() {
 	auto &armed = State().armed;
 	const auto now = crl::now();
@@ -223,6 +283,9 @@ void Apply(PeerQueue &queue, Entry &entry, const Result &result) {
 	const auto &verdict = *result.verdict;
 	if (!verdict.soften) {
 		entry.step = Step::Ready;
+		if (entry.review) {
+			Emit(peer, entry.id, QueueState::Waiting, 0, true);
+		}
 		return;
 	}
 	const auto item = Bubble(queue, entry.id);
@@ -235,6 +298,13 @@ void Apply(PeerQueue &queue, Entry &entry, const Result &result) {
 		return;
 	}
 	entry.calm = verdict.text;
+	if (entry.review) {
+		// Second look: his words stay in the bubble until he picks.
+		entry.step = Step::Review;
+		Refresh(item);
+		Emit(peer, entry.id, QueueState::Review);
+		return;
+	}
 	entry.step = Step::Softened;
 	entry.until = crl::now() + kHoldMs;
 	MarkSentSoftened(item->history(), entry.calm, entry.original);
@@ -264,6 +334,54 @@ void Answered(uint64 ticket, const Result &result) {
 	}
 }
 
+[[nodiscard]] int HeldTexts(const PeerQueue &queue) {
+	return int(ranges::count_if(queue.entries, [](const Entry &entry) {
+		return entry.hold && entry.text && entry.id;
+	}));
+}
+
+// Everything held goes on (the hold ended, or something released it).
+void OpenGate(PeerId peer, PeerQueue &queue) {
+	queue.gate = Core::HoldGate();
+	queue.holdTimer.cancel();
+	auto changed = std::vector<FullMsgId>();
+	for (auto &entry : queue.entries) {
+		if (entry.hold) {
+			entry.hold = false;
+			changed.push_back(entry.id);
+		}
+	}
+	for (const auto &id : changed) {
+		Emit(peer, id, QueueState::Waiting);
+	}
+}
+
+// Starts or reschedules the hold's end; opens the gate when it is due.
+void CheckHold(PeerId peer, PeerQueue &queue) {
+	auto &gate = queue.gate;
+	if (!gate.active) {
+		return;
+	}
+	const auto texts = HeldTexts(queue);
+	const auto anyHeld = ranges::any_of(queue.entries, &Entry::hold);
+	if (!anyHeld) {
+		OpenGate(peer, queue);
+		return;
+	}
+	gate.pill = (texts >= Core::kHoldPillTexts);
+	const auto now = crl::now();
+	if (Core::HoldDue(gate, now)) {
+		OpenGate(peer, queue);
+		return;
+	}
+	const auto at = Core::HoldReleaseAt(gate);
+	if (at == Core::kWaitsForCard) {
+		queue.holdTimer.cancel();
+	} else {
+		queue.holdTimer.callOnce(std::max(at - now, crl::time(1)));
+	}
+}
+
 void Pump(PeerId peer) {
 	auto &state = State();
 	const auto queue = QueueFor(peer);
@@ -273,6 +391,7 @@ void Pump(PeerId peer) {
 		state.peers.remove(peer);
 		return;
 	}
+	CheckHold(peer, *queue);
 	auto &entries = queue->entries;
 	auto blocker = (Entry*)nullptr;
 	for (auto i = 0; i < int(entries.size());) {
@@ -285,6 +404,7 @@ void Pump(PeerId peer) {
 			++i;
 			continue;
 		} else if (entry.step == Step::Checking
+			|| entry.step == Step::Review
 			|| entry.step == Step::Failed) {
 			blocker = &entry;
 			break;
@@ -296,15 +416,22 @@ void Pump(PeerId peer) {
 				break;
 			}
 		}
-		const auto builder = (entry.step == Step::Softened)
-			? entry.rebuild(entry.calm)
-			: entry.message;
+		if (entry.hold && queue->gate.active) {
+			blocker = &entry;
+			break;
+		}
+		const auto calm = (entry.step == Step::Softened) || entry.useCalm;
+		const auto builder = calm ? entry.rebuild(entry.calm) : entry.message;
 		const auto send = std::move(entry.send);
 		const auto id = entry.id;
 		entries.erase(begin(entries) + i);
 		state.releasing = true;
 		send(builder);
 		state.releasing = false;
+		if (id && queue->session) {
+			PruneInflight();
+			state.inflight.emplace_back(queue->session, id);
+		}
 		Refresh(Bubble(*queue, id));
 		Emit(peer, id, QueueState::Sent);
 	}
@@ -331,6 +458,7 @@ void Pump(PeerId peer) {
 		auto queue = std::make_unique<PeerQueue>();
 		queue->session = base::make_weak(&history->session());
 		queue->timer.setCallback([=] { Pump(peer); });
+		queue->holdTimer.setCallback([=] { Pump(peer); });
 		queue->ring.setCallback([=] {
 			if (const auto queue = QueueFor(peer)) {
 				TickRings(*queue);
@@ -341,9 +469,46 @@ void Pump(PeerId peer) {
 	return *i->second;
 }
 
+[[nodiscard]] bool IsReply(const HistoryItem *item) {
+	return item && item->Has<HistoryMessageReply>();
+}
+
+// Quitting: what was released and is still only on the Mac.
+[[nodiscard]] bool QuitPending() {
+	auto &state = State();
+	PruneInflight();
+	const auto &inflight = state.inflight;
+	const auto checking = ranges::any_of(state.peers, [](const auto &pair) {
+		return ranges::any_of(pair.second->entries, [](const Entry &entry) {
+			return entry.step == Step::Checking;
+		});
+	});
+	return !inflight.empty() || checking;
+}
+
+// Quitting: nothing waits for him any more except a card he never answered.
+void ReleaseAllForQuit() {
+	auto peers = std::vector<PeerId>();
+	for (auto &[peer, queue] : State().peers) {
+		OpenGate(peer, *queue);
+		for (auto &entry : queue->entries) {
+			if (entry.step == Step::Softened) {
+				entry.until = 0; // its Undo window ends with the app
+			}
+		}
+		peers.push_back(peer);
+	}
+	for (const auto peer : peers) {
+		Pump(peer);
+	}
+}
+
 } // namespace
 
-void QueueNext(not_null<History*> history, const QString &text) {
+void QueueNext(
+		not_null<History*> history,
+		const QString &text,
+		QueueSend how) {
 	auto &state = State();
 	ExpireArmed();
 	const auto id = ++state.nextTicket;
@@ -351,9 +516,17 @@ void QueueNext(not_null<History*> history, const QString &text) {
 		.id = id,
 		.peer = history->peer->id,
 		.text = text.trimmed(),
+		.how = how,
 		.at = crl::now(),
 	};
+	if (!how.check) {
+		// Held only: nothing to ask, it is ready once the hold ends.
+		ticket.result = Result{ .verdict = Verdict{ .text = ticket.text } };
+	}
 	state.armed.push_back(std::move(ticket));
+	if (!how.check) {
+		return;
+	}
 	// Joins the typing check for this text, or answers from its cache.
 	const auto waiter = CheckDraft(history, text, [=](const Result &result) {
 		Answered(id, result);
@@ -398,11 +571,22 @@ bool DeferSend(
 		? local->originalText().text.trimmed()
 		: QString();
 	auto ticket = text.isEmpty() ? std::nullopt : TakeArmed(peer, text);
+	const auto reply = IsReply(local);
+	if (reply) {
+		// A reply goes at once, and what was held before it too.
+		if (const auto queue = QueueFor(peer)) {
+			OpenGate(peer, *queue);
+		}
+	}
 	const auto waiting = (QueueFor(peer) != nullptr);
 	if (!ticket && !waiting) {
 		return false;
 	}
+	const auto how = ticket ? ticket->how : QueueSend();
 	auto &queue = EnsureQueue(history);
+	const auto hold = ticket
+		? (how.hold && !reply)
+		: queue.gate.active; // media sent behind held texts wait with them
 	auto &entry = queue.entries.emplace_back(Entry{
 		.ticket = ticket ? ticket->id : 0,
 		.id = local ? local->fullId() : FullMsgId(),
@@ -410,17 +594,25 @@ bool DeferSend(
 		.original = ticket ? ticket->text : QString(),
 		.message = std::move(message),
 		.send = std::move(send),
-		.step = ticket ? Step::Checking : Step::Ready,
+		.step = (ticket && how.check) ? Step::Checking : Step::Ready,
+		.review = how.review,
+		.hold = hold,
+		.text = ticket.has_value(),
 	});
 	if (const auto i = state.rebuilds.find(randomId); i != end(state.rebuilds)) {
 		entry.rebuild = std::move(i->second);
 		state.rebuilds.erase(i);
 	}
-	if (ticket) {
+	if (ticket && how.hold && !reply) {
+		Core::HoldSent(queue.gate, crl::now(), false);
+	}
+	if (ticket && how.check) {
 		Emit(peer, entry.id, QueueState::Checking);
 		if (ticket->result) {
 			Apply(queue, entry, *ticket->result);
 		}
+	} else if (entry.hold) {
+		Emit(peer, entry.id, QueueState::Waiting);
 	}
 	Pump(peer);
 	return true;
@@ -448,6 +640,7 @@ void QueueSendAsIs(FullMsgId id) {
 	}
 	entry->step = Step::Ready;
 	entry->aside = false;
+	entry->away = false;
 	Refresh(Bubble(id));
 	Pump(id.peer);
 }
@@ -470,20 +663,218 @@ void QueueDelete(FullMsgId id) {
 	auto &entries = queue->entries;
 	for (auto i = begin(entries); i != end(entries); ++i) {
 		if (i->id == id) {
-			const auto randomId = i->randomId;
+			const auto entry = std::move(*i);
 			entries.erase(i);
-			if (const auto item = Bubble(*queue, id)) {
-				if (randomId) {
-					item->history()->owner().unregisterMessageRandomId(
-						randomId);
-				}
-				item->destroy();
-			}
+			DestroyBubble(*queue, entry);
 			break;
 		}
 	}
 	Emit(id.peer, id, QueueState::Dropped);
 	Pump(id.peer);
+}
+
+std::optional<QueueCard> QueueCardFor(PeerId peer) {
+	const auto queue = QueueFor(peer);
+	if (!queue) {
+		return std::nullopt;
+	}
+	auto list = std::vector<Core::CardEntry>();
+	list.reserve(queue->entries.size());
+	for (const auto &entry : queue->entries) {
+		using S = Core::CardStep;
+		const auto step = (entry.step == Step::Checking)
+			? S::Checking
+			: (entry.step == Step::Review)
+			? S::Review
+			: (entry.step == Step::Failed && entry.review && !entry.aside)
+			? S::FailedReview
+			: S::Other;
+		list.push_back({ .step = step, .away = entry.away });
+	}
+	const auto index = Core::CardIndex(list);
+	if (index < 0) {
+		return std::nullopt;
+	}
+	const auto &entry = queue->entries[index];
+	const auto failed = (entry.step == Step::Failed);
+	return QueueCard{
+		.id = entry.id,
+		.original = entry.original,
+		.calm = failed ? QString() : entry.calm,
+		.failed = failed,
+	};
+}
+
+void QueuePickCalm(FullMsgId id) {
+	auto queue = (PeerQueue*)nullptr;
+	const auto entry = FindEntry(id, &queue);
+	if (!entry || entry->step != Step::Review) {
+		return;
+	}
+	const auto item = Bubble(*queue, id);
+	if (!item || !entry->rebuild) {
+		return;
+	}
+	MarkSentSoftened(item->history(), entry->calm, entry->original);
+	RememberFine(id.peer, entry->calm);
+	ShowText(item, entry->randomId, entry->calm);
+	entry->useCalm = true;
+	entry->step = Step::Ready;
+	entry->away = false;
+	Refresh(item);
+	Pump(id.peer);
+}
+
+void QueuePickMine(FullMsgId id) {
+	const auto entry = FindEntry(id);
+	if (!entry || entry->step != Step::Review) {
+		return;
+	}
+	entry->step = Step::Ready;
+	entry->away = false;
+	Refresh(Bubble(id));
+	Pump(id.peer);
+}
+
+std::optional<QString> QueueEdit(FullMsgId id) {
+	auto queue = (PeerQueue*)nullptr;
+	const auto found = FindEntry(id, &queue);
+	if (!found
+		|| (found->step != Step::Review && found->step != Step::Failed)) {
+		return std::nullopt;
+	}
+	auto &entries = queue->entries;
+	auto words = QString();
+	for (auto i = begin(entries); i != end(entries); ++i) {
+		if (i->id == id) {
+			const auto entry = std::move(*i);
+			entries.erase(i);
+			const auto item = Bubble(*queue, id);
+			words = entry.original.isEmpty() && item
+				? item->originalText().text
+				: entry.original;
+			DestroyBubble(*queue, entry);
+			break;
+		}
+	}
+	Emit(id.peer, id, QueueState::Dropped);
+	Pump(id.peer);
+	return words;
+}
+
+void QueuePutAway(FullMsgId id, bool away) {
+	const auto entry = FindEntry(id);
+	if (!entry
+		|| entry->away == away
+		|| (entry->step != Step::Review
+			&& !(entry->step == Step::Failed && entry->review))) {
+		return;
+	}
+	entry->away = away;
+	Refresh(Bubble(id));
+	Emit(id.peer, id, Public(*entry, false));
+}
+
+void QueueTyping(PeerId peer, bool fieldBusy) {
+	const auto queue = QueueFor(peer);
+	if (!queue || !queue->gate.active) {
+		return;
+	}
+	Core::HoldTyped(queue->gate, crl::now(), fieldBusy);
+	Pump(peer); // reschedules the hold's end (or releases, when due)
+}
+
+void QueueReleaseHeld(PeerId peer) {
+	const auto queue = QueueFor(peer);
+	if (!queue || !queue->gate.active) {
+		return;
+	}
+	OpenGate(peer, *queue);
+	Pump(peer);
+}
+
+void QueueHoldForCard(PeerId peer, bool open) {
+	const auto queue = QueueFor(peer);
+	if (!queue || !queue->gate.active || queue->gate.card == open) {
+		return;
+	}
+	queue->gate.card = open;
+	if (!open) {
+		// He looked and closed it: the usual wait after he stops.
+		queue->gate.lastActivity = crl::now();
+	}
+	Pump(peer);
+}
+
+bool QueueHeld(not_null<const HistoryItem*> item) {
+	const auto queue = QueueFor(item->history()->peer->id);
+	if (!queue || !queue->gate.active) {
+		return false;
+	}
+	const auto id = item->fullId();
+	return ranges::any_of(queue->entries, [&](const Entry &entry) {
+		return entry.hold && (entry.id == id);
+	});
+}
+
+HeldGroup QueueHeldGroup(PeerId peer) {
+	auto result = HeldGroup();
+	const auto queue = QueueFor(peer);
+	if (!queue || !queue->gate.active) {
+		return result;
+	}
+	for (const auto &entry : queue->entries) {
+		if (!entry.hold || !entry.id || !Bubble(*queue, entry.id)) {
+			continue;
+		}
+		result.items.push_back(entry.id);
+		if (entry.text) {
+			result.texts.push_back(entry.id);
+			result.words.push_back(entry.original);
+		}
+	}
+	return result;
+}
+
+bool QueueMergeHeld(
+		PeerId peer,
+		const std::vector<FullMsgId> &texts,
+		const QString &text) {
+	const auto queue = QueueFor(peer);
+	const auto now = QueueHeldGroup(peer);
+	if (!queue || texts.empty() || now.texts != texts || text.isEmpty()) {
+		return false;
+	}
+	const auto first = FindEntry(texts.front());
+	const auto item = first ? Bubble(*queue, first->id) : nullptr;
+	if (!first || !item || !first->rebuild) {
+		LOG(("Safe Calm: held messages could not be merged."));
+		return false;
+	}
+	MarkSentSoftened(item->history(), text, now.words.join(u"\n"_q));
+	RememberFine(peer, text);
+	ShowText(item, first->randomId, text);
+	first->calm = text;
+	first->useCalm = true;
+	first->step = Step::Ready; // a check still on its way is not needed
+	first->away = false;
+	Refresh(item);
+	auto &entries = queue->entries;
+	for (auto i = 1; i < int(texts.size()); ++i) {
+		const auto id = texts[i];
+		for (auto j = begin(entries); j != end(entries); ++j) {
+			if (j->id == id) {
+				const auto entry = std::move(*j);
+				entries.erase(j);
+				DestroyBubble(*queue, entry);
+				break;
+			}
+		}
+		Emit(peer, id, QueueState::Dropped);
+	}
+	OpenGate(peer, *queue);
+	Pump(peer);
+	return true;
 }
 
 rpl::producer<QueueEvent> QueueEvents(PeerId peer) {
@@ -508,6 +899,12 @@ std::optional<QueueEvent> QueueStateOf(FullMsgId id) {
 		}
 		auto result = QueueEvent{ id, Public(entry, !i), entry.until };
 		result.aside = entry.aside;
+		result.review = entry.review;
+		result.away = entry.away;
+		result.held = entry.hold && queue->gate.active;
+		if (result.held && result.state == QueueState::Sent) {
+			result.state = QueueState::Waiting;
+		}
 		if (entry.step == Step::Failed && !entry.aside) {
 			result.behind = int(std::count_if(
 				begin(entries) + i + 1,
@@ -520,6 +917,39 @@ std::optional<QueueEvent> QueueStateOf(FullMsgId id) {
 		return result;
 	}
 	return std::nullopt;
+}
+
+bool QueueBusy(PeerId peer) {
+	const auto queue = QueueFor(peer);
+	return queue && !queue->entries.empty();
+}
+
+bool QueuePreventsQuit() {
+	auto &state = State();
+	if (state.quitDone) {
+		return false;
+	}
+	ReleaseAllForQuit();
+	if (!QuitPending()) {
+		state.quitDone = true;
+		return false;
+	}
+	if (!state.quitTimer) {
+		LOG(("Safe Calm: quitting waits for messages on their way."));
+		state.quitStarted = crl::now();
+		state.quitTimer = std::make_unique<base::Timer>([] {
+			auto &state = State();
+			ReleaseAllForQuit();
+			if (!QuitPending()
+				|| crl::now() - state.quitStarted >= kQuitWait) {
+				state.quitTimer->cancel();
+				state.quitDone = true;
+				::Core::Quit();
+			}
+		});
+		state.quitTimer->callEach(kQuitPoll);
+	}
+	return true;
 }
 
 } // namespace Safe::Calm

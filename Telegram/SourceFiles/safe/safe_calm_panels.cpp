@@ -8,7 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_calm_leaf.h"
 #include "styles/style_chat.h"
+#include "styles/style_widgets.h"
 #include "ui/painter.h"
+#include "ui/widgets/labels.h"
 
 namespace Safe::Calm {
 namespace {
@@ -81,6 +83,69 @@ bool Panel::isCard() const {
 
 bool Panel::isSheet() const {
 	return showing() && (_kind == Kind::Sheet);
+}
+
+bool Panel::isSummary() const {
+	return showing() && (_kind == Kind::Summary || _kind == Kind::Writing);
+}
+
+bool Panel::isPill() const {
+	return showing() && (_kind == Kind::Pill);
+}
+
+void Panel::showSummary(
+		const QString &title,
+		const QString &text,
+		const QString &line,
+		std::vector<PanelButton> buttons) {
+	_head = title;
+	_hint = u"only you see this card"_q;
+	_main.setText(st::defaultTextStyle, text);
+	_line.setText(st::defaultTextStyle, line);
+	if (!_label) {
+		_label = base::make_unique_q<Ui::FlatLabel>(
+			this,
+			st::defaultFlatLabel);
+		_label->setSelectable(true);
+		_label->setTextColorOverride(st::historyTextOutFg->c);
+		_label->hide();
+	}
+	_label->setText(text);
+	_label->setContextCopyText(u"Copy text"_q);
+	start(Kind::Summary, std::move(buttons));
+}
+
+void Panel::showWriting(
+		const QString &title,
+		std::vector<PanelButton> buttons) {
+	_head = title;
+	_hint = u"writing it…"_q;
+	start(Kind::Writing, std::move(buttons));
+	_ticker.start();
+}
+
+void Panel::updateLabel() {
+	if (!_label) {
+		return;
+	}
+	const auto show = (_kind == Kind::Summary)
+		&& !_hiding
+		&& !isHidden()
+		&& !_shown.animating()
+		&& (_laidWidth > 0);
+	if (show) {
+		const auto inner = _laidWidth - 2 * S(kPadding);
+		const auto width = inner - 2 * S(kBubblePadX);
+		_label->resizeToWidth(width);
+		_label->moveToLeft(
+			S(kShadow) + S(kPadding) + S(kBubblePadX),
+			_mainTop + S(kBubblePadY));
+		_label->show();
+		_label->raise();
+	} else if (!_label->isHidden()) {
+		_label->hide();
+	}
+	update();
 }
 
 void Panel::showChecking(const QString &original, Fn<void()> edit) {
@@ -169,9 +234,14 @@ void Panel::start(Kind kind, std::vector<PanelButton> buttons) {
 	show();
 	raise();
 	if (!wasShown) {
-		_shown.start([=] { update(); }, 0., 1., kAnimationMs, anim::easeOutCirc);
+		_shown.start([=] {
+			update();
+			if (!_shown.animating()) {
+				updateLabel();
+			}
+		}, 0., 1., kAnimationMs, anim::easeOutCirc);
 	}
-	update();
+	updateLabel();
 	notifyChanged();
 }
 
@@ -181,6 +251,7 @@ void Panel::hideAnimated() {
 	}
 	_hiding = true;
 	_autoHide.cancel();
+	updateLabel();
 	_shown.start([=] {
 		update();
 		if (!_shown.animating()) {
@@ -197,6 +268,7 @@ void Panel::hideFast() {
 void Panel::finishHiding() {
 	_kind = Kind::None;
 	_hiding = false;
+	updateLabel();
 	_ticker.stop();
 	_autoHide.cancel();
 	_buttons.clear();
@@ -290,6 +362,19 @@ int Panel::layoutBody(int top, int width) {
 		_mainHeight = _main.countHeight(inner);
 		top += _mainHeight + S(kSkip);
 		break;
+	case Kind::Writing:
+		_mainTop = top;
+		_mainHeight = S(kSkeleton);
+		top += _mainHeight + S(kSkip);
+		break;
+	case Kind::Summary:
+		_mainTop = top;
+		_mainHeight = _main.countHeight(inner - 2 * S(kBubblePadX))
+			+ 2 * S(kBubblePadY);
+		top += _mainHeight + S(kSkip) - S(2);
+		_lineTop = top;
+		top += _line.countHeight(inner - S(4)) + S(kSkip);
+		break;
 	case Kind::Sheet: {
 		for (const auto &note : _notes) {
 			_noteTops.push_back(top);
@@ -345,7 +430,10 @@ void Panel::relayout() {
 		height = S(kPillHeight);
 	} else {
 		const auto top = layoutBody(S(kShadow) + S(kPadding), width);
-		const auto primaryRows = (_kind == Kind::Card) ? 1 : 0;
+		const auto primaryRows = ranges::any_of(_buttons, [&](const Laid &laid) {
+			return (laid.button.look == PanelButton::Look::Primary)
+				&& (_kind != Kind::Sheet);
+		}) ? 1 : 0;
 		const auto rows = primaryRows + (_buttons.size() > primaryRows ? 1 : 0);
 		layoutButtons(top, width);
 		height = (top - S(kShadow))
@@ -361,7 +449,7 @@ void Panel::relayout() {
 	const auto y = _anchor.y() - S(kGap) - height;
 	setGeometry(QRect(QPoint(x - S(kShadow), y - S(kShadow)), full));
 	_reserved = S(kGap) + height;
-	update();
+	updateLabel();
 }
 
 void Panel::paintEvent(QPaintEvent *e) {
@@ -485,6 +573,7 @@ void Panel::paintBody(QPainter &p, int width) {
 		});
 	};
 	switch (_kind) {
+	case Kind::Writing:
 	case Kind::Checking: {
 		p.setPen(Qt::NoPen);
 		const auto pulse = 0.5 + 0.5 * std::sin(crl::now() / 260.);
@@ -495,6 +584,9 @@ void Panel::paintBody(QPainter &p, int width) {
 		p.drawRoundedRect(QRectF(left + S(kBubblePadX), _mainTop + S(12), inner * 0.7, S(7)), S(3), S(3));
 		p.drawRoundedRect(QRectF(left + S(kBubblePadX), _mainTop + S(25), inner * 0.42, S(7)), S(3), S(3));
 		p.setOpacity(p.opacity() / (0.18 + 0.1 * pulse));
+		if (_kind == Kind::Writing) {
+			break;
+		}
 	} [[fallthrough]];
 	case Kind::Card: {
 		if (_kind == Kind::Card) {
@@ -524,6 +616,20 @@ void Panel::paintBody(QPainter &p, int width) {
 	case Kind::Failed:
 		drawText(_main, left, _mainTop, inner, st::windowFg);
 		break;
+	case Kind::Summary: {
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::msgOutBg);
+		p.drawRoundedRect(QRectF(left, _mainTop, inner, _mainHeight), S(kBubbleRadius), S(kBubbleRadius));
+		if (!_label || _label->isHidden()) {
+			drawText(
+				_main,
+				left + S(kBubblePadX),
+				_mainTop + S(kBubblePadY),
+				inner - 2 * S(kBubblePadX),
+				st::historyTextOutFg);
+		}
+		drawText(_line, left + S(2), _lineTop, inner - S(4), st::windowSubTextFg);
+	} break;
 	case Kind::Sheet: {
 		for (auto i = 0; i != int(_notes.size()); ++i) {
 			p.setPen(Qt::NoPen);

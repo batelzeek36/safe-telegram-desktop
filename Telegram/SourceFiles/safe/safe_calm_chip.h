@@ -25,6 +25,10 @@ struct ChatPaintContext;
 // Softened = the countdown ring round the leaf, "Softened", Undo.
 // Failed = "Couldn't check", Send as is, Delete, and while others wait on it
 // a second line: "N waiting behind it", Let the rest go.
+// Second look (Zach 10-27, on the queue) = the leaf and "Second look" while
+// its card asks above the composer; "Open" once he put the card away.
+// Below it, a run that could go as one gets its leaf pill and the texts their
+// jade edge (safe_calm_run_mark).
 // HistoryView::Message adds its height below the bubble, paints it and asks
 // it for links (hooks in docs/desktop/d24-calm.py).
 namespace Safe::Calm {

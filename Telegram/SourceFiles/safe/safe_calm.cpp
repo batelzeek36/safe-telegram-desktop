@@ -84,6 +84,10 @@ void Answer(const DraftKey &key, const Result &result) {
 
 } // namespace
 
+QString AgoText(TimeId seconds) {
+	return Ago(std::max(seconds, TimeId(0)));
+}
+
 QString ChatKey(not_null<PeerData*> peer) {
 	const auto id = peer->id;
 	if (peerIsUser(id)) {
