@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/look_tint.h"
 #include "safe/safe_bots.h"
 #include "safe/safe_calm_composer.h"
+#include "safe/safe_auto_bar.h"
 
 #include "api/api_compose_with_ai.h"
 #include "api/api_editing.h"
@@ -591,6 +592,19 @@ HistoryWidget::HistoryWidget(
 			},
 			.relayout = [=] { updateFieldSize(); },
 			.reserve = [=] { updateControlsGeometry(); },
+		});
+	_autoBar = base::make_unique_q<Safe::Auto::Bar>(
+		Safe::Auto::Bar::Args{
+			.parent = this,
+			.reserve = [=] { updateControlsGeometry(); },
+			.replyYourself = [=](FullMsgId id) {
+				if (id && session().data().message(id)) {
+					replyToMessage({ .messageId = id });
+				}
+				if (!_field->isHidden()) {
+					_field->setFocus();
+				}
+			},
 		});
 	initSendAsFileButton();
 	initExpandButton();
@@ -7650,10 +7664,15 @@ void HistoryWidget::moveFieldControls() {
 	_fieldBarCancel->moveToRight(
 		0,
 		_field->y() - st::historySendPadding - _fieldBarCancel->height());
+	const auto composeTop = _field->y()
+		- st::historySendPadding
+		- (_fieldBarCancel->isHidden() ? 0 : _fieldBarCancel->height());
+	if (_autoBar) {
+		_autoBar->moveAbove(composeTop, width());
+	}
 	if (_calm) {
-		const auto top = _field->y()
-			- st::historySendPadding
-			- (_fieldBarCancel->isHidden() ? 0 : _fieldBarCancel->height());
+		const auto top = composeTop
+			- (_autoBar ? _autoBar->reservedHeight() : 0);
 		_calm->setComposeRect(QRect(0, top, width(), bottom - top));
 	}
 	if (_inlineResults) {
@@ -7686,6 +7705,11 @@ void HistoryWidget::moveFieldControls() {
 void HistoryWidget::updateFieldSize() {
 	if (_calm) {
 		_calm->setHistory((_history && !_field->isHidden())
+			? _history
+			: nullptr);
+	}
+	if (_autoBar) {
+		_autoBar->setHistory((_history && !_field->isHidden())
 			? _history
 			: nullptr);
 	}
@@ -8686,6 +8710,9 @@ void HistoryWidget::updateHistoryGeometry(
 		}
 		if (_calm) {
 			newScrollHeight -= _calm->reservedHeight();
+		}
+		if (_autoBar) {
+			newScrollHeight -= _autoBar->reservedHeight();
 		}
 	}
 	if (newScrollHeight <= 0) {

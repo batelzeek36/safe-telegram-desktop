@@ -417,6 +417,10 @@ public:
 		std::vector<NotificationAction> actions;
 	};
 
+	// Safe (d30): a notification that is not a message (a full-auto
+	// hand-back); clicking it opens the chat like a message one.
+	void showSafeNotification(NotificationInfo &&info);
+
 protected:
 	using Manager::Manager;
 

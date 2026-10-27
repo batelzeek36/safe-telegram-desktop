@@ -1669,6 +1669,21 @@ void NativeManager::doShowNotification(NotificationFields &&fields) {
 	}, userpicView);
 }
 
+void NativeManager::showSafeNotification(NotificationInfo &&info) {
+	auto userpicView = info.peer->createUserpicView();
+	const auto owner = &info.peer->owner();
+	if (Core::App().settings().soundNotify()) {
+		info.sound = [=] {
+			return _localSoundCache.sound(0, [=] {
+				return Core::App().notifications().lookupSoundBytes(owner, 0);
+			}, [=] {
+				return Core::App().notifications().lookupSoundBytes(owner, 0);
+			});
+		};
+	}
+	doShowNativeNotification(std::move(info), userpicView);
+}
+
 bool NativeManager::forceHideDetails() const {
 	return Core::App().screenIsLocked();
 }

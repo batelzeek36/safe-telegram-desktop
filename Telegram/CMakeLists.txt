@@ -1873,6 +1873,20 @@ PRIVATE
     safe/look_reactions.h
     safe/safe_ask.cpp
     safe/safe_ask.h
+    safe/safe_auto.cpp
+    safe/safe_auto.h
+    safe/safe_auto_bar.cpp
+    safe/safe_auto_bar.h
+    safe/safe_auto_box.cpp
+    safe/safe_auto_box.h
+    safe/safe_auto_client.cpp
+    safe/safe_auto_client.h
+    safe/safe_auto_mark.cpp
+    safe/safe_auto_mark.h
+    safe/safe_auto_state.cpp
+    safe/safe_auto_state.h
+    safe/safe_auto_view.cpp
+    safe/safe_auto_view.h
     safe/safe_bots.cpp
     safe/safe_bots.h
     safe/safe_calm.cpp
