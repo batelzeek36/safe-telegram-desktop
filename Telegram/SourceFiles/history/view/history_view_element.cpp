@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_reactions.h"
 #include "safe/safe_media_gate.h"
 #include "safe/safe_quiet_media.h"
+#include "safe/safe_peek.h"
 
 #include "apiwrap.h"
 #include "api/api_transcribes.h"
@@ -2219,7 +2220,12 @@ void Element::validateText() {
 		_textItem = Safe::Quiet::CaptionItem(item);
 		clearRichPage();
 		if (_text.isEmpty()) {
-			setTextWithLinks(Safe::Quiet::Placeholder(item));
+			// Safe (d32): a tap on the kind word opens the private peek.
+			const auto peek = Safe::Peek::Peekable(item);
+			setTextWithLinks(Safe::Quiet::Placeholder(item, peek));
+			if (peek) {
+				_text.setLink(1, Safe::Peek::Link(item));
+			}
 		}
 		return;
 	}

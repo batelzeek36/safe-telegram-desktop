@@ -318,4 +318,13 @@ bool IsSoftenedIncoming(not_null<const HistoryItem*> item) {
 	return held && (held->stage == Stage::Soft);
 }
 
+std::optional<TextWithEntities> SoftenedOriginal(
+		not_null<const HistoryItem*> item) {
+	const auto held = Find(item);
+	if (!held || held->stage != Stage::Soft) {
+		return std::nullopt;
+	}
+	return held->original;
+}
+
 } // namespace Safe::Calm

@@ -279,7 +279,7 @@ not_null<HistoryItem*> CaptionItem(not_null<HistoryItem*> item) {
 	return found ? not_null(found) : item;
 }
 
-TextWithEntities Placeholder(not_null<HistoryItem*> item) {
+TextWithEntities Placeholder(not_null<HistoryItem*> item, bool linked) {
 	const auto album = AlbumOf(item);
 	const auto parts = album ? album->items : HistoryItemsList{ item };
 	auto counts = std::array<int, kKindCount>{};
@@ -289,6 +289,9 @@ TextWithEntities Placeholder(not_null<HistoryItem*> item) {
 		}
 	}
 	auto result = Ui::Text::Italic(CountedWord(counts));
+	if (linked) {
+		result = Ui::Text::Link(std::move(result), 1);
+	}
 	for (const auto &part : parts) {
 		if (!part->emptyText()) {
 			result.append(QChar('\n'));

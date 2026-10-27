@@ -22,8 +22,11 @@ namespace Safe::Quiet {
 // is displayed: photos, videos, GIFs, round video messages, stickers,
 // stories, paid media, file thumbnails and the picture or video of a link
 // preview (its words stay). His own messages, voice notes and music stay as
-// they are. There is no reveal, no hover or press preview, the media viewer
-// refuses them, and saving them is refused like any held picture.
+// they are. No hover or press preview, the media viewer refuses them, and
+// saving them is refused like any held picture. The one way to see one is a
+// tap on its kind word, which opens a private box (safe_peek.h, d32: Zach
+// 2026-10-26 "id like to be able to tap something to see ... what gif they
+// sent"); the chat itself stays quiet.
 //
 // The chats come from the private trust list ("quiet_media_dialogs", see
 // safe_trust_policy.h), never from this public source. The rule beats
@@ -84,8 +87,11 @@ enum class Bubble : uchar {
 	not_null<HistoryItem*> item);
 
 // The bubble's text: the kind word in italics ("photo", "3 photos",
-// "2 photos, 1 video"), then the caption on the next line.
-[[nodiscard]] TextWithEntities Placeholder(not_null<HistoryItem*> item);
+// "2 photos, 1 video"), then the caption on the next line. `linked`: the
+// kind word is link 1 (the bubble sets it to the peek, safe_peek.h).
+[[nodiscard]] TextWithEntities Placeholder(
+	not_null<HistoryItem*> item,
+	bool linked = false);
 
 // ---- Elsewhere. ----
 

@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm_chip.h"
 #include "safe/safe_calm_leaf.h"
 #include "safe/safe_calm_marks.h"
+#include "safe/safe_peek.h"
 
 #include "ui/chat/message_bubble.h"
 #include "ui/chat/chat_style.h"
@@ -206,6 +207,21 @@ TextState BottomInfo::textState(
 					*_data.forwardsCount))
 				: QString();
 			result.customTooltipText = fullViews + fullForwards;
+		}
+	}
+	if ((_data.flags & Data::Flag::CalmLeaf) && Safe::Peek::Peekable(item)) {
+		// Safe (d32): the leaf and the time of a softened message in the
+		// quiet chats open the private peek at what she wrote.
+		const auto left = width()
+			- withTicksWidth
+			- Safe::Calm::LeafMarkWidth();
+		if (QRect(
+				left,
+				0,
+				width() - left,
+				st::msgDateFont->height).contains(position)) {
+			result.link = Safe::Peek::Link(item);
+			return result;
 		}
 	}
 	const auto inTime = QRect(

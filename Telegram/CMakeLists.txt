@@ -1969,6 +1969,8 @@ PRIVATE
     safe/safe_off.cpp
     safe/safe_off.h
     safe/safe_policy.h
+    safe/safe_peek.cpp
+    safe/safe_peek.h
     safe/safe_quiet_media.cpp
     safe/safe_quiet_media.h
     safe/safe_reactions.cpp

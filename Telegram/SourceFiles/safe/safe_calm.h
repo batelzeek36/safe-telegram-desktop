@@ -82,5 +82,11 @@ bool PaintHeldText(
 	const QColor &color);
 // A softened message to Zach: never forwarded, translated or copied raw.
 [[nodiscard]] bool IsSoftenedIncoming(not_null<const HistoryItem*> item);
+// What a softened message to Zach said before it was softened, for the
+// private peek in the quiet chats only (safe_peek.h, d32: Zach 2026-10-26
+// "id like to be able to tap something to see what jade or my mom said",
+// family only). Empty when the message is not softened.
+[[nodiscard]] std::optional<TextWithEntities> SoftenedOriginal(
+	not_null<const HistoryItem*> item);
 
 } // namespace Safe::Calm
