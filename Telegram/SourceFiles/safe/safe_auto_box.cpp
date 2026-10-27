@@ -106,6 +106,8 @@ void SettingsBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 
 	const auto mode = std::make_shared<Ui::RadioenumGroup<Mode>>(
 		state.enabled ? Mode::On : Mode::Off);
+	// Labels wrap instead of ending in "..." (Zach 10-27: "i cant read
+	// this - it gets cut off").
 	const auto addMode = [&](Mode value, const QString &title) {
 		container->add(
 			object_ptr<Ui::Radioenum<Mode>>(
@@ -114,7 +116,7 @@ void SettingsBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 				value,
 				title,
 				st::settingsPrivacyOption),
-			st::settingsSendTypePadding);
+			st::settingsSendTypePadding)->setAllowTextLines();
 	};
 	addMode(Mode::On, u"On: reacts and replies as you"_q);
 	addMode(Mode::Off, u"Off: you answer everything yourself"_q);
@@ -132,6 +134,7 @@ void SettingsBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 				title,
 				st::settingsPrivacyOption),
 			st::settingsSendTypePadding));
+		paceRows.back()->setAllowTextLines();
 	};
 	addPace(Pace::LikeMe, u"Like me: your own timing, reacts in about 2 min"_q);
 	addPace(Pace::Calmer, u"Calmer: reacts in about 6 min, answers about a third"_q);
