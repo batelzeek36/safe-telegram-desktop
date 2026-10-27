@@ -136,9 +136,9 @@ void SettingsBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 			st::settingsSendTypePadding));
 		paceRows.back()->setAllowTextLines();
 	};
-	addPace(Pace::LikeMe, u"Like me: your own timing, reacts in about 2 min"_q);
-	addPace(Pace::Calmer, u"Calmer: reacts in about 6 min, answers about a third"_q);
-	addPace(Pace::Slow, u"Slow: mostly reactions, about 15 min after"_q);
+	addPace(Pace::LikeMe, u"Like me: reacts within 1 min, answers within 3"_q);
+	addPace(Pace::Calmer, u"Calmer: reacts within 3 min, answers about a third within 6"_q);
+	addPace(Pace::Slow, u"Slow: mostly reactions within 10 min, answers within 15"_q);
 	const auto dimPace = [=](Mode value) {
 		for (const auto row : paceRows) {
 			row->setDisabled(value == Mode::Off);
