@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
+#include "safe/safe_caps.h"
 #include "safe/safe_auto_box.h"
 
 #include "safe/safe_calm_box.h"
@@ -1945,6 +1946,7 @@ void Filler::fillHistoryActions() {
 			controller->show(Box(Safe::Calm::ChatRuleBox, peer));
 		}, &st::menuIconChatBubble);
 		Safe::Auto::AddMenuAction(controller, peer, _addAction);
+		Safe::Caps::AddMenuAction(controller, peer, _addAction);
 	}
 	addCreateTopic();
 	addInfo();

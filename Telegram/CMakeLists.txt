@@ -1887,6 +1887,10 @@ PRIVATE
     safe/safe_auto_state.h
     safe/safe_auto_view.cpp
     safe/safe_auto_view.h
+    safe/safe_caps.cpp
+    safe/safe_caps.h
+    safe/safe_caps_core.cpp
+    safe/safe_caps_core.h
     safe/safe_bots.cpp
     safe/safe_bots.h
     safe/safe_calm.cpp

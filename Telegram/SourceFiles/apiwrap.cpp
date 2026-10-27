@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_gate.h"
 #include "safe/safe_sensitive.h"
 #include "safe/safe_calm_queue.h"
+#include "safe/safe_caps.h"
 
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
@@ -4809,6 +4810,7 @@ void ApiWrap::sendMessage(
 		history,
 		_session->user()).flags;
 	TextUtilities::PrepareForSending(left, prepareFlags);
+	Safe::Caps::Apply(peer->id, left);
 
 	HistoryItem *lastMessage = nullptr;
 
