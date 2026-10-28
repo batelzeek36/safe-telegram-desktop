@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_main_menu.h"
 #include "safe/safe_identity.h"
+#include "safe/safe_circles_settings.h"
 
 #include "apiwrap.h"
 #include "base/event_filter.h"
@@ -723,6 +724,7 @@ void MainMenu::setupMenu() {
 		)->setClickedCallback([=] {
 			controller->showPeerHistory(controller->session().user());
 		});
+		Safe::Circles::AddMainMenuRow(_menu, controller);
 		const auto session = &controller->session();
 		const auto wallet = _menu->add(
 			object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(

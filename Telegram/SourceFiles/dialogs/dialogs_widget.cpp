@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_widget.h"
 #include "safe/look_top.h"
 #include "safe/look_tabs.h"
+#include "safe/safe_circles.h"
 #include "safe/safe_policy.h"
 
 #include "base/call_delayed.h"
@@ -816,6 +817,49 @@ Widget::Widget(
 
 	setupFrozenAccountBar();
 	setupTopBarSuggestions();
+	if (_layout == Layout::Main) {
+		// Safe (d35): Crown and Orbit, the chat circles over this list.
+		Safe::Circles::Attach(this, controller, {
+			.shown = [=] {
+				return !_openedFolder
+					&& !_openedForum
+					&& !_openedCommunity
+					&& !_childList
+					&& !_suggestions
+					&& _hidingSuggestions.empty()
+					&& _searchState.empty()
+					&& (_inner->state() == WidgetState::Default)
+					&& (width() >= st::columnMinimalWidthLeft);
+			},
+			.area = [=] {
+				const auto scroll = _scroll->geometry();
+				const auto top = _chatFilters
+					? std::min(_chatFilters->y(), scroll.y())
+					: scroll.y();
+				return QRect(
+					0,
+					top,
+					width(),
+					scroll.y() + scroll.height() - top);
+			},
+			.hideFolderTabs = [=](bool hidden) {
+				if (_chatFilters) {
+					_chatFilters->setVisible(!hidden && !_openedForum);
+				}
+			},
+			.raiseOverlays = [=] {
+				if (_connecting) {
+					_connecting->raise();
+				}
+			},
+			.open = [=](not_null<History*> history) {
+				chosenRow({
+					.key = Dialogs::Key(history),
+					.message = Data::UnreadMessagePosition,
+				});
+			},
+		});
+	}
 #ifdef _DEBUG
 	setupTopBarSuggestionTestHotkeys();
 #endif // _DEBUG
@@ -1998,6 +2042,7 @@ void Widget::updateControlsVisibility(bool fast) {
 		setInnerFocus();
 	}
 	updateLockUnlockPosition();
+	Safe::Circles::Sync(this);
 }
 
 void Widget::updateLockUnlockPosition() {
@@ -4322,6 +4367,7 @@ bool Widget::applySearchState(SearchState state) {
 	}
 	updateForceDisplayWide();
 	applySearchUpdate();
+	Safe::Circles::Sync(this);
 	return true;
 }
 
@@ -4756,6 +4802,7 @@ void Widget::updateControlsGeometry() {
 		if (scrollHeight != wasScrollHeight) {
 			controller()->floatPlayerAreaUpdated();
 		}
+		Safe::Circles::Sync(this);
 	};
 	_updateScrollGeometryCached();
 
@@ -4799,6 +4846,9 @@ RowDescriptor Widget::resolveChatPrevious(RowDescriptor from) const {
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
+	if (!_searchHasFocus && Safe::Circles::HandleKey(this, e)) {
+		return;
+	}
 	if (e->key() == Qt::Key_Escape) {
 		escape();
 		//if (_openedForum) {

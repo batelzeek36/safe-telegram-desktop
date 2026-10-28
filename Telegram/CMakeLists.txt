@@ -1942,6 +1942,22 @@ PRIVATE
     safe/safe_calm_summary.h
     safe/safe_calm_voice.cpp
     safe/safe_calm_voice.h
+    safe/safe_circles.cpp
+    safe/safe_circles.h
+    safe/safe_circles_core.cpp
+    safe/safe_circles_core.h
+    safe/safe_circles_crown.cpp
+    safe/safe_circles_dial.cpp
+    safe/safe_circles_dial.h
+    safe/safe_circles_model.cpp
+    safe/safe_circles_model.h
+    safe/safe_circles_orbit.cpp
+    safe/safe_circles_paint.cpp
+    safe/safe_circles_paint.h
+    safe/safe_circles_settings.cpp
+    safe/safe_circles_settings.h
+    safe/safe_circles_view.cpp
+    safe/safe_circles_view.h
     safe/safe_discovery.cpp
     safe/safe_discovery.h
     safe/safe_drop.cpp

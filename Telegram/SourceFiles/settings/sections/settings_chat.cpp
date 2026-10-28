@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_chat.h"
 #include "safe/safe_calm_box.h"
+#include "safe/safe_circles_settings.h"
 #include "safe/safe_policy.h"
 
 #include "settings/settings_common_session.h"
@@ -927,6 +928,31 @@ void BuildChatBackgroundSection(SectionBuilder &builder) {
 	});
 }
 
+void BuildCirclesSection(SectionBuilder &builder) {
+	const auto controller = builder.controller();
+
+	builder.add([controller](const WidgetContext &ctx) {
+		if (controller) {
+			Safe::Circles::SetupSettingsSection(
+				controller,
+				ctx.container.get());
+		}
+		return SectionBuilder::WidgetToAdd{};
+	}, [] {
+		return SearchEntry{
+			.id = u"chat/circles"_q,
+			.title = u"Chat list"_q,
+			.keywords = {
+				u"circles"_q,
+				u"crown"_q,
+				u"orbit"_q,
+				u"dial"_q,
+				u"list"_q,
+			},
+		};
+	});
+}
+
 void BuildChatListQuickActionSection(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 
@@ -1322,6 +1348,7 @@ void BuildChatSectionContent(SectionBuilder &builder) {
 	BuildThemeSettingsSection(builder);
 	BuildCloudThemesSection(builder);
 	BuildChatBackgroundSection(builder);
+	BuildCirclesSection(builder);
 	BuildChatListQuickActionSection(builder);
 	BuildStickersEmojiSection(builder);
 	BuildMessagesSection(builder);
