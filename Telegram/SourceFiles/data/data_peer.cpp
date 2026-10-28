@@ -64,6 +64,36 @@ constexpr auto kUserpicSize = 160;
 
 using UpdateFlag = Data::PeerUpdate::Flag;
 
+// Safe (d35): Telegram's own chat (777000) shows the app's logo until its
+// photo has loaded. The logo only stands in: a userpic cache is remade
+// when its size or shape changes, never when the picture under it does, so
+// a cached stand-in outlived the photo (the list kept JADELEAF's shield
+// for Telegram's chat while the chat circles showed the chat's photo).
+constexpr auto kStandInKeyMask = uint64(0x57A2D1A057A2D1A0ULL);
+
+[[nodiscard]] QImage *NotificationsStandIn() {
+	static auto result = Window::LogoNoMargin().scaledToWidth(
+		kUserpicSize,
+		Qt::SmoothTransformation);
+	return &result;
+}
+
+// The stand-in drawn at a size and shape, kept apart from any chat's view
+// (made once for each size it is drawn at: the list, the chat's top bar).
+[[nodiscard]] QImage NotificationsStandInFrame(
+		int size,
+		Ui::PeerUserpicShape shape) {
+	static auto frames = base::flat_map<int, Ui::PeerUserpicView>();
+	auto &view = frames[size * 4 + static_cast<int>(shape)];
+	Ui::ValidateUserpicCache(
+		view,
+		NotificationsStandIn(),
+		nullptr,
+		size,
+		shape);
+	return view.cached;
+}
+
 [[nodiscard]] const std::vector<QString> &IgnoredReasons(
 		not_null<Main::Session*> session) {
 	if (Safe::SensitiveLocked()) {
@@ -450,10 +480,7 @@ QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
 		_userpicEmpty = nullptr;
 		return image;
 	} else if (isNotificationsUser()) {
-		static auto result = Window::LogoNoMargin().scaledToWidth(
-			kUserpicSize,
-			Qt::SmoothTransformation);
-		return &result;
+		return NotificationsStandIn();
 	}
 	return nullptr;
 }
@@ -474,6 +501,14 @@ void PeerData::paintUserpic(
 	const auto ratio = style::DevicePixelRatio();
 	if (context.shape == Ui::PeerUserpicShape::Auto) {
 		context.shape = userpicShape();
+	}
+	if (cloud == NotificationsStandIn()) {
+		// Safe (d35): drawn, never cached, so the photo replaces it.
+		view.cached = QImage();
+		p.drawImage(
+			QRect(context.position, QSize(size, size)),
+			NotificationsStandInFrame(size * ratio, context.shape));
+		return;
 	}
 	Ui::ValidateUserpicCache(
 		view,
@@ -513,9 +548,17 @@ InMemoryKey PeerData::userpicUniqueKey(Ui::PeerUserpicView &view) const {
 	if (const auto broadcast = monoforumBroadcast()) {
 		return broadcast->userpicUniqueKey(view);
 	}
-	return useEmptyUserpic(view)
-		? ensureEmptyUserpic()->uniqueKey()
-		: Safe::UserpicKey(this, inMemoryKey(_userpic.location()));
+	const auto cloud = userpicCloudImage(view);
+	if (!cloud) {
+		return ensureEmptyUserpic()->uniqueKey();
+	}
+	auto result = Safe::UserpicKey(this, inMemoryKey(_userpic.location()));
+	if (cloud == NotificationsStandIn()) {
+		// Safe (d35): the stand-in is another picture than the photo it
+		// stands in for, so caches keyed by this remake it once that loads.
+		result.first ^= kStandInKeyMask;
+	}
+	return result;
 }
 
 QImage PeerData::GenerateUserpicImage(
