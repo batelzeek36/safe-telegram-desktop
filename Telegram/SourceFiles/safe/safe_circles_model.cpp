@@ -142,6 +142,27 @@ void ShortenLinks(TextWithEntities &text) {
 	return text;
 }
 
+// The text without its direction marks and spaces at either end (a preview
+// comes wrapped in them, st::wrap_rtl), for comparing what shows.
+[[nodiscard]] QString Visible(const QString &text) {
+	const auto mark = [](QChar c) {
+		const auto u = c.unicode();
+		return c.isSpace()
+			|| (u == 0x200E) || (u == 0x200F) || (u == 0x061C)
+			|| (u >= 0x202A && u <= 0x202E)
+			|| (u >= 0x2066 && u <= 0x2069);
+	};
+	auto from = 0;
+	auto till = int(text.size());
+	while (from < till && mark(text[from])) {
+		++from;
+	}
+	while (till > from && mark(text[till - 1])) {
+		--till;
+	}
+	return text.mid(from, till - from);
+}
+
 // A topic's name as the chat list's topics line shows it: its icon (the
 // emoji the custom icon stands for, once known), or "#" for General.
 [[nodiscard]] QString TopicTitle(not_null<Data::ForumTopic*> topic) {
@@ -177,8 +198,9 @@ void ShortenLinks(TextWithEntities &text) {
 		}).text)
 		: TextWithEntities();
 	const auto title = topic ? TopicTitle(topic) : QString();
+	const auto opening = Visible(message.text);
 	const auto opens = [&](const QString &name) {
-		return !name.isEmpty() && message.text.trimmed().startsWith(name);
+		return !name.isEmpty() && opening.startsWith(Visible(name));
 	};
 	if (title.isEmpty() || opens(title) || opens(topic->title())) {
 		// A message that opens with its topic's name says where it is
