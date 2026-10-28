@@ -53,6 +53,20 @@ constexpr auto kPreviewLimit = 200;
 		: session->data().chatsList();
 }
 
+// What a message line hides, as the chat list's row hides it
+// (Dialogs::Ui::MessageView::prepare): a login code from Telegram or a
+// verification service is a spoiler (dotted out by Plain). The dial's own
+// choices on top: no media thumbnails, and an album says "3 photos".
+[[nodiscard]] HistoryView::ToPreviewOptions PreviewOptions(bool hideSender) {
+	return {
+		.hideSender = hideSender,
+		.generateImages = false,
+		.ignoreGroup = false,
+		.ignoreTopic = true,
+		.spoilerLoginCode = true,
+	};
+}
+
 [[nodiscard]] bool KeepEntity(EntityType type) {
 	switch (type) {
 	case EntityType::Colorized:
@@ -192,10 +206,7 @@ void ShortenLinks(TextWithEntities &text) {
 		item = topic->chatListMessage();
 	}
 	auto message = item
-		? Plain(item->toPreview({
-			.hideSender = true,
-			.generateImages = false,
-		}).text)
+		? Plain(item->toPreview(PreviewOptions(true)).text)
 		: TextWithEntities();
 	const auto title = topic ? TopicTitle(topic) : QString();
 	const auto opening = Visible(message.text);
@@ -491,10 +502,7 @@ TextWithEntities Model::previewText(not_null<History*> history) const {
 	} else if (!item) {
 		return {};
 	}
-	return Plain(item->toPreview({
-		.generateImages = false,
-		.ignoreGroup = false,
-	}).text);
+	return Plain(item->toPreview(PreviewOptions(false)).text);
 }
 
 Model::Preview &Model::previewEntry(not_null<History*> history) {
