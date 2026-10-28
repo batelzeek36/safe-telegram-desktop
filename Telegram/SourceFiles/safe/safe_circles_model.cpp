@@ -9,7 +9,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "base/unixtime.h"
 #include "data/data_changes.h"
+#include "data/data_channel.h"
 #include "data/data_chat_filters.h"
+#include "data/data_community.h"
+#include "data/data_document.h"
+#include "data/data_forum.h"
+#include "data/data_forum_topic.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "data/data_unread_value.h"
@@ -24,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_circles_core.h"
 #include "ui/empty_userpic.h"
 #include "ui/text/format_values.h"
+#include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
 
 #include "styles/style_basic.h"
@@ -134,6 +140,67 @@ void ShortenLinks(TextWithEntities &text) {
 		text.entities = std::move(inside);
 	}
 	return text;
+}
+
+// A topic's name as the chat list's topics line shows it: its icon (the
+// emoji the custom icon stands for, once known), or "#" for General.
+[[nodiscard]] QString TopicTitle(not_null<Data::ForumTopic*> topic) {
+	const auto title = topic->title();
+	if (topic->isGeneral()) {
+		return u"# "_q + title;
+	} else if (const auto id = topic->iconId()) {
+		const auto sticker = topic->owner().document(id)->sticker();
+		if (sticker && !sticker->alt.isEmpty() && !title.startsWith(sticker->alt)) {
+			return sticker->alt + QChar(' ') + title;
+		}
+	}
+	return title;
+}
+
+// A forum's line, as its row in the chat list reads it: the newest topic (its
+// last message's) and that message, "🌊 her pulse: see you at the gate".
+[[nodiscard]] TextWithEntities ForumLine(
+		not_null<Data::Forum*> forum,
+		HistoryItem *item) {
+	auto topic = item ? item->topic() : nullptr;
+	if (!topic && !forum->recentTopics().empty()) {
+		topic = forum->recentTopics().front();
+	}
+	if (topic && (!item || item->topic() != topic)) {
+		topic->chatListPreloadData();
+		item = topic->chatListMessage();
+	}
+	auto message = item
+		? Plain(item->toPreview({
+			.hideSender = true,
+			.generateImages = false,
+		}).text)
+		: TextWithEntities();
+	const auto title = topic ? TopicTitle(topic) : QString();
+	const auto opens = [&](const QString &name) {
+		return !name.isEmpty() && message.text.trimmed().startsWith(name);
+	};
+	if (title.isEmpty() || opens(title) || opens(topic->title())) {
+		// A message that opens with its topic's name says where it is
+		// ("🌊 her pulse · Oct 27…", a report posted in "🌊 her pulse").
+		return message;
+	}
+	auto result = Plain(Ui::Text::Colorized(title + QChar(':')));
+	if (!message.text.isEmpty()) {
+		result.append(' ').append(std::move(message));
+	}
+	return result;
+}
+
+// A community's line, its row's in the chat list: the names of its chats with
+// the newest messages ("🌊 her pulse, 💗 her leads and 2 more chats").
+[[nodiscard]] TextWithEntities CommunityLine(
+		not_null<Data::CommunityInfo*> info) {
+	if (info->lastHistories().empty()) {
+		return {};
+	}
+	info->validateListEntryCache();
+	return Plain(info->listEntryCache().toTextWithEntities());
 }
 
 } // namespace
@@ -392,7 +459,14 @@ const Ui::Text::String &Model::shortName(not_null<History*> history) {
 
 TextWithEntities Model::previewText(not_null<History*> history) const {
 	const auto item = history->chatListMessage();
-	if (!item) {
+	const auto channel = history->peer->asChannel();
+	if (const auto forum = history->peer->forum()) {
+		return ForumLine(forum, item);
+	} else if (const auto info = (channel && channel->isCommunity())
+			? channel->communityInfo()
+			: nullptr) {
+		return CommunityLine(info);
+	} else if (!item) {
 		return {};
 	}
 	return Plain(item->toPreview({
@@ -403,6 +477,9 @@ TextWithEntities Model::previewText(not_null<History*> history) const {
 
 Model::Preview &Model::previewEntry(not_null<History*> history) {
 	auto &entry = _previews[history];
+	// As the list's row does before it reads the line: a chat whose last
+	// message is not known yet (a forum the list never painted) asks for it.
+	history->chatListPreloadData();
 	const auto item = history->chatListMessage();
 	if (entry.item != item || entry.generation != _generation) {
 		entry.item = item;
