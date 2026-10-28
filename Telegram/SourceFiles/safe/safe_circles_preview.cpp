@@ -22,8 +22,9 @@ namespace {
 const auto kEllipsis = QString(QChar(0x2026));
 // A one-line label cut between words keeps at least this share of its room.
 constexpr auto kWordCutShare = 0.6;
-// A word cut to fill a line after other words shows this many letters.
-constexpr auto kCutLettersMin = 3;
+// The hub's time row is one step quieter than the message over it, so a row
+// tucked up under the message never reads as its third line.
+constexpr auto kHubTimeQuiet = 0.3;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -105,6 +106,51 @@ constexpr auto kCutLettersMin = 3;
 	return result;
 }
 
+// Where `shown` letters of the word starting at `from` end (before the
+// next letter), never between a surrogate pair.
+[[nodiscard]] int AfterLetters(const QString &text, int from, int till, int shown) {
+	auto i = from;
+	auto counted = 0;
+	while (i < till && counted < shown) {
+		counted += text[i].isLetterOrNumber() ? 1 : 0;
+		++i;
+	}
+	if (i > from && i < int(text.size()) && text[i].isLowSurrogate()) {
+		++i;
+	}
+	return i;
+}
+
+// The labels of a message line (IsLabelRun: "Voice message", "Photo"), each
+// a colored run: the words inside one share its number.
+[[nodiscard]] std::vector<int> LabelsOf(
+		const TextWithEntities &text,
+		const std::vector<std::pair<int, int>> &ranges) {
+	auto result = std::vector<int>(ranges.size(), 0);
+	auto number = 0;
+	for (const auto &entity : text.entities) {
+		if (entity.type() != EntityType::Colorized) {
+			continue;
+		}
+		const auto from = std::clamp(entity.offset(), 0, int(text.text.size()));
+		const auto till = std::clamp(
+			entity.offset() + entity.length(),
+			from,
+			int(text.text.size()));
+		if (!IsLabelRun(Utf16(text.text).substr(from, till - from))) {
+			continue;
+		}
+		++number;
+		for (auto i = 0; i != int(ranges.size()); ++i) {
+			const auto [wordFrom, wordTill] = ranges[i];
+			if (wordFrom < till && wordTill > from) {
+				result[i] = number;
+			}
+		}
+	}
+	return result;
+}
+
 } // namespace
 
 MeasuredWords MeasureWords(
@@ -119,7 +165,9 @@ MeasuredWords MeasureWords(
 	const auto direction = result.direction;
 	const auto view = Utf16(s);
 	result.ranges = SplitWords(view);
-	for (const auto &[i, j] : result.ranges) {
+	const auto labels = LabelsOf(text, result.ranges);
+	for (auto k = 0; k != int(result.ranges.size()); ++k) {
+		const auto [i, j] = result.ranges[k];
 		const auto width = WidthOf(text, st, i, j, direction);
 		const auto end = TrimmedEnd(s, i, j);
 		const auto separator = SeparatorStart(view, i, j);
@@ -133,6 +181,7 @@ MeasuredWords MeasureWords(
 			.bare = (separator < j)
 				? WidthOf(text, st, i, separator, direction)
 				: 0,
+			.label = labels[k],
 		});
 	}
 	result.ellipsis = st.font->width(kEllipsis);
@@ -178,11 +227,15 @@ std::vector<Ui::Text::String> FittedLines(
 			if (end > wordFrom && end < int(s.size()) && s[end].isLowSurrogate()) {
 				--end;
 			}
-			if (wordFrom > from && Letters(s, wordFrom, end) < kCutLettersMin) {
-				// A word filling a line after others shows a few letters at
-				// least, else the line stops after the words before it.
-				end = wordFrom;
-			}
+			// The cut drops a few letters at least and, after other words,
+			// shows a few; else the line stops after the words before it.
+			const auto shown = CutShown(
+				Letters(s, wordFrom, wordTill),
+				Letters(s, wordFrom, end),
+				Letters(s, from, wordFrom) > 0);
+			end = shown
+				? std::min(end, AfterLetters(s, wordFrom, wordTill, shown))
+				: wordFrom;
 			result.push_back(Line(
 				st,
 				Cut(text, from, TrimmedEnd(s, from, end)),
@@ -230,21 +283,36 @@ const Ui::Text::String &LineCache::line(
 		return entry.line;
 	}
 	const auto measured = MeasureWords(text, st);
+	const auto used = [&](const FitLine &line) {
+		auto result = measured.ellipsis;
+		for (auto i = line.from; i != line.till; ++i) {
+			const auto &word = measured.words[i];
+			result += (i + 1 == line.till) ? word.trimmed : (word.width + word.space);
+		}
+		return result;
+	};
 	auto fit = FitWords(measured.words, { width }, measured.ellipsis);
 	if (!fit.valid) {
 		fit = FitWords(measured.words, { width }, measured.ellipsis, 0);
 	} else if (!fit.lines.empty()
 		&& !fit.lines.front().cutWord
-		&& fit.lines.front().till < int(measured.words.size())) {
+		&& fit.lines.front().till < int(measured.words.size())
+		&& used(fit.lines.front()) < width * kWordCutShare) {
 		// A label cut after its first short word would say almost nothing
-		// (an emoji and the ellipsis): it is cut inside the next word.
-		const auto &line = fit.lines.front();
-		auto used = measured.ellipsis;
-		for (auto i = line.from; i != line.till; ++i) {
-			const auto &word = measured.words[i];
-			used += (i + 1 == line.till) ? word.trimmed : (word.width + word.space);
-		}
-		if (used < width * kWordCutShare) {
+		// (an emoji and the ellipsis). Whole words a little over the room
+		// come first ("🌺 Amber's…", the caller finds the slack), then a cut
+		// inside the next word ("🌺 Amb…"), never inside a Telegram label.
+		const auto line = fit.lines.front();
+		const auto roomier = (slack > 0)
+			? FitWords(measured.words, { width + slack }, measured.ellipsis)
+			: WordFit{ .valid = false };
+		if (roomier.valid
+			&& !roomier.lines.empty()
+			&& !roomier.lines.front().cutWord
+			&& roomier.lines.front().till > line.till
+			&& used(roomier.lines.front()) >= width * kWordCutShare) {
+			fit = roomier;
+		} else if (!measured.words[line.till].label) {
 			fit.lines = { FitLine{ line.from, line.till + 1, true, true } };
 		}
 	}
@@ -256,7 +324,8 @@ const Ui::Text::String &LineCache::line(
 int HubPreview::prepare(
 		Model &model,
 		not_null<History*> history,
-		int radius) {
+		int radius,
+		int reach) {
 	const auto name = model.name(history).toString();
 	const auto &marked = model.previewMarked(history);
 	const auto time = model.time(history);
@@ -269,6 +338,7 @@ int HubPreview::prepare(
 	auto &slot = _slots[index];
 	if (slot.history == history
 		&& slot.radius == radius
+		&& slot.reach == reach
 		&& slot.name == name
 		&& slot.text == marked.text
 		&& slot.time == time) {
@@ -276,6 +346,7 @@ int HubPreview::prepare(
 	}
 	slot.history = history;
 	slot.radius = radius;
+	slot.reach = reach;
 	slot.name = name;
 	slot.text = marked.text;
 	slot.time = time;
@@ -307,6 +378,7 @@ int HubPreview::prepare(
 		.gapText = S(2),
 		.gapMeta = S(4),
 		.gapMetaLeast = 0,
+		.reach = double(reach),
 	};
 	// The time row is the time alone: the face wears the unread badge.
 	if (timeWidth) {
@@ -329,8 +401,13 @@ void HubPreview::paint(
 		not_null<History*> history,
 		QPointF center,
 		double radius,
+		double reach,
 		double alpha) {
-	const auto &slot = _slots[prepare(model, history, int(std::floor(radius)))];
+	const auto &slot = _slots[prepare(
+		model,
+		history,
+		int(std::floor(radius)),
+		int(std::floor(reach)))];
 	if (alpha <= 0.01) {
 		return;
 	}
@@ -371,7 +448,7 @@ void HubPreview::paint(
 	if (plan.meta >= 0 && slot.timeWidth) {
 		const auto &font = st::circlesHubTimeFont;
 		p.setFont(font);
-		p.setPen(st::dialogsDateFg);
+		p.setPen(Mix(st::dialogsDateFg->c, SurfaceColor(), kHubTimeQuiet));
 		p.drawText(
 			QPointF(
 				center.x() - slot.timeWidth / 2.,

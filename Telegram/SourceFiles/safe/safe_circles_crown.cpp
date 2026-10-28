@@ -25,6 +25,7 @@ constexpr auto kShade = 0.16;
 constexpr auto kNameReach = 1.5; // pills on the chat either side
 constexpr auto kHubLeafOpacity = 0.12;
 constexpr auto kHubPadding = 5; // the hub's words keep this far from its edge
+constexpr auto kHubPaddingLeast = 3; // when 5 leaves the message out
 constexpr auto kFocusClear = 9; // a name keeps this far from the focus ring
 constexpr auto kTickClear = 3; // and the bezel's ticks this far from a name
 // The focus ring and the faces either side, a badge and the bezel's ticks:
@@ -278,6 +279,7 @@ void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
 				not_null<History*>(old),
 				_center,
 				_hub - S(kHubPadding),
+				_hub - S(kHubPaddingLeast),
 				frame.previewOldAlpha);
 		}
 		_preview.paint(
@@ -286,6 +288,7 @@ void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
 			not_null<History*>(history),
 			_center,
 			_hub - S(kHubPadding),
+			_hub - S(kHubPaddingLeast),
 			frame.previewAlpha);
 	} else {
 		PaintLeafAt(

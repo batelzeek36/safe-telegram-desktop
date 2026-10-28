@@ -77,7 +77,8 @@ private:
 // up to two) and time (11 pt; the unread badge stays on the face, never
 // repeated here), each line as wide as the circle `radius` round `center`
 // is at its height. Two chats' layouts are kept, so one can fade out while
-// the next fades in.
+// the next fades in. The words may reach out to `reach` when `radius`
+// would cut the name or leave the message out (HubInput::reach).
 class HubPreview final {
 public:
 	void paint(
@@ -86,6 +87,7 @@ public:
 		not_null<History*> history,
 		QPointF center,
 		double radius,
+		double reach,
 		double alpha);
 
 private:
@@ -95,6 +97,7 @@ private:
 		QString text;
 		QString time;
 		int radius = -1;
+		int reach = -1;
 
 		HubPlan plan;
 		std::vector<Ui::Text::String> nameLines;
@@ -106,7 +109,8 @@ private:
 	[[nodiscard]] int prepare(
 		Model &model,
 		not_null<History*> history,
-		int radius);
+		int radius,
+		int reach);
 
 	std::array<Prepared, 2> _slots;
 	int _recent = 0;

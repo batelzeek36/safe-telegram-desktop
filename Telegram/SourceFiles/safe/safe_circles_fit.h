@@ -25,6 +25,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // a lone dash stays with the word before it. Pass 4: the time row is never
 // given up for the message ("TRANSMIT - / STAY… / Voice mes…" lost its
 // time): the message shortens first, and the time row may tuck up under it.
+// Pass 5: a word cut inside drops kCutDropMin letters at least (never
+// "throug…"), and Telegram's own labels ("Voice message", "Photo", "GIF")
+// show whole or not at all (never "Voice mess…").
 // Plain C++20, no Qt: tools/desktopcheck checks it.
 namespace Safe::Circles {
 
@@ -57,12 +60,39 @@ inline constexpr double kMessageFillShare = 0.6;
 	int from,
 	int till);
 
+// Whether a colored run of a message line is one of Telegram's own labels
+// (what a message is when it has no words: "Photo", "Voice message",
+// "Sticker 😀", "3 photos"): a few words, no sender ("You:", "Amberelle:"
+// end in a colon) and no link or address. A label is never cut: it shows
+// whole or not at all.
+inline constexpr int kLabelWordsMax = 3;
+inline constexpr int kLabelLengthMax = 24; // UTF-16 units, spaces trimmed
+[[nodiscard]] bool IsLabelRun(std::u16string_view run);
+
+// A word cut inside drops this many letters at least ("sent throug…" says
+// "through" was nearly there and was not shown), and after other words it
+// shows kCutLettersMin at least.
+inline constexpr int kCutDropMin = 3;
+inline constexpr int kCutLettersMin = 3;
+
+// How many of its `letters` letters a word cut at the end of a line shows
+// when `fits` of them fit before the ellipsis: `fits` when that drops
+// kCutDropMin or more (and, after words with letters, shows kCutLettersMin
+// or more); else after such words none (0: the line ends on them, "sent…");
+// a word that starts its line, or follows only marks and emoji ("🌿
+// Autopilot"), is cut deeper instead, to drop kCutDropMin ("🌿 Autopi…").
+[[nodiscard]] int CutShown(int letters, int fits, bool lettersBefore);
+
 struct FitWord {
 	int width = 0; // the word with its punctuation
 	int trimmed = 0; // without trailing punctuation (an ellipsis follows)
 	int space = 0; // the space between it and the next word
 	int letters = 0; // letters and digits, for the "never cut" rule
 	int bare = 0; // without its separator (SeparatorStart), 0 = none
+	// The label (IsLabelRun) it belongs to, the same number for each of its
+	// words; 0 = none. A label is never cut inside, never ended inside with
+	// an ellipsis, and starts a new line rather than break across one.
+	int label = 0;
 };
 
 struct FitLine {
@@ -87,6 +117,8 @@ struct WordFit {
 // letters or more; a shorter one makes the fit invalid. With `fillShare`,
 // a last line whose whole words and ellipsis take less than that share of
 // it is cut inside the next word instead, when that word may be cut.
+// A label's words (FitWord::label) are never cut and never split by the
+// ellipsis, whatever `wholeLetters` says.
 [[nodiscard]] WordFit FitWords(
 	const std::vector<FitWord> &words,
 	const std::vector<int> &widths,
@@ -130,6 +162,11 @@ struct HubInput {
 	// Above the time row when the usual gap leaves no room for it or for a
 	// message line: the row tucks up into the message's leading (-1 = no).
 	int gapMetaLeast = -1;
+	// The most room the words may take (the hub less a thinner padding),
+	// only when `radius` would cut the name or leave the message out
+	// ("🌺 Amber's" / "Garden Gate" / the time had no room for a line of
+	// Amber's community); 0 = none.
+	double reach = 0.;
 };
 
 struct HubPlan {

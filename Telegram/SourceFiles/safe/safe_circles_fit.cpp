@@ -80,6 +80,27 @@ namespace {
 	return (c >= u'\u2010' && c <= u'\u2015');
 }
 
+// A break before word `at` falls inside a label (its words either side).
+[[nodiscard]] bool InsideLabel(const std::vector<FitWord> &words, int at) {
+	return (at > 0)
+		&& (at < int(words.size()))
+		&& (words[at].label != 0)
+		&& (words[at - 1].label == words[at].label);
+}
+
+// The first word of the label a break before `at` falls inside, not before
+// `from`.
+[[nodiscard]] int LabelFrom(
+		const std::vector<FitWord> &words,
+		int from,
+		int at) {
+	const auto label = words[at].label;
+	while (at > from && words[at - 1].label == label) {
+		--at;
+	}
+	return at;
+}
+
 struct Candidate {
 	HubPlan plan;
 	// Compared as a whole: the name whole first, then as much of it as
@@ -224,6 +245,14 @@ struct Candidate {
 	return result;
 }
 
+[[nodiscard]] std::optional<Candidate> Choose(const HubInput &input) {
+	if (auto best = Best(input, true)) {
+		return best;
+	}
+	// Nothing keeps every short word whole: cut words rather than show none.
+	return Best(input, false);
+}
+
 } // namespace
 
 std::vector<std::pair<int, int>> SplitWords(std::u16string_view text) {
@@ -266,6 +295,46 @@ int SeparatorStart(std::u16string_view text, int from, int till) {
 		--i;
 	}
 	return (i > from) ? i : till;
+}
+
+bool IsLabelRun(std::u16string_view run) {
+	auto from = std::size_t(0);
+	auto till = run.size();
+	while (from < till && IsSpace(run[from])) {
+		++from;
+	}
+	while (till > from && IsSpace(run[till - 1])) {
+		--till;
+	}
+	if (from == till || int(till - from) > kLabelLengthMax) {
+		return false;
+	}
+	auto words = 0;
+	auto inWord = false;
+	for (auto i = from; i != till; ++i) {
+		switch (run[i]) {
+		case u':': case u'：': case u'.': case u'/': case u'@':
+			return false;
+		}
+		const auto space = IsSpace(run[i]);
+		if (!space && !inWord) {
+			++words;
+		}
+		inWord = !space;
+	}
+	return (words <= kLabelWordsMax);
+}
+
+int CutShown(int letters, int fits, bool lettersBefore) {
+	letters = std::max(letters, 0);
+	fits = std::clamp(fits, 0, letters);
+	const auto most = letters - kCutDropMin;
+	if (fits <= most && (!lettersBefore || fits >= kCutLettersMin)) {
+		return fits;
+	} else if (lettersBefore) {
+		return 0;
+	}
+	return std::max(std::min(fits, most), std::min(fits, 1));
 }
 
 double ChordWidth(double radius, double top, double bottom) {
@@ -318,6 +387,13 @@ WordFit FitWords(
 			if (words[index].bare > 0 && used + gap + words[index].bare <= width) {
 				++index;
 			}
+			// A label goes down to the next line whole ("Voice" / "message"
+			// only when it is wider than a line).
+			if (InsideLabel(words, index)) {
+				if (const auto start = LabelFrom(words, from, index); start > from) {
+					index = start;
+				}
+			}
 			if (index > from) {
 				const auto bare = (words[index - 1].bare > 0);
 				result.lines.push_back({ from, index, false, false, bare });
@@ -337,11 +413,15 @@ WordFit FitWords(
 			&& Span(words, from, keep, true) + ellipsis > width) {
 			--keep;
 		}
+		if (InsideLabel(words, keep)) {
+			keep = LabelFrom(words, from, keep);
+		}
 		if (keep > from) {
 			// Stopping a short way into the line says little ("Pele…"):
 			// the next word, when it may be cut, fills the line instead.
 			const auto fill = (fillShare > 0.)
 				&& (keep < count)
+				&& !words[keep].label
 				&& (words[keep].letters >= wholeLetters)
 				&& (Span(words, from, keep, true) + ellipsis
 					< width * fillShare);
@@ -349,7 +429,7 @@ WordFit FitWords(
 			result.shown += keep - from;
 			return result;
 		}
-		if (words[from].letters < wholeLetters) {
+		if (words[from].label || words[from].letters < wholeLetters) {
 			result.valid = false;
 			return result;
 		}
@@ -360,14 +440,31 @@ WordFit FitWords(
 }
 
 HubPlan PlanHub(const HubInput &input) {
-	if (auto best = Best(input, true)) {
-		return std::move(best->plan);
+	auto best = Choose(input);
+	const auto cramped = !best
+		|| !best->plan.name.whole
+		|| (best->plan.text.lines.empty() && !input.text.words.empty());
+	if (cramped && input.reach > input.radius) {
+		auto roomy = input;
+		roomy.radius = input.reach;
+		roomy.reach = 0.;
+		// Only for more of the name or a message line, never to move the
+		// words about in a hub they already fit.
+		const auto key = [](const Candidate &candidate) {
+			const auto &score = candidate.score;
+			return std::make_tuple(
+				std::get<0>(score),
+				std::get<1>(score),
+				std::get<2>(score),
+				std::get<3>(score),
+				std::get<4>(score));
+		};
+		auto other = Choose(roomy);
+		if (other && (!best || key(*other) > key(*best))) {
+			best = std::move(other);
+		}
 	}
-	// Nothing keeps every short word whole: cut words rather than show none.
-	if (auto best = Best(input, false)) {
-		return std::move(best->plan);
-	}
-	return HubPlan();
+	return best ? std::move(best->plan) : HubPlan();
 }
 
 } // namespace Safe::Circles
