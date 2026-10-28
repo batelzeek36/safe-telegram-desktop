@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_circles_model.h"
 #include "ui/painter.h"
+#include "ui/text/text.h"
 
 #include "styles/style_basic.h"
 
@@ -63,6 +64,9 @@ private:
 	void paintRail(Painter &p, const DialFrame &frame) const;
 	void paintCard(Painter &p, Model &model, const DialFrame &frame) const;
 	[[nodiscard]] QPointF frontCenter() const;
+	[[nodiscard]] QRectF besidePill(
+		const Ui::Text::String &name,
+		const FacePlace &face) const;
 
 	QSize _size;
 	QPointF _center;
@@ -249,16 +253,21 @@ void Orbit::paint(
 		if (face.index >= int(chats.size())) {
 			continue;
 		}
+		const auto &name = model.shortName(chats[face.index]);
 		const auto hovered = (face.index == frame.hovered) && face.focus < 0.5;
-		const auto alpha = std::max(face.nameAlpha, hovered ? 1. : 0.)
-			* face.alpha;
-		if (alpha > 0.01) {
+		if (face.nameAlpha * face.alpha > 0.01) {
+			PaintNamePillIn(
+				p,
+				name,
+				besidePill(name, face),
+				face.nameAlpha * face.alpha);
+		} else if (hovered && face.alpha > 0.01) {
 			PaintNamePill(
 				p,
-				model.shortName(chats[face.index]),
+				name,
 				face.center + QPointF(0., face.size / 2.),
 				pillWidth(),
-				alpha);
+				face.alpha);
 		}
 	}
 	PaintNotch(
@@ -267,6 +276,31 @@ void Orbit::paint(
 		S(13),
 		frame.pulse);
 	paintCard(p, model, frame);
+}
+
+// A neighbour's name on the bottom edge of its face, pushed out to the side
+// so it never covers the front face, and kept inside the page.
+QRectF Orbit::besidePill(
+		const Ui::Text::String &name,
+		const FacePlace &face) const {
+	const auto bottom = face.center + QPointF(0., face.size / 2.);
+	auto rect = NamePillRect(name, bottom, pillWidth());
+	if (rect.isEmpty()) {
+		return rect;
+	}
+	rect.translate(0., rect.height() * 0.15);
+	const auto clear = _face * kFront / 2. + S(4);
+	if (face.center.x() > _center.x()) {
+		rect.moveLeft(std::max(rect.left(), _center.x() + clear));
+	} else {
+		rect.moveRight(std::min(rect.right(), _center.x() - clear));
+	}
+	const auto margin = double(S(6));
+	rect.moveLeft(std::clamp(
+		rect.left(),
+		margin,
+		std::max(_size.width() - margin - rect.width(), margin)));
+	return rect;
 }
 
 bool Orbit::grabs(QPointF point) const {
@@ -296,7 +330,9 @@ double Orbit::pixelsPerChat() const {
 }
 
 int Orbit::pillWidth() const {
-	return int(std::clamp(_rx * 0.5, double(S(56)), double(S(110))));
+	// From clear of the front face to the page's edge.
+	const auto room = _size.width() / 2. - _face * kFront / 2. - S(4) - S(6);
+	return int(std::clamp(room, double(S(56)), double(S(104))));
 }
 
 } // namespace

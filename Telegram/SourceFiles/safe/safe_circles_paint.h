@@ -64,6 +64,18 @@ void PaintFace(
 // A soft light under the focused face.
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha);
 
+// A name pill's rectangle centered on `center`, at most `maxWidth` wide
+// (empty for an empty name), and the pill drawn in it.
+[[nodiscard]] QRectF NamePillRect(
+	const Ui::Text::String &name,
+	QPointF center,
+	int maxWidth);
+void PaintNamePillIn(
+	Painter &p,
+	const Ui::Text::String &name,
+	QRectF rect,
+	double alpha);
+
 // The short name in a small pill sitting on the bottom edge of a face.
 void PaintNamePill(
 	Painter &p,
@@ -98,8 +110,8 @@ void PaintNotch(
 	double pulse,
 	bool pointsDown = true);
 
-// The focused chat's preview centered in `rect`: name (two lines at most),
-// the last message line (two), then time and badge. Returns the height used.
+// The focused chat's preview centered in `rect`: name, the last message line
+// (one line each, cut to fit), then time and badge. Returns the height used.
 int PaintCenteredPreview(
 	Painter &p,
 	Model &model,

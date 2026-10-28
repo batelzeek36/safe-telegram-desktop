@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_circles_model.h"
 #include "ui/painter.h"
+#include "ui/text/text.h"
 
 #include "styles/style_basic.h"
 
@@ -17,7 +18,7 @@ namespace {
 constexpr auto kTicksPerSlot = 4;
 constexpr auto kGrow = 1.24; // the focused face, Apple Watch's wheel size jump
 constexpr auto kShade = 0.16;
-constexpr auto kNameReach = 2.5; // pills on the two chats either side
+constexpr auto kNameReach = 1.5; // pills on the chat either side
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -55,7 +56,11 @@ private:
 	void paintBezel(Painter &p, const DialFrame &frame) const;
 	void paintHub(Painter &p, Model &model, const DialFrame &frame) const;
 	[[nodiscard]] QPointF at(double angle, double radius) const;
+	[[nodiscard]] QRectF outsidePill(
+		const Ui::Text::String &name,
+		const FacePlace &face) const;
 
+	QSize _size;
 	QPointF _center;
 	double _outer = 0.; // the bezel's outer edge
 	double _tickLength = 0.;
@@ -68,6 +73,7 @@ private:
 };
 
 void Crown::resize(QSize size) {
+	_size = size;
 	const auto margin = S(12);
 	const auto notchRoom = S(16);
 	const auto side = std::min(
@@ -81,7 +87,8 @@ void Crown::resize(QSize size) {
 	_tickRadius = _outer - _tickLength;
 	_face = std::clamp(_outer * 0.27, double(S(34)), double(S(70)));
 	_ring = _tickRadius - S(8) - _face * kGrow / 2.;
-	_hub = _ring - _face / 2. - S(26);
+	// The neighbours' names sit outside the ring, so the hub can come close.
+	_hub = _ring - _face * kGrow / 2. - S(12);
 	_notch = S(15);
 }
 
@@ -174,6 +181,10 @@ void Crown::paintHub(
 		return;
 	}
 	const auto history = not_null<History*>(frame.focused);
+	auto clip = QPainterPath();
+	clip.addEllipse(_center, _hub - st::lineWidth, _hub - st::lineWidth);
+	p.save();
+	p.setClipPath(clip);
 	const auto text = PaintCenteredPreview(p, model, history, textRect, true);
 	const auto total = leaf + leafGap + text;
 	const auto top = _center.y() - total / 2.;
@@ -189,6 +200,39 @@ void Crown::paintHub(
 		textRect.width(),
 		text);
 	PaintCenteredPreview(p, model, history, block);
+	p.restore();
+}
+
+// A neighbour's name just outside the ring, over the bezel, clear of the
+// focused face at twelve and inside the page.
+QRectF Crown::outsidePill(
+		const Ui::Text::String &name,
+		const FacePlace &face) const {
+	const auto d = face.center - _center;
+	const auto length = std::hypot(d.x(), d.y());
+	const auto direction = (length > 0.) ? (d / length) : QPointF(0., -1.);
+	auto rect = NamePillRect(name, QPointF(), pillWidth());
+	if (rect.isEmpty()) {
+		return rect;
+	}
+	const auto reach = face.size / 2.
+		+ S(3)
+		+ std::abs(direction.x()) * rect.width() / 2.
+		+ std::abs(direction.y()) * rect.height() / 2.;
+	rect.moveCenter(face.center + direction * reach);
+	const auto clear = _face * kGrow / 2. + S(4);
+	if (direction.x() > 0.) {
+		rect.moveLeft(std::max(rect.left(), _center.x() + clear));
+	} else {
+		rect.moveRight(std::min(rect.right(), _center.x() - clear));
+	}
+	const auto margin = double(S(6));
+	rect.moveLeft(std::clamp(
+		rect.left(),
+		margin,
+		std::max(_size.width() - margin - rect.width(), margin)));
+	rect.moveTop(std::max(rect.top(), margin));
+	return rect;
 }
 
 void Crown::paint(
@@ -211,16 +255,21 @@ void Crown::paint(
 		if (face.index >= int(chats.size())) {
 			continue;
 		}
+		const auto &name = model.shortName(chats[face.index]);
 		const auto hovered = (face.index == frame.hovered) && face.focus < 0.5;
-		const auto alpha = std::max(face.nameAlpha, hovered ? 1. : 0.)
-			* face.alpha;
-		if (alpha > 0.01) {
+		if (face.nameAlpha * face.alpha > 0.01) {
+			PaintNamePillIn(
+				p,
+				name,
+				outsidePill(name, face),
+				face.nameAlpha * face.alpha);
+		} else if (hovered && face.alpha > 0.01) {
 			PaintNamePill(
 				p,
-				model.shortName(chats[face.index]),
+				name,
 				face.center + QPointF(0., face.size / 2.),
 				pillWidth(),
-				alpha);
+				face.alpha);
 		}
 	}
 	paintHub(p, model, frame);
@@ -260,7 +309,9 @@ double Crown::pixelsPerChat() const {
 }
 
 int Crown::pillWidth() const {
-	return int(std::clamp(_ring * SlotAngle(kMaxSlots) * 1.15, double(S(56)), double(S(110))));
+	// From clear of the focused face to the page's edge.
+	const auto room = _size.width() / 2. - _face * kGrow / 2. - S(4) - S(6);
+	return int(std::clamp(room, double(S(56)), double(S(104))));
 }
 
 } // namespace

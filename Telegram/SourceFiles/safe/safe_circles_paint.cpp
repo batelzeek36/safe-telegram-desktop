@@ -55,7 +55,7 @@ constexpr auto kBadgeRing = 2;
 }
 
 [[nodiscard]] int LineHeight(const style::TextStyle &st) {
-	return st.font->height;
+	return std::max(st.font->height, st.lineHeight);
 }
 
 } // namespace
@@ -160,28 +160,35 @@ void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha) {
 	p.drawEllipse(center, radius, radius);
 }
 
-void PaintNamePill(
+QRectF NamePillRect(
+		const Ui::Text::String &name,
+		QPointF center,
+		int maxWidth) {
+	const auto padding = S(kPillPadding);
+	const auto textWidth = std::min(name.maxWidth(), maxWidth - 2 * padding);
+	if (name.isEmpty() || textWidth <= 0) {
+		return QRectF();
+	}
+	const auto height = LineHeight(st::chatSimilarName) + S(5);
+	const auto width = textWidth + 2 * padding;
+	return QRectF(
+		center.x() - width / 2.,
+		center.y() - height / 2.,
+		width,
+		height);
+}
+
+void PaintNamePillIn(
 		Painter &p,
 		const Ui::Text::String &name,
-		QPointF faceBottom,
-		int maxWidth,
+		QRectF rect,
 		double alpha) {
-	if (alpha <= 0.01 || name.isEmpty()) {
+	if (alpha <= 0.01 || rect.isEmpty()) {
 		return;
 	}
 	const auto &st = st::chatSimilarName;
 	const auto padding = S(kPillPadding);
-	const auto textWidth = std::min(name.maxWidth(), maxWidth - 2 * padding);
-	if (textWidth <= 0) {
-		return;
-	}
-	const auto height = LineHeight(st) + S(5);
-	const auto width = textWidth + 2 * padding;
-	const auto rect = QRectF(
-		faceBottom.x() - width / 2.,
-		faceBottom.y() - height * 0.35,
-		width,
-		height);
+	const auto height = rect.height();
 	auto hq = PainterHighQualityEnabler(p);
 	p.setOpacity(alpha);
 	p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
@@ -192,10 +199,24 @@ void PaintNamePill(
 		p,
 		int(std::round(rect.x())) + padding,
 		int(std::round(rect.y() + (height - LineHeight(st)) / 2.)),
-		textWidth,
+		int(std::round(rect.width())) - 2 * padding,
 		1,
 		style::al_center);
 	p.setOpacity(1.);
+}
+
+void PaintNamePill(
+		Painter &p,
+		const Ui::Text::String &name,
+		QPointF faceBottom,
+		int maxWidth,
+		double alpha) {
+	const auto rect = NamePillRect(name, faceBottom, maxWidth);
+	PaintNamePillIn(
+		p,
+		name,
+		rect.translated(0., rect.height() * 0.15),
+		alpha);
 }
 
 QSize BadgeSize(const Dialogs::BadgesState &state) {
@@ -305,13 +326,13 @@ int PaintCenteredPreview(
 		bool measureOnly) {
 	const auto &name = model.name(history);
 	const auto &line = model.preview(history);
+	// One line each: a hub is too small for wrapped names, and a long word
+	// (a link) must be cut, never run past the edge.
 	const auto width = rect.width();
-	const auto nameLine = LineHeight(st::chatUniqueTitle);
-	const auto nameHeight = std::min(name.countHeight(width), nameLine * 2);
-	const auto textLine = LineHeight(st::defaultTextStyle);
+	const auto nameHeight = LineHeight(st::chatUniqueTitle);
 	const auto lineHeight = line.isEmpty()
 		? 0
-		: std::min(line.countHeight(width), textLine * 2);
+		: LineHeight(st::defaultTextStyle);
 	const auto time = model.time(history);
 	const auto state = model.badges(history);
 	const auto badge = BadgeSize(state);
@@ -329,12 +350,12 @@ int PaintCenteredPreview(
 	}
 	auto y = rect.y() + (rect.height() - total) / 2;
 	p.setPen(TextColor());
-	name.drawElided(p, rect.x(), y, width, 2, style::al_center);
+	name.drawElided(p, rect.x(), y, width, 1, style::al_center, 0, -1, 0, true);
 	y += nameHeight;
 	if (lineHeight) {
 		y += gapName;
 		p.setPen(SubTextColor());
-		line.drawElided(p, rect.x(), y, width, 2, style::al_center);
+		line.drawElided(p, rect.x(), y, width, 1, style::al_center, 0, -1, 0, true);
 		y += lineHeight;
 	}
 	if (metaHeight) {

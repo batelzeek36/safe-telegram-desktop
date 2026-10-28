@@ -17,8 +17,8 @@ double FocusAmount(double offset) {
 	return Smooth(1. - std::abs(offset));
 }
 
-// Full for the chats one and two away from the focus, fading in as a face
-// leaves the focus and out past `reach`.
+// Full for the chats near the focus, fading in as a face leaves the focus and
+// out past `reach` (1.5 = the chat either side).
 double NameAlpha(double offset, double reach) {
 	const auto distance = std::abs(offset);
 	const auto in = std::clamp((distance - 0.45) * 2.5, 0., 1.);

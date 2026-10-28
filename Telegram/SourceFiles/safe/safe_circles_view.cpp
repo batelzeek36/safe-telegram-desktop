@@ -96,9 +96,15 @@ View::View(
 		followActiveCircle(id);
 	}, lifetime());
 
+	// Only a different chat turns the dial: the entry is sent again for the
+	// same chat (a jump inside it, a layer opening), and that must not undo
+	// a spin he made without opening anything.
 	_controller->activeChatEntryValue(
-	) | rpl::on_next([=](const Dialogs::RowDescriptor &row) {
-		followActiveChat(row.key.history());
+	) | rpl::map([](const Dialogs::RowDescriptor &row) {
+		return row.key.history();
+	}) | rpl::distinct_until_changed(
+	) | rpl::on_next([=](History *history) {
+		followActiveChat(history);
 	}, lifetime());
 }
 
