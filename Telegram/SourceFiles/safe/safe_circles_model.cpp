@@ -29,6 +29,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_basic.h"
 #include "styles/style_chat.h"
 
+#include <QtCore/QUrl>
+
 namespace Safe::Circles {
 namespace {
 
@@ -56,8 +58,46 @@ constexpr auto kPreviewLimit = 200;
 	}
 }
 
+// A link shows its site ("youtube.com"), not "https://yout..." cut short in
+// a small hub. Kept entities after a link move with the text; one that runs
+// across a link is dropped.
+void ShortenLinks(TextWithEntities &text) {
+	static const auto expression = QRegularExpression(
+		u"https?://\\S+"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	auto links = std::vector<std::pair<int, int>>();
+	auto i = expression.globalMatch(text.text);
+	while (i.hasNext()) {
+		const auto match = i.next();
+		links.emplace_back(match.capturedStart(), match.capturedLength());
+	}
+	for (auto j = links.rbegin(); j != links.rend(); ++j) {
+		const auto [from, length] = *j;
+		auto host = QUrl(text.text.mid(from, length)).host();
+		if (host.startsWith(u"www."_q)) {
+			host = host.mid(4);
+		}
+		if (host.isEmpty()) {
+			continue;
+		}
+		text.text.replace(from, length, host);
+		const auto shrink = length - int(host.size());
+		auto kept = EntitiesInText();
+		for (auto &entity : text.entities) {
+			if (entity.offset() >= from + length) {
+				entity.shiftLeft(shrink);
+				kept.push_back(std::move(entity));
+			} else if (entity.offset() + entity.length() <= from) {
+				kept.push_back(std::move(entity));
+			}
+		}
+		text.entities = std::move(kept);
+	}
+}
+
 // Spoilers become dots, custom emoji keep only their fallback emoji, links
-// and every other entity are dropped: the dial shows plain words.
+// show their site and every other entity is dropped: the dial shows plain
+// words.
 [[nodiscard]] TextWithEntities Plain(TextWithEntities text) {
 	for (const auto &entity : text.entities) {
 		if (entity.type() == EntityType::Spoiler) {
@@ -80,6 +120,7 @@ constexpr auto kPreviewLimit = 200;
 		}
 	}
 	text.entities = std::move(kept);
+	ShortenLinks(text);
 	text.text.replace(QChar('\n'), QChar(' '));
 	if (text.text.size() > kPreviewLimit) {
 		text.text = text.text.mid(0, kPreviewLimit);
@@ -289,12 +330,15 @@ rpl::producer<> Model::repaints() const {
 	return _repaints.events();
 }
 
+// One image a chat, at the largest size asked for so far: a face and the
+// Orbit card ask for different sizes every frame, and a smaller draw scales
+// the larger image instead of making a new one each time.
 const QImage &Model::face(not_null<History*> history, int size) {
 	const auto peer = history->peer;
 	auto &face = _faces[peer];
 	const auto special = peer->isSelf() || peer->isRepliesChat();
 	if (special) {
-		if (!face.special || face.size != size || face.image.isNull()) {
+		if (!face.special || face.size < size || face.image.isNull()) {
 			face.special = true;
 			face.size = size;
 			face.image = peer->isSelf()
@@ -305,7 +349,7 @@ const QImage &Model::face(not_null<History*> history, int size) {
 	}
 	peer->loadUserpic();
 	const auto key = peer->userpicUniqueKey(face.view);
-	if (face.image.isNull() || face.key != key || face.size != size) {
+	if (face.image.isNull() || face.key != key || face.size < size) {
 		face.key = key;
 		face.size = size;
 		face.image = PeerData::GenerateUserpicImage(peer, face.view, size);

@@ -15,8 +15,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Safe::Circles {
 namespace {
 
-constexpr auto kFront = 1.32; // the front face, Cover Flow's centre cover
+constexpr auto kFront = 1.08; // the front of the orbit
 constexpr auto kBack = 0.44;
+// The focused face grows on top of its place, Cover Flow's centre cover: the
+// faces either side are about three quarters of it and never touch its ring.
+constexpr auto kFocusGrow = 0.24;
+constexpr auto kFocused = kFront * (1. + kFocusGrow);
+constexpr auto kLeafGlow = 0.3;
 constexpr auto kShade = 0.62;
 constexpr auto kNameReach = 1.5; // pills on the chat either side
 constexpr auto kRailDots = 2; // dots on the orbit per slot
@@ -88,10 +93,10 @@ void Orbit::resize(QSize size) {
 	_face = std::clamp(_rx * faceShare, double(S(34)), double(S(66)));
 	_rx = size.width() / 2. - margin - sideShare * _face;
 
-	const auto frontRadius = _face * kFront / 2.;
+	const auto frontRadius = _face * kFocused / 2.;
 	const auto backRadius = _face * kBack / 2.;
 	const auto cardHeight = S(64);
-	const auto cardGap = S(18);
+	const auto cardGap = S(24); // the neighbours' names sit in it
 	const auto available = size.height() - 2 * margin - cardGap - cardHeight;
 	_ry = std::clamp(
 		(available - frontRadius - backRadius) / 2.,
@@ -143,8 +148,8 @@ std::vector<FacePlace> Orbit::place(double position, int count) const {
 		result.push_back({
 			.index = visible.index,
 			.center = where.center,
-			.size = _face * where.scale,
-			.maxSize = _face * kFront,
+			.size = _face * where.scale * (1. + kFocusGrow * focus),
+			.maxSize = _face * kFocused,
 			.alpha = visible.alpha,
 			.shade = kShade * (1. - std::pow(where.near, 0.8)),
 			.depth = where.depth,
@@ -209,7 +214,7 @@ void Orbit::paint(
 		const std::vector<not_null<History*>> &chats,
 		const DialFrame &frame) {
 	const auto front = frontCenter();
-	const auto frontRadius = _face * kFront / 2.;
+	const auto frontRadius = _face * kFocused / 2.;
 
 	// The pool of light the front face stands in.
 	{
@@ -234,7 +239,7 @@ void Orbit::paint(
 	const auto leafCenter = QPointF(_center.x(), _center.y() - _leaf * 0.12);
 	auto leafDrawn = false;
 	const auto drawLeaf = [&] {
-		PaintLeafAt(p, leafCenter, _leaf, frame.lean, 0.6);
+		PaintLeafAt(p, leafCenter, _leaf, frame.lean, kLeafGlow);
 		leafDrawn = true;
 	};
 	for (const auto &face : faces) {
@@ -255,20 +260,28 @@ void Orbit::paint(
 		}
 		const auto &name = model.shortName(chats[face.index]);
 		const auto hovered = (face.index == frame.hovered) && face.focus < 0.5;
-		if (face.nameAlpha * face.alpha > 0.01) {
+		const auto shown = face.alpha * frame.names;
+		if (face.nameAlpha * shown > 0.01) {
 			PaintNamePillIn(
 				p,
 				name,
 				besidePill(name, face),
-				face.nameAlpha * face.alpha);
-		} else if (hovered && face.alpha > 0.01) {
-			PaintNamePill(
-				p,
+				face.nameAlpha * shown);
+		} else if (hovered && shown > 0.01) {
+			// Behind the leaf a name goes above its face: below it, it
+			// would cover the faces in front.
+			const auto behind = (face.depth < 0.);
+			auto rect = NamePillRect(
 				name,
-				face.center + QPointF(0., face.size / 2.),
-				pillWidth(),
-				_size.width(),
-				face.alpha);
+				face.center + QPointF(0., (behind ? -1. : 1.) * face.size / 2.),
+				pillWidth());
+			rect.translate(0., (behind ? -1. : 1.) * rect.height() * 0.15);
+			const auto margin = double(S(6));
+			rect.moveLeft(std::clamp(
+				rect.left(),
+				margin,
+				std::max(_size.width() - margin - rect.width(), margin)));
+			PaintNamePillIn(p, name, rect, shown);
 		}
 	}
 	PaintNotch(
@@ -279,18 +292,22 @@ void Orbit::paint(
 	paintCard(p, model, frame);
 }
 
-// A neighbour's name on the bottom edge of its face, pushed out to the side
-// so it never covers the front face, and kept inside the page.
+// A neighbour's name under the face row, level with the front face's
+// bottom edge (below the neighbours, never on a face), pushed out to the side
+// clear of the front face, and kept inside the page.
 QRectF Orbit::besidePill(
 		const Ui::Text::String &name,
 		const FacePlace &face) const {
-	const auto bottom = face.center + QPointF(0., face.size / 2.);
-	auto rect = NamePillRect(name, bottom, pillWidth());
+	const auto frontBottom = frontCenter().y() + _face * kFocused / 2.;
+	auto rect = NamePillRect(
+		name,
+		QPointF(face.center.x(), frontBottom),
+		pillWidth());
 	if (rect.isEmpty()) {
 		return rect;
 	}
 	rect.translate(0., rect.height() * 0.15);
-	const auto clear = _face * kFront / 2. + S(4);
+	const auto clear = _face * kFocused / 2. + S(4);
 	if (face.center.x() > _center.x()) {
 		rect.moveLeft(std::max(rect.left(), _center.x() + clear));
 	} else {
@@ -308,7 +325,7 @@ bool Orbit::grabs(QPointF point) const {
 	const auto nx = (point.x() - _center.x()) / _rx;
 	const auto ny = (point.y() - _center.y()) / _ry;
 	const auto rho = std::sqrt(nx * nx + ny * ny);
-	const auto frontReach = 1. + (_face * kFront / 2. + S(8)) / _ry;
+	const auto frontReach = 1. + (_face * kFocused / 2. + S(8)) / _ry;
 	return (rho >= 0.3) && (rho <= ((ny > 0.) ? frontReach : 1.5));
 }
 
@@ -332,7 +349,7 @@ double Orbit::pixelsPerChat() const {
 
 int Orbit::pillWidth() const {
 	// From clear of the front face to the page's edge.
-	const auto room = _size.width() / 2. - _face * kFront / 2. - S(4) - S(6);
+	const auto room = _size.width() / 2. - _face * kFocused / 2. - S(4) - S(6);
 	return int(std::clamp(room, double(S(56)), double(S(104))));
 }
 

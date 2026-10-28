@@ -135,16 +135,22 @@ void PaintGlyph(QPainter &p, QRectF rect, Layout layout, QColor fg) {
 	}
 }
 
-void AddGlyph(not_null<Ui::RpWidget*> row, Layout layout) {
-	const auto glyph = Ui::CreateChild<Ui::RpWidget>(row.get());
+// The glyphs stand in one column, `left` from the row's left edge (past the
+// longest of the three names), whatever each name's own length.
+void AddGlyph(
+		not_null<Ui::RpWidget*> container,
+		not_null<Ui::RpWidget*> row,
+		Layout layout,
+		int left) {
+	const auto glyph = Ui::CreateChild<Ui::RpWidget>(container.get());
 	const auto size = style::ConvertScale(kGlyphSize);
 	glyph->resize(size, size);
 	glyph->setAttribute(Qt::WA_TransparentForMouseEvents);
-	row->sizeValue() | rpl::on_next([=](QSize outer) {
-		glyph->moveToRight(
-			st::settingsSendTypePadding.right() + style::ConvertScale(4),
-			(outer.height() - size) / 2,
-			outer.width());
+	row->geometryValue() | rpl::on_next([=](QRect geometry) {
+		glyph->move(
+			geometry.x() + left,
+			geometry.y() + (geometry.height() - size) / 2);
+		glyph->raise();
 	}, glyph->lifetime());
 	glyph->paintOn([=](QPainter &p) {
 		auto color = st::windowSubTextFg->c;
@@ -219,9 +225,12 @@ void AddMainMenuRow(
 				});
 			}, (layout == current) ? &st::mediaPlayerMenuCheck : nullptr);
 		}
+		// Upward from the row's value, so it opens over the menu, inside
+		// the window, not hanging below it.
+		(*popup)->setForcedOrigin(Ui::PanelAnimation::Origin::BottomRight);
 		const auto at = button->mapToGlobal(QPoint(
 			button->width() - st::mainMenuButton.padding.right(),
-			button->height()));
+			0));
 		(*popup)->popup(at);
 	});
 }
@@ -244,6 +253,7 @@ void SetupSettingsSection(
 		}
 	}, container->lifetime());
 
+	auto rows = std::vector<std::pair<not_null<Ui::RpWidget*>, Layout>>();
 	for (const auto layout : AllLayouts()) {
 		const auto row = container->add(
 			object_ptr<Ui::Radioenum<Layout>>(
@@ -253,14 +263,23 @@ void SetupSettingsSection(
 				LayoutName(layout),
 				st::settingsSendType),
 			st::settingsSendTypePadding);
-		AddGlyph(row, layout);
+		rows.emplace_back(row, layout);
+	}
+	// One column for the glyphs, past the widest of the three rows.
+	auto widest = 0;
+	for (const auto &[row, layout] : rows) {
+		widest = std::max(widest, row->naturalWidth());
+	}
+	for (const auto &[row, layout] : rows) {
+		AddGlyph(container, row, layout, widest + style::ConvertScale(12));
 	}
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
-		rpl::single(u"Crown and Orbit put your chats on a dial: spin it, "
-			"flick it, or use the arrow keys, and swipe sideways with two "
-			"fingers between your folders. Click a face to open the chat."_q));
+		rpl::single(u"Crown and Orbit put your chats on a dial. Spin it, "
+			"flick it or use the arrow keys, and click a face to open the "
+			"chat. Each of your folders is a circle: swipe sideways with two "
+			"fingers to change circle (Settings > Folders makes them)."_q));
 }
 
 } // namespace Safe::Circles

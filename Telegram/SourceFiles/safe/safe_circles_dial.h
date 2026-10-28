@@ -34,6 +34,7 @@ struct DialFrame {
 	double lean = 0.; // degrees, + = clockwise
 	double pulse = 0.; // the tick, 1 = a chat just reached the focus
 	int hovered = -1; // the chat under the pointer
+	double names = 1.; // name pills: 0 while the dial moves, back after it lands
 	History *focused = nullptr;
 	bool loading = false;
 	bool keyboard = false; // the chat list has the keyboard focus

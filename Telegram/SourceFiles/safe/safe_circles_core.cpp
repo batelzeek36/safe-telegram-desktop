@@ -18,10 +18,6 @@ constexpr auto kEpsilon = 1e-9;
 constexpr auto kRestBase = 0.16;
 constexpr auto kRestPerChat = 0.2;
 
-// The far side of an endless dial: the last slot cross-fades the face that
-// leaves with the one that comes in.
-constexpr auto kFadeSlots = 1.;
-
 // How strongly the leaf leans: degrees per degree-a-second of spin.
 constexpr auto kLeanPerSpeed = 0.06;
 
@@ -85,12 +81,38 @@ std::vector<Slot> VisibleSlots(double position, int count) {
 	if (!slots) {
 		return result;
 	}
-	result.reserve(slots);
 	const auto half = slots / 2.;
-	const auto endless = (count > slots);
-
-	// The half-open window (position - half, position + half] holds exactly
-	// `slots` whole numbers, so a short circle shows every chat once.
+	if (count > slots) {
+		// An endless dial. At rest the ring is full: offsets -half + 1 ..
+		// half, the face at the far point fully drawn. While it turns, the
+		// chat leaving at one end and the one arriving at the other share the
+		// far slot (offsets o and o + slots are the same place on the ring)
+		// and cross-fade, their alphas adding up to one.
+		result.reserve(slots + 1);
+		auto j = (long long)std::floor(position - half);
+		for (;; ++j) {
+			const auto offset = double(j) - position;
+			if (offset >= half + 1. - kEpsilon) {
+				break;
+			}
+			const auto alpha = std::clamp(
+				std::min(half + 1. - offset, half + offset),
+				0.,
+				1.);
+			if (alpha <= kEpsilon) {
+				continue;
+			}
+			result.push_back({
+				.index = Wrap(j, count),
+				.offset = offset,
+				.alpha = alpha,
+			});
+		}
+		return result;
+	}
+	// A short circle: the half-open window (position - half, position + half]
+	// holds exactly `slots` whole numbers, so every chat shows once.
+	result.reserve(slots);
 	auto first = (long long)std::floor(position - half) + 1;
 	if (double(first) - position <= -half) {
 		++first;
@@ -100,15 +122,9 @@ std::vector<Slot> VisibleSlots(double position, int count) {
 		if (offset > half + kEpsilon) {
 			break;
 		}
-		auto alpha = 1.;
-		if (endless) {
-			const auto edge = half - std::abs(offset);
-			alpha = std::clamp(edge / kFadeSlots, 0., 1.);
-		}
 		result.push_back({
 			.index = Wrap(j, count),
 			.offset = offset,
-			.alpha = alpha,
 		});
 	}
 	return result;

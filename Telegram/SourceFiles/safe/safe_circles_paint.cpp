@@ -139,10 +139,16 @@ void PaintFace(
 		p.setPen(QPen(JadeColor(ring), S(kRingWidth)));
 		p.drawEllipse(place.center, outer, outer);
 	}
+	// The badge keeps its size, so on a small far face (behind the Orbit's
+	// leaf) it would outweigh the face: it fades out as faces shrink.
 	const auto state = model.badges(history);
-	if (HasBadge(state)) {
+	const auto badge = std::clamp(
+		(place.size / std::max(largest, 1.) - 0.45) / 0.25,
+		0.,
+		1.);
+	if (HasBadge(state) && badge > 0.01) {
 		const auto at = place.center + QPointF(r * 0.72, -r * 0.72);
-		PaintBadgeAt(p, state, at, 1. - place.shade * 0.6);
+		PaintBadgeAt(p, state, at, badge * (1. - place.shade * 0.6));
 	}
 	p.setOpacity(1.);
 }
@@ -332,13 +338,32 @@ int PaintCenteredPreview(
 		bool measureOnly) {
 	const auto &name = model.name(history);
 	const auto &line = model.preview(history);
-	// One line each: a hub is too small for wrapped names, and a long word
-	// (a link) must be cut, never run past the edge.
 	const auto width = rect.width();
-	const auto nameHeight = LineHeight(st::chatUniqueTitle);
-	const auto lineHeight = line.isEmpty()
-		? 0
-		: LineHeight(st::defaultTextStyle);
+	const auto nameLine = LineHeight(st::chatUniqueTitle);
+	const auto textLine = LineHeight(st::defaultTextStyle);
+	// Up to two lines each, wrapped between words. A word wider than the
+	// hub keeps the text to one line, cut short: never "youtube.co / m".
+	const auto linesOf = [&](
+			const Ui::Text::String &text,
+			const style::TextStyle &st) {
+		if (text.isEmpty()) {
+			return 0;
+		}
+		const auto words = text.toString().split(
+			QChar(' '),
+			Qt::SkipEmptyParts);
+		for (const auto &word : words) {
+			if (st.font->width(word) > width) {
+				return 1;
+			}
+		}
+		return std::clamp(
+			int(text.countLineWidths(width, { .reserve = 2 }).size()),
+			1,
+			2);
+	};
+	auto nameLines = linesOf(name, st::chatUniqueTitle);
+	auto textLines = linesOf(line, st::defaultTextStyle);
 	const auto time = model.time(history);
 	const auto state = model.badges(history);
 	const auto badge = BadgeSize(state);
@@ -346,25 +371,61 @@ int PaintCenteredPreview(
 	const auto metaHeight = std::max(
 		time.isEmpty() ? 0 : timeFont->height,
 		badge.height());
-	const auto gapName = S(4);
+	const auto gapName = S(3);
 	const auto gapMeta = S(5);
-	const auto total = nameHeight
-		+ (lineHeight ? (gapName + lineHeight) : 0)
-		+ (metaHeight ? (gapMeta + metaHeight) : 0);
+	auto withMeta = (metaHeight > 0);
+	const auto count = [&] {
+		return nameLines * nameLine
+			+ (textLines ? (gapName + textLines * textLine) : 0)
+			+ (withMeta ? (gapMeta + metaHeight) : 0);
+	};
+	// What gives way when it doesn't fit: the time and badge first (the
+	// face carries its badge), then the message's second line, then the
+	// name's.
+	if (count() > rect.height()) {
+		withMeta = false;
+	}
+	if (count() > rect.height() && textLines > 1) {
+		textLines = 1;
+	}
+	if (count() > rect.height() && nameLines > 1) {
+		nameLines = 1;
+	}
+	const auto total = count();
 	if (measureOnly) {
 		return total;
 	}
 	auto y = rect.y() + (rect.height() - total) / 2;
 	p.setPen(TextColor());
-	name.drawElided(p, rect.x(), y, width, 1, style::al_center, 0, -1, 0, true);
-	y += nameHeight;
-	if (lineHeight) {
+	name.drawElided(
+		p,
+		rect.x(),
+		y,
+		width,
+		nameLines,
+		style::al_center,
+		0,
+		-1,
+		0,
+		true);
+	y += nameLines * nameLine;
+	if (textLines) {
 		y += gapName;
 		p.setPen(SubTextColor());
-		line.drawElided(p, rect.x(), y, width, 1, style::al_center, 0, -1, 0, true);
-		y += lineHeight;
+		line.drawElided(
+			p,
+			rect.x(),
+			y,
+			width,
+			textLines,
+			style::al_center,
+			0,
+			-1,
+			0,
+			true);
+		y += textLines * textLine;
 	}
-	if (metaHeight) {
+	if (withMeta) {
 		y += gapMeta;
 		const auto timeWidth = time.isEmpty() ? 0 : timeFont->width(time);
 		const auto between = (timeWidth && !badge.isEmpty()) ? S(8) : 0;
@@ -396,7 +457,26 @@ void PaintRowPreview(
 		not_null<History*> history,
 		QRect rect) {
 	const auto padding = S(14);
-	const auto inner = rect.marginsRemoved({ padding, 0, padding, 0 });
+	// The chat's photo on the left, as a list row has it.
+	const auto photo = rect.height() - 2 * S(12);
+	{
+		auto hq = PainterHighQualityEnabler(p);
+		const auto ratio = style::DevicePixelRatio();
+		const auto pixels = int(std::ceil(photo * ratio / 8.) * 8);
+		p.drawImage(
+			QRect(
+				rect.x() + S(12),
+				rect.y() + (rect.height() - photo) / 2,
+				photo,
+				photo),
+			model.face(history, pixels));
+	}
+	const auto inner = rect.marginsRemoved({
+		S(12) + photo + S(12),
+		0,
+		padding,
+		0,
+	});
 	const auto &name = model.name(history);
 	const auto &line = model.preview(history);
 	const auto time = model.time(history);

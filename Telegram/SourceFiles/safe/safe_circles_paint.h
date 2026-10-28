@@ -112,8 +112,9 @@ void PaintNotch(
 	double pulse,
 	bool pointsDown = true);
 
-// The focused chat's preview centered in `rect`: name, the last message line
-// (one line each, cut to fit), then time and badge. Returns the height used.
+// The focused chat's preview centered in `rect`: the name and the last
+// message (two lines each at most, cut to fit), then time and badge while
+// they still fit `rect`'s height. Returns the height used.
 int PaintCenteredPreview(
 	Painter &p,
 	Model &model,
@@ -121,7 +122,7 @@ int PaintCenteredPreview(
 	QRect rect,
 	bool measureOnly = false);
 
-// The preview as a chat list row without the photo: name and time on the
+// The preview as a chat list row: the photo, name and time on the
 // first line, the message and the badge on the second, inside `rect`.
 void PaintRowPreview(
 	Painter &p,

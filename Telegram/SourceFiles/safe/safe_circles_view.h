@@ -117,6 +117,8 @@ private:
 	void step(int delta);
 	void bringTo(int index, bool andOpen);
 	void openFocused();
+	// The next chat with unread messages after the focus (wrapping), or -1.
+	[[nodiscard]] int nextUnread();
 	void catchSpin();
 	void settle();
 	void settled(FilterId id);
@@ -182,6 +184,7 @@ private:
 
 	double _lean = 0.;
 	double _tickAt = -10.;
+	double _movedAt = -10.; // the last frame the dial or the page moved
 	double _lastFrame = 0.;
 	int _hovered = -1;
 	int _hoveredHeader = -1;

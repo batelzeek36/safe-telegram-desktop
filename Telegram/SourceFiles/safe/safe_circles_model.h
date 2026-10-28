@@ -57,9 +57,10 @@ public:
 	// Something a face or a preview shows changed: repaint.
 	[[nodiscard]] rpl::producer<> repaints() const;
 
-	// The face: a circle image `size` device pixels across (Saved Messages
-	// and Replies get Telegram's own drawings), kept until the photo
-	// changes. Starts the photo's download when needed.
+	// The face: a circle image at least `size` device pixels across (Saved
+	// Messages and Replies get Telegram's own drawings), kept until the photo
+	// changes or a larger one is asked for. Starts the photo's download when
+	// needed.
 	[[nodiscard]] const QImage &face(not_null<History*> history, int size);
 
 	// The chat's name as the chat list shows it, and the short one (first
@@ -87,14 +88,16 @@ private:
 		bool special = false;
 		QImage image;
 	};
+	// A default Text::String never wraps (its least width is "infinite"):
+	// these may wrap to two lines in the Crown's hub.
 	struct Name {
 		int version = -1;
-		Ui::Text::String text;
+		Ui::Text::String text = Ui::Text::String(1);
 	};
 	struct Preview {
 		HistoryItem *item = nullptr;
 		int generation = -1;
-		Ui::Text::String text;
+		Ui::Text::String text = Ui::Text::String(1);
 	};
 
 	void setupSubscriptions();

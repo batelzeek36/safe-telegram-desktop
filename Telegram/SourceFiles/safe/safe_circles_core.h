@@ -48,12 +48,13 @@ inline constexpr int kMaxSlots = 12;
 
 struct Slot {
 	int index = 0; // the chat, 0 .. count - 1
-	double offset = 0.; // slots from the focus, in (-slots / 2, slots / 2]
-	double alpha = 1.; // fades at the far side of an endless dial
+	double offset = 0.; // slots from the focus, in (-slots / 2, slots / 2 + 1)
+	double alpha = 1.; // the far slot of a turning endless dial cross-fades
 };
 
-// The faces on the ring at `position`: exactly SlotCount(count) of them,
-// each chat at most once.
+// The faces on the ring at `position`, each chat at most once: exactly
+// SlotCount(count) of them at rest (a full ring), one more while an endless
+// dial turns (two chats share the far slot, cross-fading).
 [[nodiscard]] std::vector<Slot> VisibleSlots(double position, int count);
 
 // The position nearest to `from` that puts chat `index` at the focus (the

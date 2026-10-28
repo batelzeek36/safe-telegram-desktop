@@ -41,6 +41,10 @@ constexpr auto kIntroSlots = 2.5;
 constexpr auto kIntroSpeed = 9.;
 constexpr auto kLoadAhead = 12;
 constexpr auto kNoPhaseRelease = crl::time(120);
+// Names hide while the dial moves (a pill a detent strobes) and come back
+// once it has landed.
+constexpr auto kNamesDelay = 0.15;
+constexpr auto kNamesFade = 0.2;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -49,6 +53,35 @@ constexpr auto kNoPhaseRelease = crl::time(120);
 [[nodiscard]] double EaseOutCubic(double t) {
 	const auto left = 1. - std::clamp(t, 0., 1.);
 	return 1. - left * left * left;
+}
+
+// A mouse wheel: no scroll phase (a trackpad always has one on macOS; a
+// wheel elsewhere brings no pixel delta). It turns one chat a notch, at once,
+// never by its pixels: macOS gives a wheel's notch pixels too, and turning by
+// them stopped half way and rolled back.
+[[nodiscard]] bool DiscreteWheel(not_null<QWheelEvent*> e) {
+	if (e->phase() != Qt::NoScrollPhase) {
+		return false;
+	}
+#ifdef Q_OS_MAC
+	return true;
+#else // Q_OS_MAC
+	return e->pixelDelta().isNull();
+#endif // Q_OS_MAC
+}
+
+// One notch as 120 eighths of a degree. macOS sends one event a notch, its
+// size scaled by how fast the wheel turns: each event is one notch there.
+[[nodiscard]] QPoint WheelNotches(not_null<QWheelEvent*> e) {
+	const auto angle = e->angleDelta();
+#ifdef Q_OS_MAC
+	const auto sign = [](int value) {
+		return (value > 0) ? 120 : (value < 0) ? -120 : 0;
+	};
+	return QPoint(sign(angle.x()), sign(angle.y()));
+#else // Q_OS_MAC
+	return angle;
+#endif // Q_OS_MAC
 }
 
 } // namespace
@@ -262,6 +295,27 @@ void View::step(int delta) {
 	glideTo(base + delta, velocity, kStepGlide * 2.);
 }
 
+int View::nextUnread() {
+	const auto id = circleAt(currentPage());
+	const auto &chats = chatsOf(id);
+	const auto count = int(chats.size());
+	if (!count) {
+		return -1;
+	}
+	const auto i = _spins.find(id);
+	const auto focus = FocusIndex(
+		(i != end(_spins)) ? i->second.position : 0.,
+		count);
+	for (auto step = 1; step <= count; ++step) {
+		const auto index = (focus + step) % count;
+		const auto state = _model->badges(chats[index]);
+		if (state.unread || state.mention) {
+			return index;
+		}
+	}
+	return -1;
+}
+
 void View::bringTo(int index, bool andOpen) {
 	const auto id = circleAt(currentPage());
 	const auto &chats = chatsOf(id);
@@ -458,6 +512,17 @@ bool View::animationStep(crl::time ms) {
 	if (_drag == Drag::Spin || _scroll == Scroll::Spin) {
 		busy = true;
 	}
+	if (busy && (_pageGliding
+		|| spinOf(id).gliding
+		|| _drag == Drag::Spin
+		|| _drag == Drag::Page
+		|| _scroll == Scroll::Spin
+		|| _scroll == Scroll::Page)) {
+		_movedAt = t;
+	}
+	if (t - _movedAt < kNamesDelay + kNamesFade) {
+		busy = true;
+	}
 	update();
 	return busy;
 }
@@ -616,7 +681,9 @@ void View::updateHover(QPointF point) {
 		hovered = _dial->faceAt(inside, spinOf(id).position, count);
 		clickable = (hovered >= 0) || (_dial->opens(inside) && count > 0);
 	}
-	if ((header >= 0 && header != currentPage()) || dot >= 0) {
+	if ((header >= 0 && header != currentPage())
+		|| (header >= 0 && header == currentPage() && nextUnread() >= 0)
+		|| dot >= 0) {
 		clickable = true;
 	}
 	setCursor(clickable ? style::cur_pointer : style::cur_default);
@@ -672,7 +739,9 @@ void View::mouseMoveEvent(QMouseEvent *e) {
 		if (_press.grabs) {
 			_drag = Drag::Spin;
 			_tracker.reset(now(), spinOf(circleAt(currentPage())).position);
-		} else if (std::abs(d.x()) > std::abs(d.y()) && pageCount() > 1) {
+		} else if (std::abs(d.x()) > std::abs(d.y()) && pageCount() > 0) {
+			// With one circle the swipe still answers: it pulls against
+			// the rubber band and springs back.
 			_drag = Drag::Page;
 			_pageStart = currentPage();
 			_pageFrom = _pageRaw;
@@ -705,7 +774,13 @@ void View::mouseReleaseEvent(QMouseEvent *e) {
 	const auto point = e->position();
 	if (drag == Drag::Pending) {
 		if (_press.header >= 0 && _press.header == headerItemAt(point)) {
-			goToPage(_press.header, 0.);
+			if (_press.header != currentPage()) {
+				goToPage(_press.header, 0.);
+			} else if (const auto unread = nextUnread(); unread >= 0) {
+				// The circle's name and unread count: turn to the next
+				// unread chat, the way back to chats that left the ring.
+				bringTo(unread, false);
+			}
 		} else if (_press.dot >= 0 && _press.dot == dotAt(point)) {
 			goToPage(_press.dot, 0.);
 		} else if (_press.face >= 0) {
@@ -738,7 +813,7 @@ void View::scrollUpdate(QPointF delta) {
 		const auto axis = LockAxis(_scrolled.x(), _scrolled.y());
 		if (axis == Axis::None) {
 			return;
-		} else if (axis == Axis::Page && pageCount() > 1) {
+		} else if (axis == Axis::Page && pageCount() > 0) {
 			_scroll = Scroll::Page;
 			_pageStart = currentPage();
 			_tracker.reset(now(), _pageRaw);
@@ -783,10 +858,11 @@ void View::wheelEvent(QWheelEvent *e) {
 	e->accept();
 	const auto pixels = e->pixelDelta();
 	const auto phase = e->phase();
-	if (pixels.isNull() && phase == Qt::NoScrollPhase) {
+	if (DiscreteWheel(e)) {
 		// A mouse wheel: one chat (or one circle) a notch.
-		_wheelNotches += e->angleDelta().y();
-		_wheelNotchesX += e->angleDelta().x();
+		const auto notches = WheelNotches(e);
+		_wheelNotches += notches.y();
+		_wheelNotchesX += notches.x();
 		while (std::abs(_wheelNotches) >= 120) {
 			const auto down = (_wheelNotches < 0);
 			_wheelNotches += down ? 120 : -120;
@@ -923,6 +999,10 @@ void View::paintPage(Painter &p, int page, double shift) {
 			? (1. - EaseOutCubic((now() - _tickAt) / kPulse))
 			: 0.,
 		.hovered = hovered,
+		.names = std::clamp(
+			(now() - _movedAt - kNamesDelay) / kNamesFade,
+			0.,
+			1.),
 		.focused = count ? chats[FocusIndex(spin.position, count)].get() : nullptr,
 		.loading = !count && !_model->fullyLoaded(id),
 	};

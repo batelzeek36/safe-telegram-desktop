@@ -19,6 +19,7 @@ constexpr auto kTicksPerSlot = 4;
 constexpr auto kGrow = 1.24; // the focused face, Apple Watch's wheel size jump
 constexpr auto kShade = 0.16;
 constexpr auto kNameReach = 1.5; // pills on the chat either side
+constexpr auto kHubLeafOpacity = 0.1;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -160,49 +161,45 @@ void Crown::paintHub(
 	p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
 	p.drawEllipse(_center, _hub, _hub);
 
-	// The leaf shrinks with the hub so the time line stays inside it.
-	const auto leaf = std::clamp(_hub * 0.3, double(S(14)), double(S(22)));
-	const auto leafGap = S(5);
-	// The name and message lines sit near the middle, where the hub is
-	// widest; the leaf above and the time below are short.
-	const auto textRect = QRect(
-		int(_center.x() - _hub * 0.86),
-		int(_center.y() - _hub * 0.82),
-		int(_hub * 1.72),
-		int(_hub * 1.64));
-	if (!frame.focused) {
-		PaintLeafAt(
-			p,
-			QPointF(_center.x(), _center.y() - leaf),
-			leaf,
-			frame.lean,
-			0.45);
-		PaintEmpty(
-			p,
-			textRect.translated(0, int(leaf)),
-			frame.loading);
-		return;
-	}
-	const auto history = not_null<History*>(frame.focused);
+	// The leaf is a faint mark behind the words, leaning with the spin; the
+	// words get the hub's square (a little wider: its middle lines are where
+	// the circle is widest).
+	p.save();
 	auto clip = QPainterPath();
 	clip.addEllipse(_center, _hub - st::lineWidth, _hub - st::lineWidth);
-	p.save();
 	p.setClipPath(clip);
-	const auto text = PaintCenteredPreview(p, model, history, textRect, true);
-	const auto total = leaf + leafGap + text;
-	const auto top = _center.y() - total / 2.;
-	PaintLeafAt(
-		p,
-		QPointF(_center.x(), top + leaf / 2.),
-		leaf,
-		frame.lean,
-		0.45);
-	const auto block = QRect(
-		textRect.x(),
-		int(top + leaf + leafGap),
-		textRect.width(),
-		text);
-	PaintCenteredPreview(p, model, history, block);
+	p.setOpacity(frame.focused ? kHubLeafOpacity : 1.);
+	if (frame.focused) {
+		PaintLeafAt(p, _center, _hub * 1.25, frame.lean, 0.);
+	} else {
+		PaintLeafAt(
+			p,
+			QPointF(_center.x(), _center.y() - _hub * 0.3),
+			std::clamp(_hub * 0.45, double(S(18)), double(S(26))),
+			frame.lean,
+			0.45);
+	}
+	p.setOpacity(1.);
+	const auto width = _hub * 1.46;
+	const auto height = 2. * std::sqrt(
+		std::max(_hub * _hub - (width / 2.) * (width / 2.), 0.));
+	const auto textRect = QRect(
+		int(std::round(_center.x() - width / 2.)),
+		int(std::round(_center.y() - height / 2.)),
+		int(std::round(width)),
+		int(std::round(height)));
+	if (frame.focused) {
+		PaintCenteredPreview(
+			p,
+			model,
+			not_null<History*>(frame.focused),
+			textRect);
+	} else {
+		PaintEmpty(
+			p,
+			textRect.translated(0, int(_hub * 0.3)),
+			frame.loading);
+	}
 	p.restore();
 }
 
@@ -260,20 +257,21 @@ void Crown::paint(
 		}
 		const auto &name = model.shortName(chats[face.index]);
 		const auto hovered = (face.index == frame.hovered) && face.focus < 0.5;
-		if (face.nameAlpha * face.alpha > 0.01) {
+		const auto shown = face.alpha * frame.names;
+		if (face.nameAlpha * shown > 0.01) {
 			PaintNamePillIn(
 				p,
 				name,
 				outsidePill(name, face),
-				face.nameAlpha * face.alpha);
-		} else if (hovered && face.alpha > 0.01) {
+				face.nameAlpha * shown);
+		} else if (hovered && shown > 0.01) {
 			PaintNamePill(
 				p,
 				name,
 				face.center + QPointF(0., face.size / 2.),
 				pillWidth(),
 				_size.width(),
-				face.alpha);
+				shown);
 		}
 	}
 	paintHub(p, model, frame);
