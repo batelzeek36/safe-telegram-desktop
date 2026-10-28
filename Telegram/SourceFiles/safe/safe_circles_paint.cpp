@@ -25,7 +25,11 @@ namespace {
 constexpr auto kRingGap = 3.;
 constexpr auto kRingWidth = 2.;
 constexpr auto kPillPadding = 7;
-constexpr auto kBadgeRing = 2;
+constexpr auto kBadgeGap = 2; // background between a badge and what it sits on
+constexpr auto kPageMargin = 16;
+// A face this share of its largest size or more wears the full badge; a
+// smaller one (far, behind the leaf) a small solid dot.
+constexpr auto kFullBadge = 0.72;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -54,11 +58,33 @@ constexpr auto kBadgeRing = 2;
 	return state.unread && !state.unreadCounter && !state.mention;
 }
 
-[[nodiscard]] int LineHeight(const style::TextStyle &st) {
-	return std::max(st.font->height, st.lineHeight);
+[[nodiscard]] QColor BadgeColor(const Dialogs::BadgesState &state) {
+	return (state.unreadMuted && !state.mention)
+		? st::dialogsUnreadBgMuted->c
+		: st::dialogsUnreadBg->c;
+}
+
+// The badge's outline (a pill, or a circle for the dot), centered on `at`.
+[[nodiscard]] QPainterPath BadgeShape(QPointF at, QSizeF size, double grow) {
+	auto result = QPainterPath();
+	const auto rect = QRectF(
+		at.x() - size.width() / 2. - grow,
+		at.y() - size.height() / 2. - grow,
+		size.width() + 2. * grow,
+		size.height() + 2. * grow);
+	result.addRoundedRect(rect, rect.height() / 2., rect.height() / 2.);
+	return result;
 }
 
 } // namespace
+
+int LineHeightOf(const style::TextStyle &st) {
+	return std::max(st.font->height, st.lineHeight);
+}
+
+int PageMargin() {
+	return S(kPageMargin);
+}
 
 QColor Mix(const QColor &a, const QColor &b, double amount) {
 	const auto t = std::clamp(amount, 0., 1.);
@@ -126,31 +152,75 @@ void PaintFace(
 		place.center.y() - r,
 		place.size,
 		place.size);
-	p.setOpacity(place.alpha);
+	const auto was = p.opacity();
+	p.setOpacity(was * place.alpha);
 	p.drawImage(rect, image);
 	if (place.shade > 0.01) {
 		p.setPen(Qt::NoPen);
 		p.setBrush(Faded(BackgroundColor(), place.shade));
 		p.drawEllipse(rect);
 	}
+
+	// The badge on the shoulder: the full badge on a face near its full
+	// size, a small solid dot on a far one, never a see-through disc.
+	const auto state = model.badges(history);
+	const auto full = (place.size / std::max(largest, 1.)) >= kFullBadge;
+	const auto at = place.center + QPointF(r * 0.72, -r * 0.72);
+	const auto dot = std::clamp(place.size * 0.26, double(S(6)), double(S(9)));
+	const auto badge = !HasBadge(state)
+		? QSizeF()
+		: full
+		? QSizeF(BadgeSize(state))
+		: QSizeF(dot, dot);
+	const auto gap = double(S(kBadgeGap));
 	if (ring > 0.01) {
+		// The jade ring stops a clear gap short of the badge.
+		p.save();
+		if (!badge.isEmpty()) {
+			auto keep = QPainterPath();
+			keep.addRect(rect.adjusted(-r, -r, r, r));
+			p.setClipPath(
+				keep.subtracted(BadgeShape(at, badge, gap)),
+				Qt::IntersectClip);
+		}
 		const auto outer = r + S(kRingGap) + S(kRingWidth) / 2.;
 		p.setBrush(Qt::NoBrush);
 		p.setPen(QPen(JadeColor(ring), S(kRingWidth)));
 		p.drawEllipse(place.center, outer, outer);
+		p.restore();
 	}
-	// The badge keeps its size, so on a small far face (behind the Orbit's
-	// leaf) it would outweigh the face: it fades out as faces shrink.
-	const auto state = model.badges(history);
-	const auto badge = std::clamp(
-		(place.size / std::max(largest, 1.) - 0.45) / 0.25,
-		0.,
-		1.);
-	if (HasBadge(state) && badge > 0.01) {
-		const auto at = place.center + QPointF(r * 0.72, -r * 0.72);
-		PaintBadgeAt(p, state, at, badge * (1. - place.shade * 0.6));
+	if (!badge.isEmpty()) {
+		// The background between the badge and the photo it sits on.
+		p.save();
+		auto face = QPainterPath();
+		face.addEllipse(rect);
+		p.setClipPath(face, Qt::IntersectClip);
+		p.setPen(Qt::NoPen);
+		p.setBrush(BackgroundColor());
+		p.drawPath(BadgeShape(at, badge, gap));
+		p.restore();
+		if (full) {
+			PaintBadgeAt(p, state, at, 1.);
+		} else {
+			p.setPen(Qt::NoPen);
+			p.setBrush(Mix(BadgeColor(state), BackgroundColor(), place.shade * 0.3));
+			p.drawEllipse(at, dot / 2., dot / 2.);
+		}
 	}
-	p.setOpacity(1.);
+	p.setOpacity(was);
+}
+
+void PaintHoverRing(Painter &p, const FacePlace &place) {
+	if (place.alpha <= 0.01) {
+		return;
+	}
+	auto hq = PainterHighQualityEnabler(p);
+	const auto outer = place.size / 2. + S(2) + st::lineWidth * 0.75;
+	p.setBrush(Qt::NoBrush);
+	p.setPen(QPen(
+		Faded(TextColor(), 0.55 * place.alpha),
+		st::lineWidth * 1.5));
+	p.drawEllipse(place.center, outer, outer);
 }
 
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha) {
@@ -175,7 +245,7 @@ QRectF NamePillRect(
 	if (name.isEmpty() || textWidth <= 0) {
 		return QRectF();
 	}
-	const auto height = LineHeight(st::chatSimilarName) + S(5);
+	const auto height = LineHeightOf(st::chatSimilarName) + S(5);
 	const auto width = textWidth + 2 * padding;
 	return QRectF(
 		center.x() - width / 2.,
@@ -204,31 +274,11 @@ void PaintNamePillIn(
 	name.drawElided(
 		p,
 		int(std::round(rect.x())) + padding,
-		int(std::round(rect.y() + (height - LineHeight(st)) / 2.)),
+		int(std::round(rect.y() + (height - LineHeightOf(st)) / 2.)),
 		int(std::round(rect.width())) - 2 * padding,
 		1,
 		style::al_center);
 	p.setOpacity(1.);
-}
-
-void PaintNamePill(
-		Painter &p,
-		const Ui::Text::String &name,
-		QPointF faceBottom,
-		int maxWidth,
-		int pageWidth,
-		double alpha) {
-	auto rect = NamePillRect(name, faceBottom, maxWidth);
-	if (rect.isEmpty()) {
-		return;
-	}
-	rect.translate(0., rect.height() * 0.15);
-	const auto margin = double(S(6));
-	rect.moveLeft(std::clamp(
-		rect.left(),
-		margin,
-		std::max(pageWidth - margin - rect.width(), margin)));
-	PaintNamePillIn(p, name, rect, alpha);
 }
 
 QSize BadgeSize(const Dialogs::BadgesState &state) {
@@ -253,19 +303,9 @@ QSize PaintBadgeAt(
 	auto hq = PainterHighQualityEnabler(p);
 	const auto was = p.opacity();
 	p.setOpacity(was * alpha);
-	const auto ring = S(kBadgeRing);
-	const auto outer = QRectF(
-		center.x() - size.width() / 2. - ring,
-		center.y() - size.height() / 2. - ring,
-		size.width() + 2 * ring,
-		size.height() + 2 * ring);
-	p.setPen(Qt::NoPen);
-	p.setBrush(BackgroundColor());
-	p.drawRoundedRect(outer, outer.height() / 2., outer.height() / 2.);
 	if (DotOnly(state)) {
-		p.setBrush(state.unreadMuted
-			? st::dialogsUnreadBgMuted
-			: st::dialogsUnreadBg);
+		p.setPen(Qt::NoPen);
+		p.setBrush(BadgeColor(state));
 		p.drawEllipse(center, size.width() / 2., size.height() / 2.);
 	} else {
 		Ui::PaintUnreadBadge(
@@ -299,6 +339,30 @@ void PaintLeafAt(
 	p.restore();
 }
 
+void PaintLeafOutline(
+		Painter &p,
+		QPointF center,
+		double size,
+		double lean,
+		const QColor &color) {
+	const auto &path = Calm::LeafPath();
+	const auto box = path.boundingRect();
+	const auto span = std::max(box.width(), box.height());
+	if (span <= 0.) {
+		return;
+	}
+	const auto scale = size / span;
+	auto transform = QTransform();
+	transform.translate(center.x(), center.y());
+	transform.rotate(lean);
+	transform.scale(scale, scale);
+	transform.translate(-box.center().x(), -box.center().y());
+	auto hq = PainterHighQualityEnabler(p);
+	p.setBrush(Qt::NoBrush);
+	p.setPen(QPen(color, st::lineWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+	p.drawPath(transform.map(path));
+}
+
 void PaintNotch(
 		Painter &p,
 		QPointF tip,
@@ -328,194 +392,6 @@ void PaintNotch(
 	p.setPen(QPen(JadeColor(), st::lineWidth * 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
 	p.setBrush(JadeColor());
 	p.drawPath(path);
-}
-
-int PaintCenteredPreview(
-		Painter &p,
-		Model &model,
-		not_null<History*> history,
-		QRect rect,
-		bool measureOnly) {
-	const auto &name = model.name(history);
-	const auto &line = model.preview(history);
-	const auto width = rect.width();
-	const auto nameLine = LineHeight(st::chatUniqueTitle);
-	const auto textLine = LineHeight(st::defaultTextStyle);
-	// Up to two lines each, wrapped between words. A word wider than the
-	// hub keeps the text to one line, cut short: never "youtube.co / m".
-	const auto linesOf = [&](
-			const Ui::Text::String &text,
-			const style::TextStyle &st) {
-		if (text.isEmpty()) {
-			return 0;
-		}
-		const auto words = text.toString().split(
-			QChar(' '),
-			Qt::SkipEmptyParts);
-		for (const auto &word : words) {
-			if (st.font->width(word) > width) {
-				return 1;
-			}
-		}
-		return std::clamp(
-			int(text.countLineWidths(width, { .reserve = 2 }).size()),
-			1,
-			2);
-	};
-	auto nameLines = linesOf(name, st::chatUniqueTitle);
-	auto textLines = linesOf(line, st::defaultTextStyle);
-	const auto time = model.time(history);
-	const auto state = model.badges(history);
-	const auto badge = BadgeSize(state);
-	const auto timeFont = st::dialogsDateFont;
-	const auto metaHeight = std::max(
-		time.isEmpty() ? 0 : timeFont->height,
-		badge.height());
-	const auto gapName = S(3);
-	const auto gapMeta = S(5);
-	auto withMeta = (metaHeight > 0);
-	const auto count = [&] {
-		return nameLines * nameLine
-			+ (textLines ? (gapName + textLines * textLine) : 0)
-			+ (withMeta ? (gapMeta + metaHeight) : 0);
-	};
-	// What gives way when it doesn't fit: the time and badge first (the
-	// face carries its badge), then the message's second line, then the
-	// name's.
-	if (count() > rect.height()) {
-		withMeta = false;
-	}
-	if (count() > rect.height() && textLines > 1) {
-		textLines = 1;
-	}
-	if (count() > rect.height() && nameLines > 1) {
-		nameLines = 1;
-	}
-	const auto total = count();
-	if (measureOnly) {
-		return total;
-	}
-	auto y = rect.y() + (rect.height() - total) / 2;
-	p.setPen(TextColor());
-	name.drawElided(
-		p,
-		rect.x(),
-		y,
-		width,
-		nameLines,
-		style::al_center,
-		0,
-		-1,
-		0,
-		true);
-	y += nameLines * nameLine;
-	if (textLines) {
-		y += gapName;
-		p.setPen(SubTextColor());
-		line.drawElided(
-			p,
-			rect.x(),
-			y,
-			width,
-			textLines,
-			style::al_center,
-			0,
-			-1,
-			0,
-			true);
-		y += textLines * textLine;
-	}
-	if (withMeta) {
-		y += gapMeta;
-		const auto timeWidth = time.isEmpty() ? 0 : timeFont->width(time);
-		const auto between = (timeWidth && !badge.isEmpty()) ? S(8) : 0;
-		const auto full = timeWidth + between + badge.width();
-		auto x = rect.x() + (width - full) / 2;
-		if (timeWidth) {
-			p.setFont(timeFont);
-			p.setPen(st::dialogsDateFg);
-			p.drawText(
-				x,
-				y + (metaHeight - timeFont->height) / 2 + timeFont->ascent,
-				time);
-			x += timeWidth + between;
-		}
-		if (!badge.isEmpty()) {
-			PaintBadgeAt(
-				p,
-				state,
-				QPointF(x + badge.width() / 2., y + metaHeight / 2.),
-				1.);
-		}
-	}
-	return total;
-}
-
-void PaintRowPreview(
-		Painter &p,
-		Model &model,
-		not_null<History*> history,
-		QRect rect) {
-	const auto padding = S(14);
-	// The chat's photo on the left, as a list row has it.
-	const auto photo = rect.height() - 2 * S(12);
-	{
-		auto hq = PainterHighQualityEnabler(p);
-		const auto ratio = style::DevicePixelRatio();
-		const auto pixels = int(std::ceil(photo * ratio / 8.) * 8);
-		p.drawImage(
-			QRect(
-				rect.x() + S(12),
-				rect.y() + (rect.height() - photo) / 2,
-				photo,
-				photo),
-			model.face(history, pixels));
-	}
-	const auto inner = rect.marginsRemoved({
-		S(12) + photo + S(12),
-		0,
-		padding,
-		0,
-	});
-	const auto &name = model.name(history);
-	const auto &line = model.preview(history);
-	const auto time = model.time(history);
-	const auto state = model.badges(history);
-	const auto badge = BadgeSize(state);
-	const auto timeFont = st::dialogsDateFont;
-	const auto nameLine = LineHeight(st::chatUniqueTitle);
-	const auto textLine = LineHeight(st::defaultTextStyle);
-	const auto gap = S(3);
-	const auto top = rect.y() + (rect.height() - nameLine - gap - textLine) / 2;
-
-	const auto timeWidth = time.isEmpty() ? 0 : timeFont->width(time);
-	if (timeWidth) {
-		p.setFont(timeFont);
-		p.setPen(st::dialogsDateFg);
-		p.drawText(
-			inner.x() + inner.width() - timeWidth,
-			top + (nameLine - timeFont->height) / 2 + timeFont->ascent,
-			time);
-	}
-	const auto nameWidth = inner.width() - timeWidth - (timeWidth ? S(10) : 0);
-	p.setPen(TextColor());
-	name.drawElided(p, inner.x(), top, nameWidth, 1);
-
-	const auto lineTop = top + nameLine + gap;
-	const auto badgeSkip = badge.isEmpty() ? 0 : (badge.width() + S(10));
-	if (!line.isEmpty()) {
-		p.setPen(SubTextColor());
-		line.drawElided(p, inner.x(), lineTop, inner.width() - badgeSkip, 1);
-	}
-	if (!badge.isEmpty()) {
-		PaintBadgeAt(
-			p,
-			state,
-			QPointF(
-				inner.x() + inner.width() - badge.width() / 2.,
-				lineTop + textLine / 2.),
-			1.);
-	}
 }
 
 void PaintEmpty(Painter &p, QRect rect, bool loading) {

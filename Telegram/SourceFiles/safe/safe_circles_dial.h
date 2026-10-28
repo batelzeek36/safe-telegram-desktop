@@ -36,6 +36,11 @@ struct DialFrame {
 	int hovered = -1; // the chat under the pointer
 	double names = 1.; // name pills: 0 while the dial moves, back after it lands
 	History *focused = nullptr;
+	// The chat the hub (Crown) or the card (Orbit) shows: the one under the
+	// pointer, else the focused one; fading in for `previewAlpha` after
+	// the pointer moves onto a face or off it.
+	History *previewed = nullptr;
+	double previewAlpha = 1.;
 	bool loading = false;
 	bool keyboard = false; // the chat list has the keyboard focus
 };

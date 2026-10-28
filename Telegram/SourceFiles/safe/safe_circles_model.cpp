@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "styles/style_basic.h"
 #include "styles/style_chat.h"
+#include "styles/style_safe_circles.h"
 
 #include <QtCore/QUrl>
 
@@ -368,7 +369,7 @@ const Ui::Text::String &Model::name(not_null<History*> history) {
 			: peer->isRepliesChat()
 			? tr::lng_replies_messages(tr::now)
 			: history->chatListName();
-		entry.text.setText(st::chatUniqueTitle, text);
+		entry.text.setText(st::circlesCardName, text);
 	}
 	return entry.text;
 }
@@ -400,18 +401,27 @@ TextWithEntities Model::previewText(not_null<History*> history) const {
 	}).text);
 }
 
-const Ui::Text::String &Model::preview(not_null<History*> history) {
+Model::Preview &Model::previewEntry(not_null<History*> history) {
 	auto &entry = _previews[history];
 	const auto item = history->chatListMessage();
 	if (entry.item != item || entry.generation != _generation) {
 		entry.item = item;
 		entry.generation = _generation;
+		entry.marked = previewText(history);
 		entry.text.setMarkedText(
-			st::defaultTextStyle,
-			previewText(history),
+			st::circlesCardText,
+			entry.marked,
 			kMarkupTextOptions);
 	}
-	return entry.text;
+	return entry;
+}
+
+const Ui::Text::String &Model::preview(not_null<History*> history) {
+	return previewEntry(history).text;
+}
+
+const TextWithEntities &Model::previewMarked(not_null<History*> history) {
+	return previewEntry(history).marked;
 }
 
 QString Model::time(not_null<History*> history) const {

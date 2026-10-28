@@ -7,10 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_circles_dial.h"
 
 #include "safe/safe_circles_model.h"
+#include "safe/safe_circles_preview.h"
 #include "ui/painter.h"
 #include "ui/text/text.h"
 
 #include "styles/style_basic.h"
+#include "styles/style_chat.h"
 
 namespace Safe::Circles {
 namespace {
@@ -19,7 +21,10 @@ constexpr auto kTicksPerSlot = 4;
 constexpr auto kGrow = 1.24; // the focused face, Apple Watch's wheel size jump
 constexpr auto kShade = 0.16;
 constexpr auto kNameReach = 1.5; // pills on the chat either side
-constexpr auto kHubLeafOpacity = 0.1;
+constexpr auto kHubLeafOpacity = 0.12;
+constexpr auto kHubPadding = 5; // the hub's words keep this far from its edge
+constexpr auto kFocusClear = 9; // a name keeps this far from the focus ring
+constexpr auto kTickClear = 3; // and the bezel's ticks this far from a name
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -29,6 +34,12 @@ constexpr auto kHubLeafOpacity = 0.1;
 	const auto slots = std::max(SlotCount(count), 1);
 	return 2. * M_PI / slots;
 }
+
+struct Pill {
+	QRectF rect;
+	double alpha = 0.;
+	const Ui::Text::String *name = nullptr;
+};
 
 class Crown final : public Dial {
 public:
@@ -54,11 +65,15 @@ public:
 	[[nodiscard]] int pillWidth() const override;
 
 private:
-	void paintBezel(Painter &p, const DialFrame &frame) const;
-	void paintHub(Painter &p, Model &model, const DialFrame &frame) const;
+	void paintBezel(
+		Painter &p,
+		const DialFrame &frame,
+		const std::vector<Pill> &pills) const;
+	void paintHub(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF at(double angle, double radius) const;
-	[[nodiscard]] QRectF outsidePill(
-		const Ui::Text::String &name,
+	[[nodiscard]] double nearest(const QRectF &rect) const;
+	[[nodiscard]] QRectF neighbourPill(
+		QSizeF size,
 		const FacePlace &face) const;
 
 	QSize _size;
@@ -70,6 +85,9 @@ private:
 	double _ring = 0.; // where the faces' centers sit
 	double _hub = 0.;
 	double _notch = 0.;
+
+	HubPreview _preview;
+	LineCache _pills;
 
 };
 
@@ -88,13 +106,27 @@ void Crown::resize(QSize size) {
 	_tickRadius = _outer - _tickLength;
 	_face = std::clamp(_outer * 0.27, double(S(34)), double(S(70)));
 	_ring = _tickRadius - S(8) - _face * kGrow / 2.;
-	// The neighbours' names sit outside the ring, so the hub can come close.
+	// The neighbours' names sit outside the bezel, so the hub can come close.
 	_hub = _ring - _face * kGrow / 2. - S(12);
 	_notch = S(15);
 }
 
 QPointF Crown::at(double angle, double radius) const {
 	return _center + QPointF(std::cos(angle), std::sin(angle)) * radius;
+}
+
+double Crown::nearest(const QRectF &rect) const {
+	const auto dx = std::max({
+		rect.left() - _center.x(),
+		0.,
+		_center.x() - rect.right(),
+	});
+	const auto dy = std::max({
+		rect.top() - _center.y(),
+		0.,
+		_center.y() - rect.bottom(),
+	});
+	return std::hypot(dx, dy);
 }
 
 std::vector<FacePlace> Crown::place(double position, int count) const {
@@ -120,7 +152,10 @@ std::vector<FacePlace> Crown::place(double position, int count) const {
 	return result;
 }
 
-void Crown::paintBezel(Painter &p, const DialFrame &frame) const {
+void Crown::paintBezel(
+		Painter &p,
+		const DialFrame &frame,
+		const std::vector<Pill> &pills) const {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto slots = std::max(SlotCount(frame.count), 1);
 	const auto slot = 2. * M_PI / slots;
@@ -130,6 +165,22 @@ void Crown::paintBezel(Painter &p, const DialFrame &frame) const {
 	const auto minor = Faded(glyph, 0.26);
 	const auto base = std::floor(frame.position);
 	const auto fraction = frame.position - base;
+	const auto clear = double(S(kTickClear));
+	// A name sitting on the bezel takes the ticks under it away, like the
+	// numerals cut into a watch's bezel.
+	const auto hidden = [&](QPointF a, QPointF b) {
+		auto result = 0.;
+		for (const auto &pill : pills) {
+			const auto area = pill.rect.adjusted(-clear, -clear, clear, clear);
+			for (const auto t : { 0., 0.5, 1. }) {
+				if (area.contains(a + (b - a) * t)) {
+					result = std::max(result, pill.alpha);
+					break;
+				}
+			}
+		}
+		return result;
+	};
 	for (auto m = 0; m != total; ++m) {
 		const auto offset = double(m) / kTicksPerSlot - fraction;
 		auto angle = -M_PI / 2. + offset * slot;
@@ -142,35 +193,50 @@ void Crown::paintBezel(Painter &p, const DialFrame &frame) const {
 			color = Mix(color, JadeColor(), 0.35 + 0.65 * frame.pulse);
 			width *= 1. + 0.6 * frame.pulse;
 		}
-		p.setPen(QPen(color, width, Qt::SolidLine, Qt::RoundCap));
-		p.drawLine(
-			at(angle, _tickRadius + (_tickLength - length)),
-			at(angle, _tickRadius + _tickLength));
+		const auto from = at(angle, _tickRadius + (_tickLength - length));
+		const auto till = at(angle, _tickRadius + _tickLength);
+		const auto gone = hidden(from, till);
+		if (gone >= 0.99) {
+			continue;
+		}
+		p.setPen(QPen(
+			Faded(color, 1. - gone),
+			width,
+			Qt::SolidLine,
+			Qt::RoundCap));
+		p.drawLine(from, till);
 	}
 	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(LineColor(), st::lineWidth));
 	p.drawEllipse(_center, _ring, _ring);
 }
 
-void Crown::paintHub(
-		Painter &p,
-		Model &model,
-		const DialFrame &frame) const {
+void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
 	auto hq = PainterHighQualityEnabler(p);
 	p.setBrush(SurfaceColor());
 	p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
 	p.drawEllipse(_center, _hub, _hub);
 
-	// The leaf is a faint mark behind the words, leaning with the spin; the
-	// words get the hub's square (a little wider: its middle lines are where
-	// the circle is widest).
 	p.save();
 	auto clip = QPainterPath();
 	clip.addEllipse(_center, _hub - st::lineWidth, _hub - st::lineWidth);
-	p.setClipPath(clip);
-	p.setOpacity(frame.focused ? kHubLeafOpacity : 1.);
-	if (frame.focused) {
-		PaintLeafAt(p, _center, _hub * 1.25, frame.lean, 0.);
+	p.setClipPath(clip, Qt::IntersectClip);
+	if (const auto history = frame.previewed) {
+		// The leaf is a thin line mark behind the words, leaning with the
+		// spin.
+		PaintLeafOutline(
+			p,
+			_center,
+			_hub * 1.3,
+			frame.lean,
+			JadeColor(kHubLeafOpacity));
+		_preview.paint(
+			p,
+			model,
+			not_null<History*>(history),
+			_center,
+			_hub - S(kHubPadding),
+			frame.previewAlpha);
 	} else {
 		PaintLeafAt(
 			p,
@@ -178,60 +244,58 @@ void Crown::paintHub(
 			std::clamp(_hub * 0.45, double(S(18)), double(S(26))),
 			frame.lean,
 			0.45);
-	}
-	p.setOpacity(1.);
-	const auto width = _hub * 1.46;
-	const auto height = 2. * std::sqrt(
-		std::max(_hub * _hub - (width / 2.) * (width / 2.), 0.));
-	const auto textRect = QRect(
-		int(std::round(_center.x() - width / 2.)),
-		int(std::round(_center.y() - height / 2.)),
-		int(std::round(width)),
-		int(std::round(height)));
-	if (frame.focused) {
-		PaintCenteredPreview(
-			p,
-			model,
-			not_null<History*>(frame.focused),
-			textRect);
-	} else {
+		const auto width = int(_hub * 1.46);
 		PaintEmpty(
 			p,
-			textRect.translated(0, int(_hub * 0.3)),
+			QRect(
+				int(_center.x()) - width / 2,
+				int(_center.y()),
+				width,
+				int(_hub * 0.6)),
 			frame.loading);
 	}
 	p.restore();
 }
 
-// A neighbour's name just outside the ring, over the bezel, clear of the
-// focused face at twelve and inside the page.
-QRectF Crown::outsidePill(
-		const Ui::Text::String &name,
-		const FacePlace &face) const {
+// A neighbour's name outside the bezel: out along its face's direction
+// until it clears the ticks, inside the column by PageMargin, clear of the
+// focused face and the notch at twelve. Where the page is too small for
+// that it rests on the bezel and the ticks under it give way.
+QRectF Crown::neighbourPill(QSizeF size, const FacePlace &face) const {
+	const auto margin = double(PageMargin());
+	const auto outside = _outer + S(kTickClear) + st::lineWidth;
 	const auto d = face.center - _center;
 	const auto length = std::hypot(d.x(), d.y());
 	const auto direction = (length > 0.) ? (d / length) : QPointF(0., -1.);
-	auto rect = NamePillRect(name, QPointF(), pillWidth());
-	if (rect.isEmpty()) {
-		return rect;
+	const auto right = (direction.x() >= 0.);
+	const auto upper = (direction.y() <= 0.);
+	auto rect = QRectF(QPointF(), size);
+	rect.moveCenter(face.center
+		+ direction * (face.size / 2. + S(4) + size.height() / 2.));
+	for (auto i = 0; i != 400 && nearest(rect) < outside; ++i) {
+		rect.translate(direction);
 	}
-	const auto reach = face.size / 2.
-		+ S(3)
-		+ std::abs(direction.x()) * rect.width() / 2.
-		+ std::abs(direction.y()) * rect.height() / 2.;
-	rect.moveCenter(face.center + direction * reach);
-	const auto clear = _face * kGrow / 2. + S(4);
-	if (direction.x() > 0.) {
-		rect.moveLeft(std::max(rect.left(), _center.x() + clear));
-	} else {
-		rect.moveRight(std::min(rect.right(), _center.x() - clear));
+	if (upper) {
+		const auto clear = _face * kGrow / 2. + S(kFocusClear);
+		if (right) {
+			rect.moveLeft(std::max(rect.left(), _center.x() + clear));
+		} else {
+			rect.moveRight(std::min(rect.right(), _center.x() - clear));
+		}
 	}
-	const auto margin = double(S(6));
 	rect.moveLeft(std::clamp(
 		rect.left(),
 		margin,
 		std::max(_size.width() - margin - rect.width(), margin)));
-	rect.moveTop(std::max(rect.top(), margin));
+	const auto top = double(S(4));
+	const auto bottom = _size.height() - double(S(4));
+	while (nearest(rect) < outside) {
+		const auto next = rect.translated(0., upper ? -1. : 1.);
+		if (next.top() < top || next.bottom() > bottom) {
+			break;
+		}
+		rect = next;
+	}
 	return rect;
 }
 
@@ -242,37 +306,44 @@ void Crown::paint(
 		const DialFrame &frame) {
 	const auto top = at(-M_PI / 2., _ring);
 	PaintFocusLight(p, top, _face * kGrow, 1.);
-	paintBezel(p, frame);
 
 	const auto faces = place(frame.position, frame.count);
+	auto pills = std::vector<Pill>();
+	const auto room = pillWidth() - 2 * S(7);
+	for (const auto &face : faces) {
+		const auto alpha = face.nameAlpha * face.alpha * frame.names;
+		if (face.index >= int(chats.size()) || alpha <= 0.01) {
+			continue;
+		}
+		const auto history = chats[face.index];
+		const auto &name = _pills.line(
+			history,
+			{ model.shortName(history).toString() },
+			st::chatSimilarName,
+			room);
+		const auto rect = NamePillRect(name, QPointF(), pillWidth());
+		if (rect.isEmpty()) {
+			continue;
+		}
+		pills.push_back({
+			.rect = neighbourPill(rect.size(), face),
+			.alpha = alpha,
+			.name = &name,
+		});
+	}
+	paintBezel(p, frame, pills);
+
 	for (const auto &face : faces) {
 		if (face.index >= int(chats.size())) {
 			continue;
 		}
 		PaintFace(p, model, chats[face.index], face, face.focus);
+		if (face.index == frame.hovered && face.focus < 0.5) {
+			PaintHoverRing(p, face);
+		}
 	}
-	for (const auto &face : faces) {
-		if (face.index >= int(chats.size())) {
-			continue;
-		}
-		const auto &name = model.shortName(chats[face.index]);
-		const auto hovered = (face.index == frame.hovered) && face.focus < 0.5;
-		const auto shown = face.alpha * frame.names;
-		if (face.nameAlpha * shown > 0.01) {
-			PaintNamePillIn(
-				p,
-				name,
-				outsidePill(name, face),
-				face.nameAlpha * shown);
-		} else if (hovered && shown > 0.01) {
-			PaintNamePill(
-				p,
-				name,
-				face.center + QPointF(0., face.size / 2.),
-				pillWidth(),
-				_size.width(),
-				shown);
-		}
+	for (const auto &pill : pills) {
+		PaintNamePillIn(p, *pill.name, pill.rect, pill.alpha);
 	}
 	paintHub(p, model, frame);
 	PaintNotch(
@@ -311,9 +382,12 @@ double Crown::pixelsPerChat() const {
 }
 
 int Crown::pillWidth() const {
-	// From clear of the focused face to the page's edge.
-	const auto room = _size.width() / 2. - _face * kGrow / 2. - S(4) - S(6);
-	return int(std::clamp(room, double(S(56)), double(S(104))));
+	// From clear of the focused face to the column's margin.
+	const auto room = _size.width() / 2.
+		- _face * kGrow / 2.
+		- S(kFocusClear)
+		- PageMargin();
+	return int(std::max(room, double(S(56))));
 }
 
 } // namespace

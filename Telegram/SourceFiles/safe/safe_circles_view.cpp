@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_basic.h"
 #include "styles/style_chat.h"
 #include "styles/style_dialogs.h"
+#include "styles/style_safe_circles.h"
 
 #include <QtGui/QCursor>
 #include <QtGui/QWheelEvent>
@@ -45,6 +46,10 @@ constexpr auto kNoPhaseRelease = crl::time(120);
 // once it has landed.
 constexpr auto kNamesDelay = 0.15;
 constexpr auto kNamesFade = 0.2;
+// The hub or the card shows the chat under the pointer: its words fade in.
+constexpr auto kPreviewFade = 0.16;
+constexpr auto kHintDuration = crl::time(150);
+constexpr auto kHintLift = 7;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -523,6 +528,9 @@ bool View::animationStep(crl::time ms) {
 	if (t - _movedAt < kNamesDelay + kNamesFade) {
 		busy = true;
 	}
+	if (t - _previewAt < kPreviewFade) {
+		busy = true;
+	}
 	update();
 	return busy;
 }
@@ -687,12 +695,26 @@ void View::updateHover(QPointF point) {
 		clickable = true;
 	}
 	setCursor(clickable ? style::cur_pointer : style::cur_default);
+	showHeaderHint(header >= 0 && header == currentPage() && nextUnread() >= 0);
 	if (_hovered != hovered || _hoveredHeader != header || _hoveredDot != dot) {
 		_hovered = hovered;
 		_hoveredHeader = header;
 		_hoveredDot = dot;
 		update();
 	}
+}
+
+void View::showHeaderHint(bool shown) {
+	if (_headerHintShown == shown) {
+		return;
+	}
+	_headerHintShown = shown;
+	_headerHint.start(
+		[=] { update(0, 0, width(), headerHeight()); },
+		shown ? 0. : 1.,
+		shown ? 1. : 0.,
+		kHintDuration,
+		anim::easeOutCubic);
 }
 
 void View::resizeEvent(QResizeEvent *e) {
@@ -801,6 +823,7 @@ void View::mouseReleaseEvent(QMouseEvent *e) {
 }
 
 void View::leaveEventHook(QEvent *e) {
+	showHeaderHint(false);
 	if (_hovered >= 0 || _hoveredHeader >= 0 || _hoveredDot >= 0) {
 		_hovered = _hoveredHeader = _hoveredDot = -1;
 		update();
@@ -991,6 +1014,15 @@ void View::paintPage(Painter &p, int page, double shift) {
 		const auto under = _dial->faceAt(inside, spin.position, count);
 		return (under == _hovered) ? under : -1;
 	}();
+	const auto focusIndex = count ? FocusIndex(spin.position, count) : -1;
+	const auto pointed = (current && hovered >= 0 && hovered < count && hovered != focusIndex)
+		? chats[hovered].get()
+		: nullptr;
+	if (current && pointed != _previewHover) {
+		_previewHover = pointed;
+		_previewAt = now();
+		startAnimation();
+	}
 	auto frame = DialFrame{
 		.position = spin.position,
 		.count = count,
@@ -1003,9 +1035,13 @@ void View::paintPage(Painter &p, int page, double shift) {
 			(now() - _movedAt - kNamesDelay) / kNamesFade,
 			0.,
 			1.),
-		.focused = count ? chats[FocusIndex(spin.position, count)].get() : nullptr,
+		.focused = count ? chats[focusIndex].get() : nullptr,
 		.loading = !count && !_model->fullyLoaded(id),
 	};
+	frame.previewed = pointed ? pointed : frame.focused;
+	frame.previewAlpha = current
+		? EaseOutCubic((now() - _previewAt) / kPreviewFade)
+		: 1.;
 	const auto rect = pageRect();
 	p.save();
 	p.translate(rect.x() + shift, rect.y());
@@ -1041,7 +1077,11 @@ void View::paintHeader(Painter &p) {
 		const auto full = titleWidth + badgeGap + badgeSize.width();
 		const auto center = width() / 2. + (page - _page) * spacing;
 		const auto left = int(std::round(center - full / 2.));
-		const auto top = (height - st.font->height) / 2;
+		const auto hint = (page == current)
+			? _headerHint.value(_headerHintShown ? 1. : 0.)
+			: 0.;
+		const auto top = (height - st.font->height) / 2
+			- int(std::round(S(kHintLift) * hint));
 		const auto hover = (page == _hoveredHeader && page != current);
 		const auto alpha = std::clamp(1. - 0.5 * distance, 0.3, 1.)
 			* (hover ? 1.25 : 1.);
@@ -1054,8 +1094,21 @@ void View::paintHeader(Painter &p) {
 				p,
 				badgeText,
 				left + titleWidth + badgeGap,
-				(height - badgeSize.height()) / 2,
+				top + (st.font->height - badgeSize.height()) / 2,
 				badge);
+		}
+		if (hint > 0.01) {
+			// Clicking the name turns the dial to the next unread chat.
+			const auto &font = st::circlesHintFont;
+			const auto text = u"Next unread"_q;
+			p.setOpacity(hint);
+			p.setFont(font);
+			p.setPen(SubTextColor());
+			p.drawText(
+				QPointF(
+					center - font->width(text) / 2.,
+					top + st.font->height + S(1) + font->ascent),
+				text);
 		}
 	}
 	p.setOpacity(1.);

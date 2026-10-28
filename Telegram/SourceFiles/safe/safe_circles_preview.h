@@ -1,0 +1,118 @@
+/*
+This file is part of Safe Telegram, a locked build of Telegram Desktop.
+
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+*/
+#pragma once
+
+#include "dialogs/dialogs_common.h"
+#include "safe/safe_circles_fit.h"
+#include "ui/text/text.h"
+
+#include <map>
+
+class History;
+class Painter;
+
+// The focused (or pointed at) chat's preview: in the Crown's hub, fitted
+// line by line to the circle, and in the Orbit's card as a list row. The
+// words are laid out with safe_circles_fit (no short word cut, the ellipsis
+// after the last whole word) and drawn as one-line strings that keep the
+// message's colors and weights.
+namespace Safe::Circles {
+
+class Model;
+
+// A text's words as FitWords measures them, in `st`.
+struct MeasuredWords {
+	TextWithEntities text;
+	std::vector<std::pair<int, int>> ranges; // each word's [from, till)
+	std::vector<FitWord> words;
+	int ellipsis = 0;
+};
+[[nodiscard]] MeasuredWords MeasureWords(
+	const TextWithEntities &text,
+	const style::TextStyle &st);
+
+// The lines `fit` chose as one-line strings in `st`; a line the text goes
+// on past ends in "…" after its last whole word, trailing punctuation
+// trimmed, or inside a long word cut to `widths`.
+[[nodiscard]] std::vector<Ui::Text::String> FittedLines(
+	const MeasuredWords &measured,
+	const WordFit &fit,
+	const std::vector<int> &widths,
+	const style::TextStyle &st);
+
+// A chat's text on one line `width` wide, cut the same way, kept until
+// the text or the width changes. A returned line stays valid while other
+// chats' lines are added (a dial keeps several while it paints).
+class LineCache final {
+public:
+	[[nodiscard]] const Ui::Text::String &line(
+		not_null<History*> history,
+		const TextWithEntities &text,
+		const style::TextStyle &st,
+		int width);
+
+private:
+	struct Entry {
+		QString text;
+		const style::TextStyle *st = nullptr;
+		int width = -1;
+		Ui::Text::String line;
+	};
+	std::map<not_null<History*>, Entry> _entries;
+
+};
+
+// The Crown's hub: name (13 pt semibold, up to two lines), message (12 pt,
+// up to two) and time (11 pt) with the badge, each line as wide as the
+// circle `radius` round `center` is at its height.
+class HubPreview final {
+public:
+	void paint(
+		Painter &p,
+		Model &model,
+		not_null<History*> history,
+		QPointF center,
+		double radius,
+		double alpha);
+
+private:
+	void prepare(Model &model, not_null<History*> history, int radius);
+
+	History *_history = nullptr;
+	QString _name;
+	QString _text;
+	QString _time;
+	Dialogs::BadgesState _badges;
+	int _radius = -1;
+
+	HubPlan _plan;
+	std::vector<Ui::Text::String> _nameLines;
+	std::vector<Ui::Text::String> _textLines;
+	int _timeWidth = 0;
+	QSize _badge;
+
+};
+
+// The Orbit's card: the photo, the name (14 pt semibold) running to the
+// time, the message under it. A name that does not fit beside the time
+// gets the whole line and the time moves down beside the message.
+class CardPreview final {
+public:
+	void paint(
+		Painter &p,
+		Model &model,
+		not_null<History*> history,
+		QRect rect,
+		double alpha);
+
+private:
+	LineCache _names;
+	LineCache _texts;
+
+};
+
+} // namespace Safe::Circles

@@ -1949,11 +1949,15 @@ PRIVATE
     safe/safe_circles_crown.cpp
     safe/safe_circles_dial.cpp
     safe/safe_circles_dial.h
+    safe/safe_circles_fit.cpp
+    safe/safe_circles_fit.h
     safe/safe_circles_model.cpp
     safe/safe_circles_model.h
     safe/safe_circles_orbit.cpp
     safe/safe_circles_paint.cpp
     safe/safe_circles_paint.h
+    safe/safe_circles_preview.cpp
+    safe/safe_circles_preview.h
     safe/safe_circles_settings.cpp
     safe/safe_circles_settings.h
     safe/safe_circles_view.cpp

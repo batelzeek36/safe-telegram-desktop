@@ -7,10 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_circles_dial.h"
 
 #include "safe/safe_circles_model.h"
+#include "safe/safe_circles_preview.h"
 #include "ui/painter.h"
 #include "ui/text/text.h"
 
 #include "styles/style_basic.h"
+#include "styles/style_chat.h"
 
 namespace Safe::Circles {
 namespace {
@@ -67,7 +69,7 @@ private:
 	};
 	[[nodiscard]] Spot spot(double angle) const;
 	void paintRail(Painter &p, const DialFrame &frame) const;
-	void paintCard(Painter &p, Model &model, const DialFrame &frame) const;
+	void paintCard(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF frontCenter() const;
 	[[nodiscard]] QRectF besidePill(
 		const Ui::Text::String &name,
@@ -80,6 +82,9 @@ private:
 	double _face = 0.;
 	double _leaf = 0.;
 	QRect _card;
+
+	CardPreview _preview;
+	LineCache _pills;
 
 };
 
@@ -195,14 +200,19 @@ void Orbit::paintRail(Painter &p, const DialFrame &frame) const {
 void Orbit::paintCard(
 		Painter &p,
 		Model &model,
-		const DialFrame &frame) const {
+		const DialFrame &frame) {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto radius = S(14);
 	p.setBrush(SurfaceColor());
 	p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
 	p.drawRoundedRect(QRectF(_card), radius, radius);
-	if (frame.focused) {
-		PaintRowPreview(p, model, not_null<History*>(frame.focused), _card);
+	if (const auto history = frame.previewed) {
+		_preview.paint(
+			p,
+			model,
+			not_null<History*>(history),
+			_card,
+			frame.previewAlpha);
 	} else {
 		PaintEmpty(p, _card, frame.loading);
 	}
@@ -250,39 +260,26 @@ void Orbit::paint(
 			continue;
 		}
 		PaintFace(p, model, chats[face.index], face, face.focus);
+		if (face.index == frame.hovered && face.focus < 0.5) {
+			PaintHoverRing(p, face);
+		}
 	}
 	if (!leafDrawn) {
 		drawLeaf();
 	}
+	const auto room = pillWidth() - 2 * S(7);
 	for (const auto &face : faces) {
-		if (face.index >= int(chats.size())) {
+		const auto alpha = face.nameAlpha * face.alpha * frame.names;
+		if (face.index >= int(chats.size()) || alpha <= 0.01) {
 			continue;
 		}
-		const auto &name = model.shortName(chats[face.index]);
-		const auto hovered = (face.index == frame.hovered) && face.focus < 0.5;
-		const auto shown = face.alpha * frame.names;
-		if (face.nameAlpha * shown > 0.01) {
-			PaintNamePillIn(
-				p,
-				name,
-				besidePill(name, face),
-				face.nameAlpha * shown);
-		} else if (hovered && shown > 0.01) {
-			// Behind the leaf a name goes above its face: below it, it
-			// would cover the faces in front.
-			const auto behind = (face.depth < 0.);
-			auto rect = NamePillRect(
-				name,
-				face.center + QPointF(0., (behind ? -1. : 1.) * face.size / 2.),
-				pillWidth());
-			rect.translate(0., (behind ? -1. : 1.) * rect.height() * 0.15);
-			const auto margin = double(S(6));
-			rect.moveLeft(std::clamp(
-				rect.left(),
-				margin,
-				std::max(_size.width() - margin - rect.width(), margin)));
-			PaintNamePillIn(p, name, rect, shown);
-		}
+		const auto history = chats[face.index];
+		const auto &name = _pills.line(
+			history,
+			{ model.shortName(history).toString() },
+			st::chatSimilarName,
+			room);
+		PaintNamePillIn(p, name, besidePill(name, face), alpha);
 	}
 	PaintNotch(
 		p,
@@ -313,7 +310,7 @@ QRectF Orbit::besidePill(
 	} else {
 		rect.moveRight(std::min(rect.right(), _center.x() - clear));
 	}
-	const auto margin = double(S(6));
+	const auto margin = double(PageMargin());
 	rect.moveLeft(std::clamp(
 		rect.left(),
 		margin,
@@ -348,9 +345,12 @@ double Orbit::pixelsPerChat() const {
 }
 
 int Orbit::pillWidth() const {
-	// From clear of the front face to the page's edge.
-	const auto room = _size.width() / 2. - _face * kFocused / 2. - S(4) - S(6);
-	return int(std::clamp(room, double(S(56)), double(S(104))));
+	// From clear of the front face to the column's margin.
+	const auto room = _size.width() / 2.
+		- _face * kFocused / 2.
+		- S(4)
+		- PageMargin();
+	return int(std::max(room, double(S(56))));
 }
 
 } // namespace

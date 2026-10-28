@@ -1,0 +1,25 @@
+/*
+This file is part of Safe Telegram, a locked build of Telegram Desktop.
+
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+*/
+using "ui/basic.style";
+
+// The chat circles' type, from the mocks' column sizes
+// (docs/previews/circles: .cv-column .hub-*, .pc-*).
+circlesHubName: TextStyle(defaultTextStyle) {
+	font: font(13px semibold);
+}
+circlesHubText: TextStyle(defaultTextStyle) {
+	font: font(12px);
+}
+circlesHubTimeFont: font(11px);
+circlesCardName: TextStyle(defaultTextStyle) {
+	font: font(14px semibold);
+}
+circlesCardText: TextStyle(defaultTextStyle) {
+	font: font(13px);
+}
+circlesCardTimeFont: font(12px);
+circlesHintFont: font(11px);

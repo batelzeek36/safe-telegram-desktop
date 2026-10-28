@@ -11,6 +11,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 class History;
 class Painter;
 
+namespace style {
+struct TextStyle;
+} // namespace style
+
 namespace Ui::Text {
 class String;
 } // namespace Ui::Text
@@ -40,6 +44,10 @@ struct FacePlace {
 [[nodiscard]] QColor Mix(const QColor &a, const QColor &b, double amount);
 [[nodiscard]] QColor Faded(QColor color, double alpha);
 
+[[nodiscard]] int LineHeightOf(const style::TextStyle &st);
+// The least room a label keeps from the column's edges.
+[[nodiscard]] int PageMargin();
+
 // The theme's background under the circles, a hairline color that reads on
 // it, the quiet glyph grey and the secondary text color.
 [[nodiscard]] QColor BackgroundColor();
@@ -53,13 +61,18 @@ struct FacePlace {
 [[nodiscard]] QColor JadeColor(double alpha = 1.);
 
 // The face itself: the photo, dimmed by `place.shade`, the jade ring when
-// `ring` > 0 (fading in with it), and the unread badge on its shoulder.
+// `ring` > 0 (fading in with it, stopping short of the badge), and the
+// unread badge on its shoulder (a small solid dot on a far face).
 void PaintFace(
 	Painter &p,
 	Model &model,
 	not_null<History*> history,
 	const FacePlace &place,
 	double ring);
+
+// A quiet ring round the face under the pointer (its chat shows in the
+// hub or the card meanwhile).
+void PaintHoverRing(Painter &p, const FacePlace &place);
 
 // A soft light under the focused face.
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha);
@@ -76,18 +89,8 @@ void PaintNamePillIn(
 	QRectF rect,
 	double alpha);
 
-// The short name in a small pill sitting on the bottom edge of a face,
-// kept inside a page `pageWidth` wide.
-void PaintNamePill(
-	Painter &p,
-	const Ui::Text::String &name,
-	QPointF faceBottom,
-	int maxWidth,
-	int pageWidth,
-	double alpha);
-
-// The unread badge as the chat list draws it, centered on `center`, with
-// a ring of the background around it; returns its size.
+// The unread badge as the chat list draws it, centered on `center`;
+// returns its size.
 QSize PaintBadgeAt(
 	Painter &p,
 	const Dialogs::BadgesState &state,
@@ -103,6 +106,14 @@ void PaintLeafAt(
 	double lean,
 	double glow);
 
+// The leaf as a thin line drawing (its edge and midrib), `size` across.
+void PaintLeafOutline(
+	Painter &p,
+	QPointF center,
+	double size,
+	double lean,
+	const QColor &color);
+
 // The tick: a jade notch pointing at the focus (down by default), `width`
 // wide, swelling and brightening for `pulse` (1 = a chat just passed).
 void PaintNotch(
@@ -111,24 +122,6 @@ void PaintNotch(
 	double width,
 	double pulse,
 	bool pointsDown = true);
-
-// The focused chat's preview centered in `rect`: the name and the last
-// message (two lines each at most, cut to fit), then time and badge while
-// they still fit `rect`'s height. Returns the height used.
-int PaintCenteredPreview(
-	Painter &p,
-	Model &model,
-	not_null<History*> history,
-	QRect rect,
-	bool measureOnly = false);
-
-// The preview as a chat list row: the photo, name and time on the
-// first line, the message and the badge on the second, inside `rect`.
-void PaintRowPreview(
-	Painter &p,
-	Model &model,
-	not_null<History*> history,
-	QRect rect);
 
 // "No chats in this folder" / "Loading chats" in the middle of an empty dial.
 void PaintEmpty(Painter &p, QRect rect, bool loading);

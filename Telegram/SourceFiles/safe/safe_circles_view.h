@@ -140,6 +140,7 @@ private:
 	void checkLoadMore(FilterId id);
 
 	void updateHover(QPointF point);
+	void showHeaderHint(bool shown);
 	[[nodiscard]] int headerItemAt(QPointF point) const;
 	[[nodiscard]] int dotAt(QPointF point) const;
 	[[nodiscard]] QRect headerItemRect(int page) const;
@@ -189,6 +190,13 @@ private:
 	int _hovered = -1;
 	int _hoveredHeader = -1;
 	int _hoveredDot = -1;
+	// The chat under the pointer the hub or the card shows instead of the
+	// focused one, and when that last changed (its words fade in).
+	History *_previewHover = nullptr;
+	double _previewAt = -10.;
+	// "Next unread" under the circle's name while the pointer is on it.
+	bool _headerHintShown = false;
+	Ui::Animations::Simple _headerHint;
 
 	Ui::Animations::Basic _animation;
 

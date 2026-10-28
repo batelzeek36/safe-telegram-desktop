@@ -70,8 +70,11 @@ public:
 		not_null<History*> history);
 
 	// The last message line ("Michelle: see you at 2"), plain text only:
-	// no custom emoji, spoilers dotted out, no media thumbnails.
+	// no custom emoji, spoilers dotted out, no media thumbnails; drawn, and
+	// as marked text for the hub to lay out line by line.
 	[[nodiscard]] const Ui::Text::String &preview(not_null<History*> history);
+	[[nodiscard]] const TextWithEntities &previewMarked(
+		not_null<History*> history);
 	[[nodiscard]] QString time(not_null<History*> history) const;
 	[[nodiscard]] Dialogs::BadgesState badges(
 		not_null<History*> history) const;
@@ -97,9 +100,11 @@ private:
 	struct Preview {
 		HistoryItem *item = nullptr;
 		int generation = -1;
+		TextWithEntities marked;
 		Ui::Text::String text = Ui::Text::String(1);
 	};
 
+	[[nodiscard]] Preview &previewEntry(not_null<History*> history);
 	void setupSubscriptions();
 	void markOrderDirty();
 	void refreshCircles();
