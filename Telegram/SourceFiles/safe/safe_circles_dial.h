@@ -59,10 +59,12 @@ public:
 	[[nodiscard]] virtual Layout layout() const = 0;
 	virtual void resize(QSize size) = 0;
 
-	// The faces at `position`, in paint order (back to front).
+	// The faces at `position` of a circle whose chats' faces have
+	// `corners` (Model::faceCorners, one a chat), in paint order (back to
+	// front).
 	[[nodiscard]] virtual std::vector<FacePlace> place(
 		double position,
-		int count) const = 0;
+		const std::vector<double> &corners) const = 0;
 
 	// The whole page: the faces of `chats` at `frame.position` with what
 	// lies under them (bezel, orbit, leaf, light) and over them (hub, card,
@@ -73,8 +75,12 @@ public:
 		const std::vector<not_null<History*>> &chats,
 		const DialFrame &frame) = 0;
 
-	// The chat whose face is under `point` (front faces first), or -1.
-	[[nodiscard]] int faceAt(QPointF point, double position, int count) const;
+	// The chat whose face (in its own shape) is under `point`, front faces
+	// first, or -1.
+	[[nodiscard]] int faceAt(
+		QPointF point,
+		double position,
+		const std::vector<double> &corners) const;
 
 	// A press here can spin the dial (elsewhere a sideways drag changes
 	// circle); how many chats a pointer move turns it; a click here opens

@@ -746,7 +746,10 @@ void View::updateHover(QPointF point) {
 		const auto id = circleAt(currentPage());
 		const auto &chats = chatsOf(id);
 		const auto count = int(chats.size());
-		const auto under = _dial->faceAt(inside, spinOf(id).position, count);
+		const auto under = _dial->faceAt(
+			inside,
+			spinOf(id).position,
+			_model->faceCorners(chats));
 		clickable = (under >= 0) || (_dial->opens(inside) && count > 0);
 		if (under >= 0 && under < count && !hoverBlocked()) {
 			hovered = under;
@@ -805,8 +808,12 @@ void View::mousePressEvent(QMouseEvent *e) {
 	if (pageRect().contains(point.toPoint())) {
 		const auto inside = toPage(point);
 		const auto id = circleAt(currentPage());
-		const auto count = int(chatsOf(id).size());
-		_press.face = _dial->faceAt(inside, spinOf(id).position, count);
+		const auto &chats = chatsOf(id);
+		const auto count = int(chats.size());
+		_press.face = _dial->faceAt(
+			inside,
+			spinOf(id).position,
+			_model->faceCorners(chats));
 		_press.opens = _dial->opens(inside) && count > 0;
 		_press.grabs = _dial->grabs(inside) && count > 0;
 	}
@@ -1086,7 +1093,10 @@ void View::paintPage(Painter &p, int page, double shift) {
 			return -1;
 		}
 		const auto inside = toPage(QPointF(mapFromGlobal(QCursor::pos())));
-		const auto under = _dial->faceAt(inside, spin.position, count);
+		const auto under = _dial->faceAt(
+			inside,
+			spin.position,
+			_model->faceCorners(chats));
 		return (under == _hovered && chats[under].get() == _hoveredHistory)
 			? under
 			: -1;

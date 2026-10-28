@@ -52,14 +52,18 @@ bool Behind(const std::vector<FacePlace> &faces, int i, int hover) {
 	return (faces[i].depth <= faces[hover].depth);
 }
 
-int Dial::faceAt(QPointF point, double position, int count) const {
-	const auto faces = place(position, count);
+int Dial::faceAt(
+		QPointF point,
+		double position,
+		const std::vector<double> &corners) const {
+	const auto faces = place(position, corners);
+	const auto grow = double(style::ConvertScale(3));
 	for (auto i = faces.rbegin(); i != faces.rend(); ++i) {
 		if (i->alpha < 0.5) {
 			continue;
 		}
-		const auto reach = i->size / 2. + style::ConvertScale(3);
 		const auto d = point - i->center;
+		const auto reach = FaceRim(*i, grow, std::atan2(d.y(), d.x()));
 		if (d.x() * d.x() + d.y() * d.y() <= reach * reach) {
 			return i->index;
 		}

@@ -94,7 +94,6 @@ struct BadgeSpot {
 	if (!HasBadge(state) || BadgeFade(place.alpha) <= 0.01) {
 		return {};
 	}
-	const auto r = place.size / 2.;
 	const auto full = WearsFullBadge(place);
 	const auto dot = std::clamp(place.size * 0.26, double(S(6)), double(S(9)));
 	const auto size = full ? QSizeF(BadgeSize(state)) : QSizeF(dot, dot);
@@ -104,7 +103,7 @@ struct BadgeSpot {
 		place.center.x() - place.dialCenter.x(),
 		place.center.y() - place.dialCenter.y(),
 		place.badgeAngle,
-		r * 1.018,
+		FaceRim(place, 0., place.badgeAngle) * 1.018,
 		size.width(),
 		size.height(),
 		place.badgeLimit);
@@ -114,7 +113,64 @@ struct BadgeSpot {
 	return { at, size, full };
 }
 
+[[nodiscard]] bool Round(const FacePlace &place) {
+	return place.corner >= kRoundFace - 1e-6;
+}
+
+[[nodiscard]] double CornerOf(const FacePlace &place, double grow) {
+	return std::clamp(
+		place.corner * place.size + grow,
+		0.,
+		place.size / 2. + grow);
+}
+
+// Fills or strokes (with the painter's brush and pen) the face's outline
+// grown by `grow`; a round face as the ellipse it always was.
+void DrawOutline(Painter &p, const FacePlace &place, double grow) {
+	if (Round(place)) {
+		const auto r = place.size / 2. + grow;
+		p.drawEllipse(place.center, r, r);
+	} else {
+		p.drawPath(FaceOutline(place, grow));
+	}
+}
+
 } // namespace
+
+QPainterPath FaceOutline(const FacePlace &place, double grow) {
+	auto result = QPainterPath();
+	const auto half = place.size / 2. + grow;
+	if (half <= 0.) {
+		return result;
+	} else if (Round(place)) {
+		result.addEllipse(place.center, half, half);
+		return result;
+	}
+	const auto corner = CornerOf(place, grow);
+	result.addRoundedRect(
+		QRectF(
+			place.center.x() - half,
+			place.center.y() - half,
+			half * 2.,
+			half * 2.),
+		corner,
+		corner);
+	return result;
+}
+
+double FaceRim(const FacePlace &place, double grow, double angle) {
+	const auto half = place.size / 2. + grow;
+	return Round(place)
+		? std::max(half, 0.)
+		: RimDistance(half, CornerOf(place, grow), angle);
+}
+
+double FaceFarthest(const FacePlace &place, double grow) {
+	const auto half = place.size / 2. + grow;
+	return Round(place)
+		? std::max(half, 0.)
+		: RimFarthest(half, CornerOf(place, grow));
+}
 
 int LineHeightOf(const style::TextStyle &st) {
 	return std::max(st.font->height, st.lineHeight);
@@ -194,9 +250,10 @@ void PaintFace(
 	p.setOpacity(was * place.alpha);
 	p.drawImage(rect, image);
 	if (place.shade > 0.01) {
+		// Dimmed in its own shape: a forum's corners too.
 		p.setPen(Qt::NoPen);
 		p.setBrush(Faded(BackgroundColor(), place.shade));
-		p.drawEllipse(rect);
+		DrawOutline(p, place, 0.);
 	}
 
 	// The badge on the shoulder: the full badge on a face near its full
@@ -218,19 +275,16 @@ void PaintFace(
 				keep.subtracted(BadgeShape(at, badge, gap)),
 				Qt::IntersectClip);
 		}
-		const auto outer = r + S(kRingGap) + S(kRingWidth) / 2.;
 		p.setBrush(Qt::NoBrush);
 		p.setPen(QPen(JadeColor(ring), S(kRingWidth)));
-		p.drawEllipse(place.center, outer, outer);
+		DrawOutline(p, place, S(kRingGap) + S(kRingWidth) / 2.);
 		p.restore();
 	}
 	if (!badge.isEmpty()) {
 		// The background between the badge and the photo it sits on.
 		p.setOpacity(was * place.alpha * BadgeFade(place.alpha));
 		p.save();
-		auto face = QPainterPath();
-		face.addEllipse(rect);
-		p.setClipPath(face, Qt::IntersectClip);
+		p.setClipPath(FaceOutline(place, 0.), Qt::IntersectClip);
 		p.setPen(Qt::NoPen);
 		p.setBrush(BackgroundColor());
 		p.drawPath(BadgeShape(at, badge, gap));
@@ -265,22 +319,18 @@ QPainterPath RingDiscs(const std::vector<FacePlace> &faces, int hovered) {
 		if (face.alpha <= 0.01) {
 			continue;
 		}
-		const auto r = face.size / 2.;
 		const auto reach = std::max(
 			(face.focus > 0.01) ? (FocusRingReach() * face.focus) : 0.,
 			(i == hovered) ? HoverRingReach() : 0.);
 		if (reach > 0.) {
-			result.addEllipse(face.center, r + reach, r + reach);
+			result.addPath(FaceOutline(face, reach));
 		}
 	}
 	return result;
 }
 
 QPainterPath HoverHalo(const FacePlace &place) {
-	const auto r = place.size / 2. + HoverRingReach() + RingClear();
-	auto result = QPainterPath();
-	result.addEllipse(place.center, r, r);
-	return result;
+	return FaceOutline(place, HoverRingReach() + RingClear());
 }
 
 void ClipOut(Painter &p, QSizeF size, const QPainterPath &cut) {
@@ -312,8 +362,8 @@ void PaintHoverRing(
 		return;
 	}
 	auto hq = PainterHighQualityEnabler(p);
-	const auto outer = place.size / 2. + S(kHoverGap) + st::lineWidth * 0.75;
-	const auto edge = place.size / 2. + HoverRingReach();
+	const auto line = S(kHoverGap) + st::lineWidth * 0.75;
+	const auto edge = FaceFarthest(place, HoverRingReach());
 	p.save();
 	auto cut = QPainterPath();
 	const auto spot = BadgeSpotOf(model.badges(history), place);
@@ -325,24 +375,24 @@ void PaintHoverRing(
 		if (front.alpha <= 0.01 || front.depth <= place.depth) {
 			continue;
 		}
-		const auto r = front.size / 2.
-			+ ((front.focus > 0.01) ? FocusRingReach() : 0.)
+		const auto grow = ((front.focus > 0.01) ? FocusRingReach() : 0.)
 			+ RingClear();
 		const auto d = front.center - place.center;
-		if (std::hypot(d.x(), d.y()) < r + edge) {
-			cut.addEllipse(front.center, r, r);
+		if (std::hypot(d.x(), d.y()) < FaceFarthest(front, grow) + edge) {
+			cut.addPath(FaceOutline(front, grow));
 		}
 	}
 	if (!cut.isEmpty()) {
 		auto keep = QPainterPath();
-		keep.addEllipse(place.center, outer * 2., outer * 2.);
+		const auto room = FaceFarthest(place, line) * 2.;
+		keep.addEllipse(place.center, room, room);
 		p.setClipPath(keep.subtracted(cut), Qt::IntersectClip);
 	}
 	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(
 		Faded(TextColor(), 0.55 * place.alpha),
 		st::lineWidth * 1.5));
-	p.drawEllipse(place.center, outer, outer);
+	DrawOutline(p, place, line);
 	p.restore();
 }
 

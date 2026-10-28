@@ -61,7 +61,7 @@ public:
 	void resize(QSize size) override;
 	[[nodiscard]] std::vector<FacePlace> place(
 		double position,
-		int count) const override;
+		const std::vector<double> &corners) const override;
 	void paint(
 		Painter &p,
 		Model &model,
@@ -77,17 +77,20 @@ public:
 	[[nodiscard]] int pillWidth() const override;
 
 private:
-	// `rings`: the ring line under the faces stops at them (RingDiscs).
+	// `rings`: the ring line under the faces stops at them (RingDiscs);
+	// `apart`: the faces' spread (spread), the ticks keep in step with it.
 	void paintBezel(
 		Painter &p,
 		const DialFrame &frame,
 		const std::vector<Pill> &pills,
-		const QPainterPath &rings) const;
+		const QPainterPath &rings,
+		double apart) const;
 	void paintHub(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF at(double angle, double radius) const;
 	// Radians the faces either side of the focus are moved out by, so the
-	// focus ring keeps kClear from them (NeighbourSpread).
-	[[nodiscard]] double spread(int count) const;
+	// focus ring keeps kClear from them (NeighbourSpreadShaped) in a circle
+	// whose faces have `corners`.
+	[[nodiscard]] double spread(const std::vector<double> &corners) const;
 	// How far from the centre a badge may reach: inside the ticks by kClear.
 	[[nodiscard]] double badgeLimit() const;
 	void alignPills(std::vector<Pill> &pills) const;
@@ -149,13 +152,25 @@ QPointF Crown::at(double angle, double radius) const {
 	return _center + QPointF(std::cos(angle), std::sin(angle)) * radius;
 }
 
-double Crown::spread(int count) const {
-	return NeighbourSpread(
+double Crown::spread(const std::vector<double> &corners) const {
+	// A circle with a forum in it: its rounded square (with its ring) reaches
+	// further off its sides than a circle, so the clearance is kept for it
+	// wherever it comes round (the spread never changes while a dial
+	// turns). A circle of round faces is spaced as it always was.
+	auto corner = kRoundFace;
+	for (const auto value : corners) {
+		corner = std::min(corner, value);
+	}
+	const auto focused = _face * kGrow;
+	const auto reach = FocusRingReach();
+	return NeighbourSpreadShaped(
 		_ring,
-		_face * kGrow / 2. + FocusRingReach(),
+		focused / 2. + reach,
+		corner * focused + reach,
 		_face / 2.,
+		corner * _face,
 		S(kClear) + kRingEdge,
-		SlotCount(count));
+		SlotCount(int(corners.size())));
 }
 
 double Crown::badgeLimit() const {
@@ -177,10 +192,13 @@ double Crown::nearest(const QRectF &rect) const {
 	return std::hypot(dx, dy);
 }
 
-std::vector<FacePlace> Crown::place(double position, int count) const {
+std::vector<FacePlace> Crown::place(
+		double position,
+		const std::vector<double> &corners) const {
 	auto result = std::vector<FacePlace>();
+	const auto count = int(corners.size());
 	const auto slots = SlotCount(count);
-	const auto apart = spread(count);
+	const auto apart = spread(corners);
 	const auto limit = badgeLimit();
 	for (const auto &visible : VisibleSlots(position, count)) {
 		// Clockwise from twelve.
@@ -202,6 +220,7 @@ std::vector<FacePlace> Crown::place(double position, int count) const {
 			.badgeAngle = BadgeAngle(turn, focus),
 			.dialCenter = _center,
 			.badgeLimit = limit,
+			.corner = corners[visible.index],
 		});
 	}
 	ranges::sort(result, ranges::less(), &FacePlace::depth);
@@ -212,10 +231,10 @@ void Crown::paintBezel(
 		Painter &p,
 		const DialFrame &frame,
 		const std::vector<Pill> &pills,
-		const QPainterPath &rings) const {
+		const QPainterPath &rings,
+		double apart) const {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto slots = std::max(SlotCount(frame.count), 1);
-	const auto apart = spread(frame.count);
 	const auto total = slots * kTicksPerSlot;
 	const auto glyph = GlyphColor();
 	const auto major = Faded(glyph, 0.55);
@@ -404,7 +423,8 @@ void Crown::paint(
 	const auto top = at(-M_PI / 2., _ring);
 	PaintFocusLight(p, top, _face * kGrow, 1.);
 
-	const auto faces = place(frame.position, frame.count);
+	const auto corners = model.faceCorners(chats);
+	const auto faces = place(frame.position, corners);
 	auto pills = std::vector<Pill>();
 	for (const auto &face : faces) {
 		const auto alpha = face.nameAlpha * face.alpha * frame.names;
@@ -418,7 +438,7 @@ void Crown::paint(
 	}
 	alignPills(pills);
 	const auto hover = HoveredFace(faces, frame.hovered, int(chats.size()));
-	paintBezel(p, frame, pills, RingDiscs(faces, hover));
+	paintBezel(p, frame, pills, RingDiscs(faces, hover), spread(corners));
 
 	const auto halo = (hover >= 0) ? HoverHalo(faces[hover]) : QPainterPath();
 	for (auto i = 0; i != int(faces.size()); ++i) {

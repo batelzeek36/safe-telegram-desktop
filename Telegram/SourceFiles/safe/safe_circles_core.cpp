@@ -363,6 +363,98 @@ double NeighbourSpread(
 	return std::clamp(needed - slot, 0., slot * kMaxSpread);
 }
 
+double NeighbourSpreadShaped(
+		double ring,
+		double reachHalf,
+		double reachCorner,
+		double neighbourHalf,
+		double neighbourCorner,
+		double clear,
+		int slots) {
+	if (reachCorner >= reachHalf && neighbourCorner >= neighbourHalf) {
+		return NeighbourSpread(ring, reachHalf, neighbourHalf, clear, slots);
+	} else if (slots < 4 || ring <= 0.) {
+		return 0.;
+	}
+	const auto slot = 2. * (4. * kBadgeShoulder) / slots;
+	const auto most = slot * kMaxSpread;
+	// The room left between the two outlines, measured along the line
+	// between the centres, when they are `spread` further apart than a slot:
+	// that line leaves twelve o'clock at half the angle between them.
+	const auto room = [&](double spread) {
+		const auto apart = slot + spread;
+		const auto chord = apart / 2.;
+		return 2. * ring * std::sin(apart / 2.)
+			- RimDistance(reachHalf, reachCorner, chord)
+			- RimDistance(neighbourHalf, neighbourCorner, chord)
+			- clear;
+	};
+	if (room(0.) >= 0.) {
+		return 0.;
+	} else if (room(most) < 0.) {
+		return most;
+	}
+	// The least spread that leaves the room.
+	auto low = 0.;
+	auto high = most;
+	for (auto i = 0; i != 60; ++i) {
+		const auto middle = (low + high) / 2.;
+		if (room(middle) >= 0.) {
+			high = middle;
+		} else {
+			low = middle;
+		}
+	}
+	return high;
+}
+
+double RimDistance(double half, double corner, double angle) {
+	if (half <= 0.) {
+		return 0.;
+	}
+	corner = std::clamp(corner, 0., half);
+	const auto u = std::abs(std::cos(angle));
+	const auto v = std::abs(std::sin(angle));
+	const auto flat = half - corner; // each side's straight half
+	// On a straight side: the side the ray meets first.
+	if (u >= v) {
+		if (half * v <= flat * u) {
+			return half / u;
+		}
+	} else if (half * u <= flat * v) {
+		return half / v;
+	}
+	// On a corner's arc, centred at (flat, flat): the far root of
+	// |t (u, v) - (flat, flat)| = corner.
+	const auto b = flat * (u + v);
+	const auto c = 2. * flat * flat - corner * corner;
+	return b + std::sqrt(std::max(b * b - c, 0.));
+}
+
+double RimFarthest(double half, double corner) {
+	if (half <= 0.) {
+		return 0.;
+	}
+	corner = std::clamp(corner, 0., half);
+	return std::sqrt(2.) * (half - corner) + corner;
+}
+
+double RimAcross(double half, double corner, double y) {
+	if (half <= 0.) {
+		return 0.;
+	}
+	corner = std::clamp(corner, 0., half);
+	const auto flat = half - corner;
+	const auto up = std::abs(y);
+	if (up >= half) {
+		return 0.;
+	} else if (up <= flat) {
+		return half;
+	}
+	const auto into = up - flat;
+	return flat + std::sqrt(std::max(corner * corner - into * into, 0.));
+}
+
 double SpreadAngle(double offset, int slots, double spread) {
 	const auto pi = 4. * kBadgeShoulder;
 	const auto slot = 2. * pi / std::max(slots, 1);

@@ -215,6 +215,33 @@ inline constexpr double kOrbitBadgeLowest = 1.9198621771937625; // 110 degrees
 inline constexpr double kBadgeFadeFrom = 0.75;
 [[nodiscard]] double BadgeFade(double alpha);
 
+// ---- Face shapes ----
+//
+// A face is drawn as the chat list draws its photo: a circle, or for a forum
+// or a community a rounded square (corners 0.3 of its side, Telegram's
+// ForumUserpicRadiusMultiplier). What lies round a face follows its outline
+// grown concentrically (a ring `grow` out has corners `grow` rounder, the
+// iOS concentric rule): its shade, its rings, the clear band other faces
+// keep from it, where its badge sits, where a click lands
+// (design-evaluator pass 6: a forum's corners stayed bright outside its
+// round shade, and its hover ring was a circle cutting across them).
+//
+// A face's corners' radius as a share of its size: a round face's.
+inline constexpr double kRoundFace = 0.5;
+
+// How far the outline of a face `half` across (half its side; its radius
+// when round) with corners `corner` round (0 .. half; half = a circle) lies
+// from its centre along `angle` (radians; the outline is the same every
+// quarter turn, so any axis may be the origin).
+[[nodiscard]] double RimDistance(double half, double corner, double angle);
+
+// How far the outline reaches, at most (a corner's tip).
+[[nodiscard]] double RimFarthest(double half, double corner);
+
+// How far the outline reaches sideways from its centre's vertical at `y`
+// above or below its centre (0 past its top or bottom).
+[[nodiscard]] double RimAcross(double half, double corner, double y);
+
 // ---- The Crown's spacing ----
 //
 // The focused face is larger and wears a jade ring; on a full ring the
@@ -230,6 +257,20 @@ inline constexpr double kMaxSpread = 0.25;
 	double ring,
 	double reach,
 	double neighbour,
+	double clear,
+	int slots);
+
+// The same for faces of any shape (RimDistance): the focused face with its
+// ring `reachHalf` across with corners `reachCorner`, the faces either side
+// `neighbourHalf` with `neighbourCorner`, each measured along the line
+// between their centres (which leaves twelve o'clock at half the angle
+// between them). Round faces give NeighbourSpread exactly.
+[[nodiscard]] double NeighbourSpreadShaped(
+	double ring,
+	double reachHalf,
+	double reachCorner,
+	double neighbourHalf,
+	double neighbourCorner,
 	double clear,
 	int slots);
 

@@ -45,7 +45,7 @@ public:
 	void resize(QSize size) override;
 	[[nodiscard]] std::vector<FacePlace> place(
 		double position,
-		int count) const override;
+		const std::vector<double> &corners) const override;
 	void paint(
 		Painter &p,
 		Model &model,
@@ -84,17 +84,21 @@ private:
 		double clear) const;
 	[[nodiscard]] double faceClear() const;
 	// How near the middle a pill `height` tall may come with its round end
-	// tucked under the front face's ring, RingClear() from it.
-	[[nodiscard]] double ringClear(double height) const;
+	// tucked under the front face's ring, RingClear() from it, the front
+	// face having `corner` (FacePlace::corner: a forum's ring is a rounded
+	// square, wider low down than a circle).
+	[[nodiscard]] double ringClear(double height, double corner) const;
 	[[nodiscard]] int pillWidthClear(double clear) const;
 	// A neighbour's name and where it goes: a name cut in the room clear
-	// of the front face may take the room under its ring's curve.
+	// of the front face (its shape `frontCorner`) may take the room under
+	// its ring's curve.
 	void paintName(
 		Painter &p,
 		Model &model,
 		not_null<History*> history,
 		const FacePlace &face,
-		double alpha);
+		double alpha,
+		double frontCorner);
 
 	QSize _size;
 	QPointF _center;
@@ -164,8 +168,11 @@ QPointF Orbit::frontCenter() const {
 	return spot(M_PI / 2.).center;
 }
 
-std::vector<FacePlace> Orbit::place(double position, int count) const {
+std::vector<FacePlace> Orbit::place(
+		double position,
+		const std::vector<double> &corners) const {
 	auto result = std::vector<FacePlace>();
+	const auto count = int(corners.size());
 	const auto slot = SlotAngle(count);
 	for (const auto &visible : VisibleSlots(position, count)) {
 		// The next chats go to the right of the front face.
@@ -189,6 +196,7 @@ std::vector<FacePlace> Orbit::place(double position, int count) const {
 				_rx,
 				_ry,
 				Smooth(1. - std::abs(std::abs(visible.offset) - 1.))),
+			.corner = corners[visible.index],
 		});
 	}
 	ranges::sort(result, ranges::less(), &FacePlace::depth);
@@ -283,7 +291,8 @@ void Orbit::paint(
 		p.drawEllipse(QPointF(), 1., 1.);
 		p.restore();
 	}
-	const auto faces = place(frame.position, frame.count);
+	const auto corners = model.faceCorners(chats);
+	const auto faces = place(frame.position, corners);
 	const auto hover = HoveredFace(faces, frame.hovered, int(chats.size()));
 	// The rail never shows in a ring's gap; the faces behind the hovered
 	// face give way round its ring (the leaf's soft glow is left whole).
@@ -326,12 +335,17 @@ void Orbit::paint(
 	if (!leafDrawn) {
 		drawLeaf();
 	}
+	// The names show once the dial rests: the focused chat is in front, and
+	// its ring's shape is what a name may tuck under.
+	const auto frontCorner = frame.focused
+		? model.faceCorner(not_null<History*>(frame.focused))
+		: kRoundFace;
 	for (const auto &face : faces) {
 		const auto alpha = face.nameAlpha * face.alpha * frame.names;
 		if (face.index >= int(chats.size()) || alpha <= 0.01) {
 			continue;
 		}
-		paintName(p, model, chats[face.index], face, alpha);
+		paintName(p, model, chats[face.index], face, alpha, frontCorner);
 	}
 	PaintNotch(
 		p,
@@ -368,7 +382,8 @@ void Orbit::paintName(
 		Model &model,
 		not_null<History*> history,
 		const FacePlace &face,
-		double alpha) {
+		double alpha,
+		double frontCorner) {
 	const auto text = TextWithEntities{ model.shortName(history).toString() };
 	const auto narrow = pillWidth();
 	const auto &name = _pills.line(
@@ -382,7 +397,7 @@ void Orbit::paintName(
 		return;
 	}
 	if (name.toString() != text.text) {
-		const auto clear = ringClear(size.size.height());
+		const auto clear = ringClear(size.size.height(), frontCorner);
 		const auto wide = pillWidthClear(clear);
 		if (wide > narrow) {
 			const auto &roomy = _widePills.line(
@@ -405,15 +420,18 @@ double Orbit::faceClear() const {
 	return _face * kFocused / 2. + S(4);
 }
 
-double Orbit::ringClear(double height) const {
+double Orbit::ringClear(double height, double corner) const {
 	// The pill's centre sits this far under the front face's centre
-	// (besidePill), its round end a circle height / 2 across.
+	// (besidePill), its round end a circle height / 2 across: its centre
+	// keeps out of the ring's outline grown by RingClear() and that end.
 	const auto end = height / 2.;
-	const auto below = _face * kFocused / 2. + height * 0.15;
-	const auto reach = _face * kFocused / 2. + FocusRingReach() + RingClear() + end;
-	const auto across = (reach > below)
-		? std::sqrt(reach * reach - below * below)
-		: 0.;
+	const auto front = _face * kFocused;
+	const auto below = front / 2. + height * 0.15;
+	const auto grow = FocusRingReach() + RingClear() + end;
+	const auto across = RimAcross(
+		front / 2. + grow,
+		std::min(corner, kRoundFace) * front + grow,
+		below);
 	return std::clamp(across - end, double(S(4)), faceClear());
 }
 

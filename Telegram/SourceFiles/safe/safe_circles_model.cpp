@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "safe/safe_circles_core.h"
 #include "ui/empty_userpic.h"
+#include "ui/userpic_view.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
@@ -37,6 +38,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_safe_circles.h"
 
 #include <QtCore/QUrl>
+
+#include <cmath>
 
 namespace Safe::Circles {
 namespace {
@@ -431,6 +434,22 @@ rpl::producer<> Model::repaints() const {
 	return _repaints.events();
 }
 
+namespace {
+
+// The shape the chat list draws a chat's photo in (PeerData::paintUserpic):
+// a forum's or a community's rounded square, a channel's direct messages
+// in the channel's photo, Saved Messages and Replies round.
+[[nodiscard]] Ui::PeerUserpicShape FaceShape(not_null<PeerData*> peer) {
+	if (peer->isSelf() || peer->isRepliesChat()) {
+		return Ui::PeerUserpicShape::Circle;
+	} else if (peer->monoforumBroadcast()) {
+		return Ui::PeerUserpicShape::Monoforum;
+	}
+	return peer->userpicShape();
+}
+
+} // namespace
+
 // One image a chat, at the largest size asked for so far: a face and the
 // Orbit card ask for different sizes every frame, and a smaller draw scales
 // the larger image instead of making a new one each time.
@@ -448,14 +467,59 @@ const QImage &Model::face(not_null<History*> history, int size) {
 		}
 		return face.image;
 	}
-	peer->loadUserpic();
-	const auto key = peer->userpicUniqueKey(face.view);
-	if (face.image.isNull() || face.key != key || face.size < size) {
+	// A channel's direct messages wear the channel's photo, as in the list.
+	const auto broadcast = peer->monoforumBroadcast();
+	const auto source = broadcast ? not_null<PeerData*>(broadcast) : peer;
+	const auto shape = FaceShape(peer);
+	source->loadUserpic();
+	// The picture it is made from: Telegram's own chat shows Telegram's logo
+	// until its photo has loaded, under the same key, so the key alone kept
+	// the logo for good (design-evaluator pass 6).
+	const auto picture = static_cast<const void*>(
+		source->userpicCloudImage(face.view));
+	const auto key = source->userpicUniqueKey(face.view);
+	if (face.image.isNull()
+		|| face.key != key
+		|| face.picture != picture
+		|| face.shape != shape
+		|| face.size < size) {
 		face.key = key;
+		face.picture = picture;
+		face.shape = shape;
 		face.size = size;
-		face.image = PeerData::GenerateUserpicImage(peer, face.view, size);
+		const auto forumCorners = int(std::round(
+			size * Ui::ForumUserpicRadiusMultiplier()));
+		face.image = (shape == Ui::PeerUserpicShape::Monoforum)
+			? Ui::ApplyMonoforumShape(
+				PeerData::GenerateUserpicImage(source, face.view, size, 0))
+			: (shape == Ui::PeerUserpicShape::Forum)
+			? PeerData::GenerateUserpicImage(
+				source,
+				face.view,
+				size,
+				forumCorners)
+			: source->isForum()
+			// A bot's forum: round in the list.
+			? PeerData::GenerateUserpicImage(source, face.view, size, size / 2)
+			: PeerData::GenerateUserpicImage(source, face.view, size);
 	}
 	return face.image;
+}
+
+double Model::faceCorner(not_null<History*> history) const {
+	return (FaceShape(history->peer) == Ui::PeerUserpicShape::Forum)
+		? Ui::ForumUserpicRadiusMultiplier()
+		: kRoundFace;
+}
+
+std::vector<double> Model::faceCorners(
+		const std::vector<not_null<History*>> &chats) const {
+	auto result = std::vector<double>();
+	result.reserve(chats.size());
+	for (const auto &history : chats) {
+		result.push_back(faceCorner(history));
+	}
+	return result;
 }
 
 const Ui::Text::String &Model::name(not_null<History*> history) {

@@ -49,7 +49,22 @@ struct FacePlace {
 	// 0 = no limit.
 	QPointF dialCenter;
 	double badgeLimit = 0.;
+	// Its shape, as the chat list draws the photo (Model::faceCorner): the
+	// corners' radius as a share of `size`, 0.5 = round, a forum's rounded
+	// square 0.3. Its shade, rings, halo, badge and click area follow it.
+	double corner = kRoundFace;
 };
+
+// The face's outline grown by `grow` all round (a ring, a clear band), its
+// corners `grow` rounder: concentric with it.
+[[nodiscard]] QPainterPath FaceOutline(const FacePlace &place, double grow);
+// How far that outline lies from the face's centre along `angle`, and at
+// most (RimDistance, RimFarthest).
+[[nodiscard]] double FaceRim(
+	const FacePlace &place,
+	double grow,
+	double angle);
+[[nodiscard]] double FaceFarthest(const FacePlace &place, double grow);
 
 [[nodiscard]] QColor Mix(const QColor &a, const QColor &b, double amount);
 [[nodiscard]] QColor Faded(QColor color, double alpha);
@@ -88,15 +103,15 @@ void PaintFace(
 // plus the two soft edges between them (the Crown's focus ring rule).
 [[nodiscard]] double RingClear();
 
-// The discs a rail or ring line drawn under the faces stops at (it never
+// The outlines a rail or ring line drawn under the faces stops at (it never
 // shows in a ring's gap): each face's focus ring as far as it has come in,
 // and the hover ring of `faces[hovered]` (-1 = none).
 [[nodiscard]] QPainterPath RingDiscs(
 	const std::vector<FacePlace> &faces,
 	int hovered);
 
-// What lies behind the hovered face gives way round its ring: the disc
-// that keeps RingClear() between the ring and them.
+// What lies behind the hovered face gives way round its ring: its outline
+// grown to keep RingClear() between the ring and them.
 [[nodiscard]] QPainterPath HoverHalo(const FacePlace &place);
 
 // Clips `p` to all but `cut` (a page `size` large), for what is painted

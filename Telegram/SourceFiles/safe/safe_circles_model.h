@@ -62,6 +62,12 @@ public:
 	// changes or a larger one is asked for. Starts the photo's download when
 	// needed.
 	[[nodiscard]] const QImage &face(not_null<History*> history, int size);
+	// The face's shape, as the list draws the chat's photo: its corners'
+	// radius as a share of its size, kRoundFace for a circle, a forum's or
+	// a community's rounded square less (FacePlace::corner).
+	[[nodiscard]] double faceCorner(not_null<History*> history) const;
+	[[nodiscard]] std::vector<double> faceCorners(
+		const std::vector<not_null<History*>> &chats) const;
 
 	// The chat's name as the chat list shows it, and the short one (first
 	// name) for the label under a face.
@@ -87,6 +93,10 @@ private:
 	struct Face {
 		Ui::PeerUserpicView view;
 		InMemoryKey key;
+		// The picture it was made from (a loading photo's stand-in, then
+		// the photo) and the shape it was cut to.
+		const void *picture = nullptr;
+		Ui::PeerUserpicShape shape = Ui::PeerUserpicShape::Circle;
 		int size = 0;
 		bool special = false;
 		QImage image;
