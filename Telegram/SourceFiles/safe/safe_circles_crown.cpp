@@ -27,6 +27,12 @@ constexpr auto kHubLeafOpacity = 0.12;
 constexpr auto kHubPadding = 5; // the hub's words keep this far from its edge
 constexpr auto kFocusClear = 9; // a name keeps this far from the focus ring
 constexpr auto kTickClear = 3; // and the bezel's ticks this far from a name
+// The focus ring and the faces either side, a badge and the bezel's ticks:
+// this far apart at least (and half a point for the antialiased edges).
+constexpr auto kClear = 2;
+constexpr auto kEdge = 0.5;
+constexpr auto kMajorTick = 1.6; // line widths
+constexpr auto kTickPulse = 0.6; // the tick at twelve grows this much more
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -73,6 +79,11 @@ private:
 		const std::vector<Pill> &pills) const;
 	void paintHub(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF at(double angle, double radius) const;
+	// Radians the faces either side of the focus are moved out by, so the
+	// focus ring keeps kClear from them (NeighbourSpread).
+	[[nodiscard]] double spread(int count) const;
+	// How far from the centre a badge may reach: inside the ticks by kClear.
+	[[nodiscard]] double badgeLimit() const;
 	void alignPills(std::vector<Pill> &pills) const;
 	[[nodiscard]] double nearest(const QRectF &rect) const;
 	[[nodiscard]] QRectF neighbourPill(
@@ -118,6 +129,20 @@ QPointF Crown::at(double angle, double radius) const {
 	return _center + QPointF(std::cos(angle), std::sin(angle)) * radius;
 }
 
+double Crown::spread(int count) const {
+	return NeighbourSpread(
+		_ring,
+		_face * kGrow / 2. + FocusRingReach(),
+		_face / 2.,
+		S(kClear) + kEdge,
+		SlotCount(count));
+}
+
+double Crown::badgeLimit() const {
+	const auto cap = st::lineWidth * kMajorTick * (1. + kTickPulse) / 2.;
+	return _tickRadius - cap - S(kClear) - kEdge;
+}
+
 double Crown::nearest(const QRectF &rect) const {
 	const auto dx = std::max({
 		rect.left() - _center.x(),
@@ -134,9 +159,13 @@ double Crown::nearest(const QRectF &rect) const {
 
 std::vector<FacePlace> Crown::place(double position, int count) const {
 	auto result = std::vector<FacePlace>();
-	const auto slot = SlotAngle(count);
+	const auto slots = SlotCount(count);
+	const auto apart = spread(count);
+	const auto limit = badgeLimit();
 	for (const auto &visible : VisibleSlots(position, count)) {
-		const auto angle = -M_PI / 2. + visible.offset * slot;
+		// Clockwise from twelve.
+		const auto turn = SpreadAngle(visible.offset, slots, apart);
+		const auto angle = -M_PI / 2. + turn;
 		const auto focus = FocusAmount(visible.offset);
 		result.push_back({
 			.index = visible.index,
@@ -150,7 +179,9 @@ std::vector<FacePlace> Crown::place(double position, int count) const {
 			.offset = visible.offset,
 			.nameAlpha = NameAlpha(visible.offset, kNameReach),
 			// Out toward the bezel, away from the faces either side.
-			.badgeAngle = BadgeAngle(visible.offset * slot, focus),
+			.badgeAngle = BadgeAngle(turn, focus),
+			.dialCenter = _center,
+			.badgeLimit = limit,
 		});
 	}
 	ranges::sort(result, ranges::less(), &FacePlace::depth);
@@ -163,7 +194,7 @@ void Crown::paintBezel(
 		const std::vector<Pill> &pills) const {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto slots = std::max(SlotCount(frame.count), 1);
-	const auto slot = 2. * M_PI / slots;
+	const auto apart = spread(frame.count);
 	const auto total = slots * kTicksPerSlot;
 	const auto glyph = GlyphColor();
 	const auto major = Faded(glyph, 0.55);
@@ -187,16 +218,18 @@ void Crown::paintBezel(
 		return result;
 	};
 	for (auto m = 0; m != total; ++m) {
-		const auto offset = double(m) / kTicksPerSlot - fraction;
-		auto angle = -M_PI / 2. + offset * slot;
+		// The ticks keep in step with the faces (their spread too).
+		const auto offset = std::remainder(
+			double(m) / kTicksPerSlot - fraction,
+			double(slots));
+		const auto angle = -M_PI / 2. + SpreadAngle(offset, slots, apart);
 		const auto isMajor = (m % kTicksPerSlot) == 0;
 		const auto length = isMajor ? _tickLength : _tickLength * 0.5;
 		auto color = isMajor ? major : minor;
-		auto width = isMajor ? st::lineWidth * 1.6 : st::lineWidth * 1.;
-		auto top = std::remainder(offset * slot, 2. * M_PI);
-		if (isMajor && std::abs(top) < slot / (2. * kTicksPerSlot)) {
+		auto width = st::lineWidth * (isMajor ? kMajorTick : 1.);
+		if (isMajor && std::abs(offset) < 1. / (2. * kTicksPerSlot)) {
 			color = Mix(color, JadeColor(), 0.35 + 0.65 * frame.pulse);
-			width *= 1. + 0.6 * frame.pulse;
+			width *= 1. + kTickPulse * frame.pulse;
 		}
 		const auto from = at(angle, _tickRadius + (_tickLength - length));
 		const auto till = at(angle, _tickRadius + _tickLength);
@@ -379,7 +412,7 @@ void Crown::paint(
 		}
 		PaintFace(p, model, chats[face.index], face, face.focus);
 		if (face.index == frame.hovered && face.focus < 0.5) {
-			PaintHoverRing(p, face);
+			PaintHoverRing(p, model, chats[face.index], face);
 		}
 	}
 	for (const auto &pill : pills) {

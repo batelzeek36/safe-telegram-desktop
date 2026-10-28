@@ -297,6 +297,79 @@ double OrbitOutward(double angle, double rx, double ry, double named) {
 	return normal + (lifted - normal) * std::clamp(named, 0., 1.);
 }
 
+double BadgeReach(
+		double dx,
+		double dy,
+		double angle,
+		double rim,
+		double width,
+		double height,
+		double limit) {
+	if (limit <= 0. || rim <= 0.) {
+		return rim;
+	}
+	const auto ux = std::sin(angle);
+	const auto uy = -std::cos(angle);
+	const auto half = std::max(width - height, 0.) / 2.;
+	// The farthest point of the pill from the dial's centre: one of its
+	// round ends.
+	const auto far = [&](double t) {
+		const auto x = dx + ux * t;
+		const auto y = dy + uy * t;
+		return std::max(std::hypot(x - half, y), std::hypot(x + half, y))
+			+ height / 2.;
+	};
+	if (far(rim) <= limit) {
+		return rim;
+	} else if (far(0.) > limit) {
+		return 0.;
+	}
+	auto low = 0.;
+	auto high = rim;
+	for (auto i = 0; i != 40; ++i) {
+		const auto middle = (low + high) / 2.;
+		if (far(middle) <= limit) {
+			low = middle;
+		} else {
+			high = middle;
+		}
+	}
+	return low;
+}
+
+double NeighbourSpread(
+		double ring,
+		double reach,
+		double neighbour,
+		double clear,
+		int slots) {
+	if (slots < 4 || ring <= 0.) {
+		return 0.;
+	}
+	const auto pi = 4. * kBadgeShoulder;
+	const auto slot = 2. * pi / slots;
+	const auto apart = reach + neighbour + clear;
+	const auto needed = (apart >= 2. * ring)
+		? pi
+		: 2. * std::asin(apart / (2. * ring));
+	return std::clamp(needed - slot, 0., slot * kMaxSpread);
+}
+
+double SpreadAngle(double offset, int slots, double spread) {
+	const auto pi = 4. * kBadgeShoulder;
+	const auto slot = 2. * pi / std::max(slots, 1);
+	const auto base = offset * slot;
+	if (spread <= 0. || slots < 4) {
+		return base;
+	}
+	const auto half = slots / 2.;
+	const auto distance = std::abs(offset);
+	const auto share = (distance <= 1.)
+		? distance
+		: std::clamp((half - distance) / (half - 1.), 0., 1.);
+	return base + Sign(offset) * spread * share;
+}
+
 std::vector<std::int32_t> CircleIds(const std::vector<std::int32_t> &filters) {
 	auto result = std::vector<std::int32_t>();
 	result.reserve(filters.size() + 1);

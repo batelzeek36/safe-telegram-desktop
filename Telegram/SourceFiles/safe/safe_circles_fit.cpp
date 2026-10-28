@@ -74,11 +74,10 @@ namespace {
 struct Candidate {
 	HubPlan plan;
 	// Compared as a whole: the name whole first, then as much of it as
-	// can show, the message whole, some of the message, the time row, more
-	// of the message, the badge beside the time (the face has it too), the
-	// block nearer the middle. For an unread chat the message's lines come
-	// before the time row.
-	std::tuple<bool, int, bool, bool, int, int, int, int, int> score;
+	// can show, the time row, the message whole, some of the message, more
+	// of it, the preferred time row, the usual gap over it, the block
+	// nearer the middle.
+	std::tuple<bool, int, bool, bool, bool, int, int, bool, int> score;
 };
 
 // `strict`: each part keeps its words of HubPart::wholeLetters letters
@@ -100,8 +99,24 @@ struct Candidate {
 	const auto nameMax = name.words.empty()
 		? 0
 		: std::max(name.maxLines, 1);
-	for (auto meta = 0; meta <= metaCount; ++meta) {
-		const auto hasMeta = (meta < metaCount);
+	// Each way the time row may go (or none), with the usual gap over it
+	// and then, when allowed, tucked up under the message.
+	struct Row {
+		int meta = -1;
+		int gap = 0;
+		bool tight = false;
+	};
+	auto rows = std::vector<Row>();
+	for (auto meta = 0; meta != metaCount; ++meta) {
+		rows.push_back({ meta, input.gapMeta, false });
+		if (input.gapMetaLeast >= 0 && input.gapMetaLeast < input.gapMeta) {
+			rows.push_back({ meta, input.gapMetaLeast, true });
+		}
+	}
+	rows.push_back({});
+	for (const auto &row : rows) {
+		const auto meta = row.meta;
+		const auto hasMeta = (meta >= 0);
 		for (auto textLines = textMax; textLines >= 0; --textLines) {
 			for (auto nameLines = std::min(nameMax, 1); nameLines <= nameMax; ++nameLines) {
 				const auto height = nameLines * name.lineHeight
@@ -110,7 +125,7 @@ struct Candidate {
 							+ textLines * text.lineHeight)
 						: 0)
 					+ (hasMeta
-						? (input.gapMeta + input.metas[meta].height)
+						? (row.gap + input.metas[meta].height)
 						: 0);
 				if (height <= 0 || height > 2. * r) {
 					continue;
@@ -167,14 +182,14 @@ struct Candidate {
 					if (hasMeta) {
 						plan.metaTop = plan.textTop
 							+ textLines * text.lineHeight
-							+ input.gapMeta;
-						const auto &row = input.metas[meta];
-						const auto inset = row.height * row.inset;
+							+ row.gap;
+						const auto &time = input.metas[meta];
+						const auto inset = time.height * time.inset;
 						const auto room = ChordWidth(
 							r,
 							plan.metaTop + inset,
-							plan.metaTop + row.height - inset);
-						if (row.width > room) {
+							plan.metaTop + time.height - inset);
+						if (time.width > room) {
 							continue;
 						}
 						plan.meta = meta;
@@ -183,12 +198,12 @@ struct Candidate {
 					auto score = std::make_tuple(
 						plan.name.whole,
 						plan.name.shown,
+						hasMeta,
 						plan.text.whole,
 						lines > 0,
-						input.messageFirst ? lines : 0,
-						hasMeta ? 1 : 0,
 						plan.text.shown,
 						hasMeta ? (metaCount - meta) : 0,
+						!row.tight,
 						-std::abs(shift));
 					if (!result || score > result->score) {
 						result = Candidate{ std::move(plan), score };

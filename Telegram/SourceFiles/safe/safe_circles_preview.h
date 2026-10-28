@@ -74,9 +74,10 @@ private:
 };
 
 // The Crown's hub: name (13 pt semibold, up to two lines), message (12 pt,
-// up to two) and time (11 pt; the unread badge stays on the face), each
-// line as wide as the circle `radius` round `center` is at its height. Two chats' layouts are
-// kept, so one can fade out while the next fades in.
+// up to two) and time (11 pt; the unread badge stays on the face, never
+// repeated here), each line as wide as the circle `radius` round `center`
+// is at its height. Two chats' layouts are kept, so one can fade out while
+// the next fades in.
 class HubPreview final {
 public:
 	void paint(
@@ -93,14 +94,12 @@ private:
 		QString name;
 		QString text;
 		QString time;
-		Dialogs::BadgesState badges;
 		int radius = -1;
 
 		HubPlan plan;
 		std::vector<Ui::Text::String> nameLines;
 		std::vector<Ui::Text::String> textLines;
 		int timeWidth = 0;
-		QSize badge;
 	};
 
 	// The slot holding `history`'s layout, laid out again if it changed.
@@ -115,8 +114,10 @@ private:
 };
 
 // The Orbit's card: the photo, the name (14 pt semibold) running to the
-// time, the message under it. A name that does not fit beside the time
-// gets the whole line and the time moves down beside the message.
+// time, the message under it, the unread badge after it when `badge` (not
+// while the chat's face wears the count itself). A name that does not fit
+// beside the time gets the whole line and the time moves down beside the
+// message.
 class CardPreview final {
 public:
 	void paint(
@@ -124,7 +125,8 @@ public:
 		Model &model,
 		not_null<History*> history,
 		QRect rect,
-		double alpha);
+		double alpha,
+		bool badge);
 
 private:
 	LineCache _names;

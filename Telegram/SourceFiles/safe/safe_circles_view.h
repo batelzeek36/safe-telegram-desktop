@@ -72,6 +72,10 @@ private:
 		double glideStart = 0.;
 		bool gliding = false;
 		History *focused = nullptr;
+		// A glide to a chat picked by name (a click on its face, Next
+		// unread, Home, a chat opened elsewhere): the hub or the card shows
+		// it for the whole glide, not each chat passing the focus.
+		History *held = nullptr;
 	};
 	enum class Drag {
 		None,
@@ -113,6 +117,9 @@ private:
 	// The dial of the current circle.
 	void moveTo(double position);
 	void glideTo(double target, double velocity, double maxDuration);
+	// The chat the hub or the card of `id` shows for the focus: the one a
+	// glide is bringing round by name, else the one at the focus.
+	[[nodiscard]] History *previewFocusOf(FilterId id);
 	void release(double velocity);
 	void step(int delta);
 	void bringTo(int index, bool andOpen);

@@ -175,10 +175,12 @@ void View::intro() {
 	}
 	auto &spin = spinOf(id);
 	const auto target = spin.gliding ? spin.glide.to : std::round(spin.position);
+	const auto &chats = chatsOf(id);
 	spin.position = target - kIntroSlots;
 	spin.glide = GlideTo(spin.position, target, kIntroSpeed, kMaxGlide);
 	spin.glideStart = now();
 	spin.gliding = true;
+	spin.held = chats[FocusIndex(target, int(chats.size()))];
 	blockHover();
 	startAnimation();
 }
@@ -222,6 +224,22 @@ History *View::focusedOf(FilterId id) {
 	return chats[FocusIndex(spin.position, int(chats.size()))];
 }
 
+History *View::previewFocusOf(FilterId id) {
+	const auto &chats = chatsOf(id);
+	if (chats.empty()) {
+		return nullptr;
+	}
+	const auto &spin = spinOf(id);
+	const auto count = int(chats.size());
+	// Only while the glide still lands on it (the list may have changed).
+	if (spin.gliding
+		&& spin.held
+		&& chats[FocusIndex(spin.glide.to, count)].get() == spin.held) {
+		return spin.held;
+	}
+	return chats[FocusIndex(spin.position, count)];
+}
+
 double View::spinVelocity(FilterId id) {
 	const auto &spin = spinOf(id);
 	if (spin.gliding) {
@@ -258,6 +276,7 @@ void View::moveTo(double position) {
 	auto &spin = spinOf(id);
 	const auto was = spin.position;
 	spin.position = position;
+	spin.held = nullptr;
 	if (_drag != Drag::Spin) {
 		// Two fingers on the trackpad turn it under a still pointer.
 		blockHover();
@@ -275,6 +294,7 @@ void View::glideTo(double target, double velocity, double maxDuration) {
 	// Every glide turns the dial under a pointer that is not dragging it:
 	// a click's, Next unread's, a key's, the wheel's, a release's.
 	blockHover();
+	spin.held = nullptr;
 	spin.glide = GlideTo(spin.position, target, velocity, maxDuration);
 	spin.glideStart = now();
 	spin.gliding = !spin.glide.finished(0.);
@@ -351,6 +371,7 @@ void View::bringTo(int index, bool andOpen) {
 		int(chats.size()));
 	if (std::abs(target - spin.position) > 1e-6) {
 		glideTo(target, velocity, kBringGlide);
+		spin.held = spin.gliding ? history.get() : nullptr;
 	}
 	if (andOpen) {
 		_open(history);
@@ -378,6 +399,7 @@ void View::catchSpin() {
 		_caughtDirection = (velocity > 0.) ? 1 : (velocity < 0.) ? -1 : 0;
 		spin.position = spin.glide.positionAt(t);
 		spin.gliding = false;
+		spin.held = nullptr;
 	}
 }
 
@@ -507,6 +529,7 @@ bool View::animationStep(crl::time ms) {
 		}
 		if (spin.glide.finished(elapsed)) {
 			spin.gliding = false;
+			spin.held = nullptr;
 			spin.position = spin.glide.to;
 			settled(circle);
 		} else {
@@ -612,6 +635,7 @@ void View::followActiveChat(History *history) {
 	if (!isVisible()) {
 		spin.position = NearestPosition(spin.position, index, int(chats.size()));
 		spin.gliding = false;
+		spin.held = nullptr;
 		noteFocus(id);
 		return;
 	}
@@ -1072,27 +1096,30 @@ void View::paintPage(Painter &p, int page, double shift) {
 		? chats[hovered].get()
 		: nullptr;
 	const auto focusedHistory = count ? chats[focusIndex].get() : nullptr;
-	const auto previewed = pointed ? pointed : focusedHistory;
+	const auto previewed = pointed ? pointed : previewFocusOf(id);
 	if (current) {
-		if (pointed != _previewHover) {
-			// The pointer moved onto a face or off it: the preview
-			// crossfades from what it showed to the new chat.
-			_previewHover = pointed;
-			if (previewed != _previewShown) {
-				const auto t = now();
-				const auto in = EaseOutCubic((t - _previewAt) / kPreviewFade);
-				const auto out = _previewOld ? (_previewOldFrom * (1. - in)) : 0.;
-				if (in >= out) {
-					_previewOld = _previewShown;
-					_previewOldFrom = in;
-				} else {
-					_previewOldFrom = out;
-				}
-				_previewAt = t;
-				startAnimation();
+		// The pointer moved onto a face or off it, or a glide set off for a
+		// chat picked by name: the preview crossfades to the new chat.
+		const auto pointer = (pointed != _previewHover);
+		const auto held = !pointed
+			&& spin.gliding
+			&& previewed
+			&& (previewed == spin.held);
+		_previewHover = pointed;
+		if ((pointer || held) && previewed != _previewShown) {
+			const auto t = now();
+			const auto in = EaseOutCubic((t - _previewAt) / kPreviewFade);
+			const auto out = _previewOld ? (_previewOldFrom * (1. - in)) : 0.;
+			if (in >= out) {
+				_previewOld = _previewShown;
+				_previewOldFrom = in;
+			} else {
+				_previewOldFrom = out;
 			}
+			_previewAt = t;
+			startAnimation();
 		}
-		// The focus moving on during a spin swaps the words at once.
+		// The focus moving on during a free spin swaps the words at once.
 		_previewShown = previewed;
 	}
 	auto frame = DialFrame{

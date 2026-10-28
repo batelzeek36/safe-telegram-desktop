@@ -248,7 +248,6 @@ int HubPreview::prepare(
 	const auto name = model.name(history).toString();
 	const auto &marked = model.previewMarked(history);
 	const auto time = model.time(history);
-	const auto badges = model.badges(history);
 	// The slot used last, else the other one: it holds this chat or the
 	// one used longer ago (a fade paints the old chat, then the new).
 	const auto index = (_slots[_recent].history == history)
@@ -260,8 +259,7 @@ int HubPreview::prepare(
 		&& slot.radius == radius
 		&& slot.name == name
 		&& slot.text == marked.text
-		&& slot.time == time
-		&& slot.badges == badges) {
+		&& slot.time == time) {
 		return index;
 	}
 	slot.history = history;
@@ -269,14 +267,14 @@ int HubPreview::prepare(
 	slot.name = name;
 	slot.text = marked.text;
 	slot.time = time;
-	slot.badges = badges;
 
 	const auto &nameSt = st::circlesHubName;
 	const auto &textSt = st::circlesHubText;
 	const auto names = MeasureWords({ name }, nameSt);
 	const auto texts = MeasureWords(marked, textSt);
-	auto timeWidth = time.isEmpty() ? 0 : st::circlesHubTimeFont->width(time);
-	auto badge = BadgeSize(badges);
+	const auto timeWidth = time.isEmpty()
+		? 0
+		: st::circlesHubTimeFont->width(time);
 
 	auto input = HubInput{
 		.radius = double(radius),
@@ -296,28 +294,20 @@ int HubPreview::prepare(
 		},
 		.gapText = S(2),
 		.gapMeta = S(4),
-		// Unread: the face wears the badge, the message comes first.
-		.messageFirst = !badge.isEmpty(),
+		.gapMetaLeast = 0,
 	};
-	// The time row is the time alone: an unread chat's face wears its
-	// badge, so every unread hub reads name, message, time alike. A chat
-	// with no time shows its badge there instead.
-	const auto timeHeight = st::circlesHubTimeFont->height;
+	// The time row is the time alone: the face wears the unread badge.
 	if (timeWidth) {
-		badge = QSize();
-		input.metas.push_back({ timeWidth, timeHeight, kTimeRowInset });
-	} else if (!badge.isEmpty()) {
-		input.metas.push_back({ badge.width(), badge.height(), kTimeRowInset });
+		input.metas.push_back({
+			timeWidth,
+			st::circlesHubTimeFont->height,
+			kTimeRowInset,
+		});
 	}
 	slot.plan = PlanHub(input);
 	slot.nameLines = FittedLines(names, slot.plan.name, slot.plan.nameWidths, nameSt);
 	slot.textLines = FittedLines(texts, slot.plan.text, slot.plan.textWidths, textSt);
-	if (slot.plan.meta < 0) {
-		timeWidth = 0;
-		badge = QSize();
-	}
-	slot.timeWidth = timeWidth;
-	slot.badge = badge;
+	slot.timeWidth = (slot.plan.meta >= 0) ? timeWidth : 0;
 	return index;
 }
 
@@ -366,32 +356,15 @@ void HubPreview::paint(
 		plan.textTop,
 		LineHeightOf(st::circlesHubText),
 		SubTextColor());
-	const auto timeWidth = slot.timeWidth;
-	const auto badge = slot.badge;
-	if (plan.meta >= 0 && (timeWidth || !badge.isEmpty())) {
+	if (plan.meta >= 0 && slot.timeWidth) {
 		const auto &font = st::circlesHubTimeFont;
-		const auto height = std::max(
-			timeWidth ? font->height : 0,
-			badge.height());
-		const auto between = (timeWidth && !badge.isEmpty()) ? S(6) : 0;
-		const auto full = timeWidth + between + badge.width();
-		auto x = center.x() - full / 2.;
-		const auto top = center.y() + plan.metaTop;
-		if (timeWidth) {
-			p.setFont(font);
-			p.setPen(st::dialogsDateFg);
-			p.drawText(
-				QPointF(x, top + (height - font->height) / 2. + font->ascent),
-				slot.time);
-			x += timeWidth + between;
-		}
-		if (!badge.isEmpty()) {
-			PaintBadgeAt(
-				p,
-				slot.badges,
-				QPointF(x + badge.width() / 2., top + height / 2.),
-				1.);
-		}
+		p.setFont(font);
+		p.setPen(st::dialogsDateFg);
+		p.drawText(
+			QPointF(
+				center.x() - slot.timeWidth / 2.,
+				center.y() + plan.metaTop + font->ascent),
+			slot.time);
 	}
 	p.setOpacity(was);
 }
@@ -401,7 +374,8 @@ void CardPreview::paint(
 		Model &model,
 		not_null<History*> history,
 		QRect rect,
-		double alpha) {
+		double alpha,
+		bool badge) {
 	if (alpha <= 0.01) {
 		return;
 	}
@@ -431,7 +405,7 @@ void CardPreview::paint(
 	const auto &text = model.previewMarked(history);
 	const auto time = model.time(history);
 	const auto state = model.badges(history);
-	const auto badge = BadgeSize(state);
+	const auto badgeSize = badge ? BadgeSize(state) : QSize();
 	const auto &timeFont = st::circlesCardTimeFont;
 	const auto nameLine = LineHeightOf(st::circlesCardName);
 	const auto textLine = LineHeightOf(st::circlesCardText);
@@ -470,13 +444,13 @@ void CardPreview::paint(
 	if (timeWidth && timeOnTop) {
 		drawTime(right, top, nameLine);
 	}
-	if (!badge.isEmpty()) {
+	if (!badgeSize.isEmpty()) {
 		PaintBadgeAt(
 			p,
 			state,
-			QPointF(right - badge.width() / 2., lineTop + textLine / 2.),
+			QPointF(right - badgeSize.width() / 2., lineTop + textLine / 2.),
 			1.);
-		right -= badge.width() + S(8);
+		right -= badgeSize.width() + S(8);
 	}
 	if (timeWidth && !timeOnTop) {
 		drawTime(right, lineTop, textLine);

@@ -22,8 +22,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // with its trailing punctuation trimmed (never "youtube.…").
 // Pass 3: a message line may cut inside a word of kMessageCutLetters or
 // more, and fills with one rather than stopping a short way in ("Pele…");
-// an unread chat's hub shows a second message line before the time (its
-// face carries the badge); a lone dash stays with the word before it.
+// a lone dash stays with the word before it. Pass 4: the time row is never
+// given up for the message ("TRANSMIT - / STAY… / Voice mes…" lost its
+// time): the message shortens first, and the time row may tuck up under it.
 // Plain C++20, no Qt: tools/desktopcheck checks it.
 namespace Safe::Circles {
 
@@ -95,8 +96,8 @@ struct HubPart {
 // Glyphs fill a line's middle, not its leading: a band is measured this
 // share of its height in from each edge.
 inline constexpr double kBandInset = 0.125;
-// The time row is digits and capitals beside a round-ended badge: they sit
-// in the middle half of the row.
+// The time row is digits and capitals: they sit in the middle half of the
+// row.
 inline constexpr double kTimeRowInset = 0.25;
 
 struct HubMeta {
@@ -109,14 +110,14 @@ struct HubInput {
 	double radius = 0.; // the room for words: the hub less its padding
 	HubPart name;
 	HubPart text;
-	// The time row, as it may be drawn in order of preference (time and
-	// badge, the time alone); leaving it out is the last resort.
+	// The time row, as it may be drawn in order of preference; leaving it
+	// out is the last resort, after every message line.
 	std::vector<HubMeta> metas;
 	int gapText = 0; // between the name and the message
 	int gapMeta = 0; // above the time row
-	// An unread chat: a second message line comes before the time row
-	// (the badge is on its face anyway).
-	bool messageFirst = false;
+	// Above the time row when the usual gap leaves no room for it or for a
+	// message line: the row tucks up into the message's leading (-1 = no).
+	int gapMetaLeast = -1;
 };
 
 struct HubPlan {
@@ -135,10 +136,9 @@ struct HubPlan {
 // stacked and centered as near the middle as the words allow, each line
 // as wide as the circle at its height. The name comes first (whole when
 // any layout shows it whole, else as much of it as can show), then the
-// message whole, then some of the message, then the time row, then more of
-// the message, then the badge beside the time; for `messageFirst` a
-// second message line comes before the time row. The block may sit off
-// center when that lets a longer line through the wide middle.
+// time row, then the message whole, then some of it, then more of it,
+// then the usual gap over the time row. The block may sit off center when
+// that lets a longer line through the wide middle.
 [[nodiscard]] HubPlan PlanHub(const HubInput &input);
 
 } // namespace Safe::Circles

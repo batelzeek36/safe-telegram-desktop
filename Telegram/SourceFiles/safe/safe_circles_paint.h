@@ -42,6 +42,11 @@ struct FacePlace {
 	double nameAlpha = 0.; // its name pill (the focus's neighbours)
 	// Where its badge sits, clockwise from twelve (BadgeAngle).
 	double badgeAngle = kBadgeShoulder;
+	// The badge stays inside this distance from `dialCenter` (the Crown's
+	// bezel ticks less a clear gap), pulled in along its angle (BadgeReach);
+	// 0 = no limit.
+	QPointF dialCenter;
+	double badgeLimit = 0.;
 };
 
 [[nodiscard]] QColor Mix(const QColor &a, const QColor &b, double amount);
@@ -73,9 +78,21 @@ void PaintFace(
 	const FacePlace &place,
 	double ring);
 
+// How far past a face's edge the outer edge of its jade focus ring lies.
+[[nodiscard]] double FocusRingReach();
+
+// The face wears its full badge (with the count), not a far face's dot:
+// a preview beside it need not repeat the count.
+[[nodiscard]] bool WearsFullBadge(const FacePlace &place);
+
 // A quiet ring round the face under the pointer (its chat shows in the
-// hub or the card meanwhile).
-void PaintHoverRing(Painter &p, const FacePlace &place);
+// hub or the card meanwhile), stopping short of the face's badge as the
+// focus ring does.
+void PaintHoverRing(
+	Painter &p,
+	Model &model,
+	not_null<History*> history,
+	const FacePlace &place);
 
 // A soft light under the focused face.
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha);

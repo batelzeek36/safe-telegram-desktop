@@ -69,7 +69,13 @@ private:
 	};
 	[[nodiscard]] Spot spot(double angle) const;
 	void paintRail(Painter &p, const DialFrame &frame) const;
-	void paintCard(Painter &p, Model &model, const DialFrame &frame);
+	// `badges`: whether the card repeats the unread count of the chat it
+	// shows, and of the one fading out under it.
+	void paintCard(
+		Painter &p,
+		Model &model,
+		const DialFrame &frame,
+		std::pair<bool, bool> badges);
 	[[nodiscard]] QPointF frontCenter() const;
 	[[nodiscard]] QRectF besidePill(
 		const PillSize &pill,
@@ -206,7 +212,8 @@ void Orbit::paintRail(Painter &p, const DialFrame &frame) const {
 void Orbit::paintCard(
 		Painter &p,
 		Model &model,
-		const DialFrame &frame) {
+		const DialFrame &frame,
+		std::pair<bool, bool> badges) {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto radius = S(14);
 	p.setBrush(SurfaceColor());
@@ -220,14 +227,16 @@ void Orbit::paintCard(
 				model,
 				not_null<History*>(old),
 				_card,
-				frame.previewOldAlpha);
+				frame.previewOldAlpha,
+				badges.second);
 		}
 		_preview.paint(
 			p,
 			model,
 			not_null<History*>(history),
 			_card,
-			frame.previewAlpha);
+			frame.previewAlpha,
+			badges.first);
 	} else {
 		PaintEmpty(p, _card, frame.loading);
 	}
@@ -276,7 +285,7 @@ void Orbit::paint(
 		}
 		PaintFace(p, model, chats[face.index], face, face.focus);
 		if (face.index == frame.hovered && face.focus < 0.5) {
-			PaintHoverRing(p, face);
+			PaintHoverRing(p, model, chats[face.index], face);
 		}
 	}
 	if (!leafDrawn) {
@@ -306,7 +315,23 @@ void Orbit::paint(
 		QPointF(front.x(), front.y() - frontRadius - S(7)),
 		S(13),
 		frame.pulse);
-	paintCard(p, model, frame);
+	// A face wearing its count says it already: the card repeats only a
+	// far face's dot (as the Crown's hub, never the count twice).
+	const auto cardBadge = [&](History *history) {
+		for (const auto &face : faces) {
+			if (face.index < int(chats.size())
+				&& chats[face.index].get() == history
+				&& face.alpha >= 0.5) {
+				return !WearsFullBadge(face);
+			}
+		}
+		return true;
+	};
+	paintCard(
+		p,
+		model,
+		frame,
+		{ cardBadge(frame.previewed), cardBadge(frame.previewedOld) });
 }
 
 // A neighbour's name under the face row, level with the front face's

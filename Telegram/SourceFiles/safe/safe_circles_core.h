@@ -189,6 +189,47 @@ inline constexpr double kOrbitBadgeLowest = 1.9198621771937625; // 110 degrees
 	double ry,
 	double named);
 
+// How far from its face's centre, along its angle, a badge sits: `rim`
+// (on the face's rim) unless some of it would then reach past `limit`
+// from the dial's centre (the Crown's bezel ticks, less a clear gap),
+// else pulled in toward the face's centre until all of it is inside.
+// `dx`, `dy` = the face's centre from the dial's centre (y down); the
+// badge is a level pill `width` x `height` with round ends. No limit
+// (0) = the rim.
+[[nodiscard]] double BadgeReach(
+	double dx,
+	double dy,
+	double angle,
+	double rim,
+	double width,
+	double height,
+	double limit);
+
+// ---- The Crown's spacing ----
+//
+// The focused face is larger and wears a jade ring; on a full ring the
+// faces either side of it would come within a hair of that ring. They are
+// moved out by the least angle that keeps `clear` between the ring's
+// outer edge and each of them, and the faces further round close up a
+// little to make the room, back to even spacing at the far side.
+// `ring` = the radius the faces' centres sit on, `reach` = the focused
+// face's radius with its ring, `neighbour` = the radius of the faces
+// either side. At most kMaxSpread of a slot.
+inline constexpr double kMaxSpread = 0.25;
+[[nodiscard]] double NeighbourSpread(
+	double ring,
+	double reach,
+	double neighbour,
+	double clear,
+	int slots);
+
+// Where the face (or bezel tick) `offset` slots from the focus sits, as
+// an angle clockwise from twelve: offset * slot, plus `spread` growing
+// with the offset to the faces either side of the focus, then easing
+// back to none at the far side (offset slots / 2), so nothing jumps as
+// the dial turns and the order round the ring never changes.
+[[nodiscard]] double SpreadAngle(double offset, int slots, double spread);
+
 // ---- Folders ----
 //
 // The circles are his chat folders in Telegram's order, plus the "All

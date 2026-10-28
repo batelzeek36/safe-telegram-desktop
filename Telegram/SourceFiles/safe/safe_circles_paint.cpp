@@ -78,6 +78,39 @@ constexpr auto kFullBadge = 0.72;
 	return result;
 }
 
+// Where a face wears its badge and how big it is drawn there.
+struct BadgeSpot {
+	QPointF at;
+	QSizeF size; // empty = no badge
+	bool full = false; // the count, else a far face's dot
+};
+
+[[nodiscard]] BadgeSpot BadgeSpotOf(
+		const Dialogs::BadgesState &state,
+		const FacePlace &place) {
+	if (!HasBadge(state)) {
+		return {};
+	}
+	const auto r = place.size / 2.;
+	const auto full = WearsFullBadge(place);
+	const auto dot = std::clamp(place.size * 0.26, double(S(6)), double(S(9)));
+	const auto size = full ? QSizeF(BadgeSize(state)) : QSizeF(dot, dot);
+	// On the face's rim, on its outer side (see BadgeAngle), kept inside the
+	// bezel's ticks (see BadgeReach).
+	const auto reach = BadgeReach(
+		place.center.x() - place.dialCenter.x(),
+		place.center.y() - place.dialCenter.y(),
+		place.badgeAngle,
+		r * 1.018,
+		size.width(),
+		size.height(),
+		place.badgeLimit);
+	const auto at = place.center + QPointF(
+		std::sin(place.badgeAngle),
+		-std::cos(place.badgeAngle)) * reach;
+	return { at, size, full };
+}
+
 } // namespace
 
 int LineHeightOf(const style::TextStyle &st) {
@@ -166,17 +199,11 @@ void PaintFace(
 	// The badge on the shoulder: the full badge on a face near its full
 	// size, a small solid dot on a far one, never a see-through disc.
 	const auto state = model.badges(history);
-	const auto full = (place.size / std::max(largest, 1.)) >= kFullBadge;
-	// On the face's rim, on its outer side (see BadgeAngle).
-	const auto at = place.center + QPointF(
-		std::sin(place.badgeAngle),
-		-std::cos(place.badgeAngle)) * (r * 1.018);
-	const auto dot = std::clamp(place.size * 0.26, double(S(6)), double(S(9)));
-	const auto badge = !HasBadge(state)
-		? QSizeF()
-		: full
-		? QSizeF(BadgeSize(state))
-		: QSizeF(dot, dot);
+	const auto spot = BadgeSpotOf(state, place);
+	const auto at = spot.at;
+	const auto badge = spot.size;
+	const auto full = spot.full;
+	const auto dot = badge.width();
 	const auto gap = double(S(kBadgeGap));
 	if (ring > 0.01) {
 		// The jade ring stops a clear gap short of the badge.
@@ -215,17 +242,40 @@ void PaintFace(
 	p.setOpacity(was);
 }
 
-void PaintHoverRing(Painter &p, const FacePlace &place) {
+double FocusRingReach() {
+	return S(kRingGap) + S(kRingWidth);
+}
+
+bool WearsFullBadge(const FacePlace &place) {
+	const auto largest = std::max(place.size, place.maxSize);
+	return (place.size / std::max(largest, 1.)) >= kFullBadge;
+}
+
+void PaintHoverRing(
+		Painter &p,
+		Model &model,
+		not_null<History*> history,
+		const FacePlace &place) {
 	if (place.alpha <= 0.01) {
 		return;
 	}
 	auto hq = PainterHighQualityEnabler(p);
 	const auto outer = place.size / 2. + S(2) + st::lineWidth * 0.75;
+	p.save();
+	const auto spot = BadgeSpotOf(model.badges(history), place);
+	if (!spot.size.isEmpty()) {
+		auto keep = QPainterPath();
+		keep.addEllipse(place.center, outer * 2., outer * 2.);
+		p.setClipPath(
+			keep.subtracted(BadgeShape(spot.at, spot.size, S(kBadgeGap))),
+			Qt::IntersectClip);
+	}
 	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(
 		Faded(TextColor(), 0.55 * place.alpha),
 		st::lineWidth * 1.5));
 	p.drawEllipse(place.center, outer, outer);
+	p.restore();
 }
 
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha) {
