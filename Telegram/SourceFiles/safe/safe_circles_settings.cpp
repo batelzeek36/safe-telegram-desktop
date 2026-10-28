@@ -135,20 +135,22 @@ void PaintGlyph(QPainter &p, QRectF rect, Layout layout, QColor fg) {
 	}
 }
 
-// The glyphs stand in one column, `left` from the row's left edge (past the
-// longest of the three names), whatever each name's own length.
+// The glyphs stand in one column at the section's right edge, as far in
+// from it as the radio buttons are from the left.
 void AddGlyph(
 		not_null<Ui::RpWidget*> container,
 		not_null<Ui::RpWidget*> row,
-		Layout layout,
-		int left) {
+		Layout layout) {
 	const auto glyph = Ui::CreateChild<Ui::RpWidget>(container.get());
 	const auto size = style::ConvertScale(kGlyphSize);
 	glyph->resize(size, size);
 	glyph->setAttribute(Qt::WA_TransparentForMouseEvents);
-	row->geometryValue() | rpl::on_next([=](QRect geometry) {
+	rpl::combine(
+		row->geometryValue(),
+		container->widthValue()
+	) | rpl::on_next([=](QRect geometry, int width) {
 		glyph->move(
-			geometry.x() + left,
+			width - st::settingsSendTypePadding.left() - size,
 			geometry.y() + (geometry.height() - size) / 2);
 		glyph->raise();
 	}, glyph->lifetime());
@@ -265,21 +267,16 @@ void SetupSettingsSection(
 			st::settingsSendTypePadding);
 		rows.emplace_back(row, layout);
 	}
-	// One column for the glyphs, past the widest of the three rows.
-	auto widest = 0;
 	for (const auto &[row, layout] : rows) {
-		widest = std::max(widest, row->naturalWidth());
-	}
-	for (const auto &[row, layout] : rows) {
-		AddGlyph(container, row, layout, widest + style::ConvertScale(12));
+		AddGlyph(container, row, layout);
 	}
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
-		rpl::single(u"Crown and Orbit put your chats on a dial. Spin it, "
-			"flick it or use the arrow keys, and click a face to open the "
-			"chat. Each of your folders is a circle: swipe sideways with two "
-			"fingers to change circle (Settings > Folders makes them)."_q));
+		rpl::single(u"Crown and Orbit put your chats on a dial you can spin, "
+			"flick or turn with the arrow keys, and a click on a face opens "
+			"that chat. Each folder is a circle of its own, and a sideways "
+			"swipe with two fingers moves to the next one."_q));
 }
 
 } // namespace Safe::Circles
