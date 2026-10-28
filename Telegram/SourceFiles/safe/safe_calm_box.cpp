@@ -227,6 +227,16 @@ void AddManyRows(not_null<Ui::VerticalLayout*> container) {
 	) | rpl::on_next([=](bool on) {
 		Update([&](Settings &settings) { settings.merge = on; });
 	}, container->lifetime());
+	// Zach 10-27: "maybe there should be a toggle in the settings for if i
+	// want the merge to be auto or not". Off by default.
+	container->add(object_ptr<Ui::SettingsButton>(
+		container,
+		rpl::single(u"Merge automatically"_q),
+		st::settingsButtonNoIcon
+	))->toggleOn(rpl::single(Current().autoMerge))->toggledChanges(
+	) | rpl::on_next([=](bool on) {
+		Update([&](Settings &settings) { settings.autoMerge = on; });
+	}, container->lifetime());
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
@@ -235,7 +245,8 @@ void AddManyRows(not_null<Ui::VerticalLayout*> container) {
 			"waiting, or five or more sent that nobody has read yet, get a "
 			"leaf pill: tap it for one calm message in your voice that says "
 			"it all. Your GIFs and photos stay. Nothing changes until you "
-			"tap."_q));
+			"tap. With Merge automatically on, three or more waiting go as "
+			"one calm message by themselves, with 4 s to Undo."_q));
 }
 
 [[nodiscard]] QString RuleText(ChatRule rule) {

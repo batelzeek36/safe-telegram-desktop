@@ -14,8 +14,8 @@ class PeerData;
 // "Modes"), kept in safe_calm.json in the app's data folder. Defaults are
 // Zach's picks of 2026-10-25: Second look, leaf on, their side on, reply
 // suggestions on, ready ideas off; and of 2026-10-27: "Too many in a row:
-// offer one message" on, "Hold my messages while I'm typing" on
-// (docs/desktop/STATE-SUMMARIZE.md).
+// offer one message" on, "Hold my messages while I'm typing" on, "Merge
+// automatically" off (docs/desktop/STATE-SUMMARIZE.md).
 namespace Safe::Calm {
 
 enum class SendMode : uchar {
@@ -44,6 +44,9 @@ struct Settings {
 	bool ready = false; // S2 on its own when a message lands
 	bool merge = true; // a run of unread messages: offer one message
 	bool hold = true; // his texts wait while he keeps typing
+	// 3+ held texts go as one on their own, with Undo (Zach 10-27); off by
+	// default (Core::kAutoMergeDefault, checked in the .cpp).
+	bool autoMerge = false;
 	base::flat_map<PeerId, ChatEntry> chats;
 };
 
@@ -57,6 +60,7 @@ struct Modes {
 	bool ready = false;
 	bool merge = false;
 	bool hold = false;
+	bool autoMerge = false;
 
 	[[nodiscard]] bool outgoing() const {
 		return (send != SendMode::Off) || typing;

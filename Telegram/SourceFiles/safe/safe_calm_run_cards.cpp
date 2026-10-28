@@ -23,6 +23,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Safe::Calm {
 namespace {
 
+// The automatic merge's Undo window draws the same ring as the others.
+static_assert(Core::kAutoMergeUndoMs == kHoldMs);
+
 [[nodiscard]] QString Title(int texts) {
 	return u"One message instead of %1?"_q.arg(texts);
 }
@@ -88,11 +91,16 @@ RunCards::RunCards(Args &&args)
 , _focus(std::move(args.focus))
 , _takePanel(std::move(args.takePanel))
 , _panelFree(std::move(args.panelFree))
-, _watcher([=] { scheduleMark(); }) {
+, _watcher([=] { scheduleMark(); })
+, _autoTimer([=] { autoTimer(); }) {
 }
 
 RunCards::~RunCards() {
 	SharedClient().cancel(base::take(_summaryCall));
+	cancelAuto(false);
+	if (_autoHook) {
+		QueueSetAutoMerge(base::take(_autoHook), nullptr);
+	}
 	if (_history) {
 		const auto peer = this->peer();
 		QueueHoldForCard(peer, false);
@@ -111,6 +119,7 @@ void RunCards::setHistory(History *history) {
 		return;
 	}
 	SharedClient().cancel(base::take(_summaryCall));
+	cancelAuto(false);
 	if (_history) {
 		const auto peer = this->peer();
 		QueueHoldForCard(peer, false);
@@ -129,17 +138,23 @@ void RunCards::setHistory(History *history) {
 			scheduleMark();
 		}, _historyLifetime);
 	}
+	syncAutoHook();
 	scheduleMark();
 }
 
-void RunCards::setModes(bool merge, bool hold) {
+void RunCards::setModes(bool merge, bool hold, bool autoMerge) {
 	const auto wasHold = _hold;
 	_merge = merge;
 	_hold = hold;
+	_autoMerge = autoMerge;
 	_watcher.setEnabled(merge);
+	if (!hold || !autoMerge) {
+		cancelAuto(hold); // switched off: the hold goes on (or ends below)
+	}
 	if (wasHold && !hold && _history) {
 		QueueReleaseHeld(peer());
 	}
+	syncAutoHook();
 	scheduleMark();
 }
 
@@ -170,13 +185,23 @@ void RunCards::updateMark() {
 		closeCard();
 		pill(u"Your messages changed, so the card closed"_q);
 	}
+	if (_auto && group.texts != _auto->texts) {
+		// He sent more (or one went): the hold goes on with all of them.
+		cancelAuto(true);
+	}
 	if (int(group.texts.size()) >= Core::kHoldPillTexts) {
-		SetRunMark(_history, RunMark{
+		auto mark = RunMark{
 			.kind = RunMark::Kind::Held,
 			.texts = group.texts,
 			.chip = group.items.back(),
 			.count = int(group.texts.size()),
-		}, [=] { openHeld(); });
+		};
+		if (const auto now = RunMarkFor(peer)) {
+			if (now->kind == mark.kind && now->chip == mark.chip) {
+				mark.holdUntil = now->holdUntil; // the Undo ring keeps going
+			}
+		}
+		SetRunMark(_history, mark, [=] { openHeld(); }, [=] { undoAuto(); });
 		return;
 	}
 	const auto offer = _merge ? _watcher.offer() : nullptr;
@@ -289,7 +314,11 @@ void RunCards::sendSent(const TextWithTags &text, bool fromField) {
 void RunCards::openHeld() {
 	if (!_history) {
 		return;
+	} else if (_auto && !_auto->text.isEmpty()) {
+		return; // its Undo window runs: Undo is the pill's button
 	}
+	// A tap while the automatic one is written: the card takes over.
+	cancelAuto(false);
 	const auto peer = this->peer();
 	const auto group = QueueHeldGroup(peer);
 	if (int(group.texts.size()) < Core::kHoldPillTexts) {
@@ -452,6 +481,136 @@ void RunCards::closeCard() {
 	if (was != Card::None && _panelFree) {
 		_panelFree();
 	}
+}
+
+void RunCards::syncAutoHook() {
+	const auto peer = (_history && _hold && _autoMerge)
+		? this->peer()
+		: PeerId();
+	if (_autoHook == peer) {
+		return;
+	} else if (_autoHook) {
+		QueueSetAutoMerge(_autoHook, nullptr);
+	}
+	_autoHook = peer;
+	if (peer) {
+		const auto weak = base::make_weak(this);
+		QueueSetAutoMerge(peer, [=] {
+			if (const auto strong = weak.get()) {
+				strong->startAuto();
+			} else {
+				QueueReleaseHeld(peer);
+			}
+		});
+	}
+}
+
+// The hold ended with 3+ texts held: the queue keeps them while the one
+// message is written (Core::kAutoMergeWriteMs at most).
+void RunCards::startAuto() {
+	if (!_history || this->peer() != _autoHook) {
+		return;
+	}
+	const auto peer = this->peer();
+	const auto group = QueueHeldGroup(peer);
+	if (int(group.texts.size()) < Core::kHoldPillTexts) {
+		QueueReleaseHeld(peer);
+		return;
+	} else if (_card == Card::Held || _card == Card::HeldWriting) {
+		return; // the card is on them already
+	}
+	cancelAuto(false);
+	_auto = AutoMerge{ .items = group.items, .texts = group.texts };
+	_autoTimer.callOnce(Core::kAutoMergeWriteMs);
+	_autoCall = SharedClient().summarize(
+		MakeSummaryRequest(_history, group.items),
+		crl::guard(this, [=](SummaryResult result) {
+			_autoCall = 0;
+			if (!_auto || !_auto->text.isEmpty() || this->peer() != peer) {
+				return;
+			} else if (result.text.isEmpty()) {
+				autoFailed(result.failure);
+				return;
+			}
+			autoWritten(result.text);
+		}));
+}
+
+void RunCards::autoWritten(const QString &text) {
+	const auto peer = this->peer();
+	if (!QueuePreviewHeld(peer, _auto->texts, text)) {
+		cancelAuto(true); // his messages changed meanwhile
+		return;
+	}
+	_auto->text = text;
+	const auto until = crl::now() + Core::kAutoMergeUndoMs;
+	_autoTimer.callOnce(Core::kAutoMergeUndoMs);
+	updateMark();
+	SetRunMarkHold(peer, until);
+}
+
+void RunCards::autoTimer() {
+	if (!_auto) {
+		return;
+	} else if (_auto->text.isEmpty()) {
+		autoFailed(u"too slow"_q);
+	} else {
+		commitAuto();
+	}
+}
+
+// No Undo: the one message goes out in their place, the media as they are.
+void RunCards::commitAuto() {
+	const auto peer = this->peer();
+	const auto merge = *base::take(_auto);
+	_autoTimer.cancel();
+	SetRunMarkHold(peer, 0);
+	if (!QueueMergeHeld(peer, merge.texts, merge.text)) {
+		QueuePreviewHeld(peer, merge.texts, QString());
+		QueueHoldForCard(peer, false);
+		pill(u"Your messages changed, so nothing was merged"_q);
+	}
+	scheduleMark();
+}
+
+// Undo: his texts go out as typed, now.
+void RunCards::undoAuto() {
+	if (!_auto) {
+		return;
+	}
+	const auto peer = this->peer();
+	cancelAuto(false);
+	QueueReleaseHeld(peer);
+}
+
+void RunCards::autoFailed(const QString &why) {
+	LOG(("Safe Calm: no one message for the held texts (%1), sent as typed."
+		).arg(why));
+	const auto peer = this->peer();
+	cancelAuto(false);
+	QueueReleaseHeld(peer);
+	pill(u"Calm could not write one, so they went as typed"_q);
+}
+
+void RunCards::cancelAuto(bool resumeHold) {
+	if (!_auto) {
+		return;
+	}
+	const auto merge = *base::take(_auto);
+	_autoTimer.cancel();
+	SharedClient().cancel(base::take(_autoCall));
+	if (!_history) {
+		return;
+	}
+	const auto peer = this->peer();
+	SetRunMarkHold(peer, 0);
+	if (!merge.text.isEmpty()) {
+		QueuePreviewHeld(peer, merge.texts, QString());
+	}
+	if (resumeHold) {
+		QueueHoldForCard(peer, false);
+	}
+	scheduleMark();
 }
 
 void RunCards::pill(const QString &text) {

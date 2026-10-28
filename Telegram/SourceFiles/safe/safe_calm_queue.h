@@ -124,6 +124,11 @@ void QueueTyping(PeerId peer, bool fieldBusy);
 void QueueReleaseHeld(PeerId peer);
 // The merge card is open: the held ones wait for his pick.
 void QueueHoldForCard(PeerId peer, bool open);
+// Merge automatically (Core::DecideHoldEnd): while `due` is set for a chat,
+// a hold that ends with 3+ texts keeps them waiting (as for the card) and
+// calls `due`, which ends with QueueMergeHeld, QueueReleaseHeld (Undo, no
+// one message) or QueueHoldForCard(peer, false) (his messages changed).
+void QueueSetAutoMerge(PeerId peer, Fn<void()> due);
 [[nodiscard]] bool QueueHeld(not_null<const HistoryItem*> item);
 
 // The held texts of this chat in order, with the media held among them.
@@ -133,6 +138,13 @@ struct HeldGroup {
 	QStringList words; // the texts' words (what he typed)
 };
 [[nodiscard]] HeldGroup QueueHeldGroup(PeerId peer);
+// The automatic merge's Undo window: the first held text shows `text`;
+// empty puts his own words back (even when the group changed). False when
+// the group changed under it.
+bool QueuePreviewHeld(
+	PeerId peer,
+	const std::vector<FullMsgId> &texts,
+	const QString &text);
 // Send this instead: the first held text becomes `text`, the other held
 // texts go before anything left the Mac, the media stay in their place,
 // and everything goes out now. False when the group changed under it.

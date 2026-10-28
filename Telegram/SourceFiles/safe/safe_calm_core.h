@@ -70,6 +70,27 @@ void HoldTyped(HoldGate &gate, std::int64_t now, bool fieldBusy);
 	std::int64_t now,
 	const HoldTimes &times = {});
 
+// Merge automatically (Zach 10-27: "maybe there should be a toggle in the
+// settings for if i want the merge to be auto or not"), off unless he turns
+// it on: when the hold ends with kHoldPillTexts or more texts held, the one
+// message is written and goes out in their place after an Undo window; Undo,
+// or no one message within kAutoMergeWriteMs, sends them as typed. The
+// after-send offer stays tap-only (it changes messages already delivered).
+inline constexpr auto kAutoMergeDefault = false;
+inline constexpr auto kAutoMergeUndoMs = std::int64_t(4000);
+inline constexpr auto kAutoMergeWriteMs = std::int64_t(20000);
+enum class HoldEnd : std::uint8_t {
+	Wait, // not due yet, or the card (or an automatic merge) is on it
+	Release, // they go out as typed
+	Merge, // they go as one, after the Undo window
+};
+[[nodiscard]] HoldEnd DecideHoldEnd(
+	const HoldGate &gate,
+	std::int64_t now,
+	int heldTexts,
+	bool autoMerge,
+	const HoldTimes &times = {});
+
 // The run that already went out (Zach 10-27: "the AI should detect when im
 // mass-sending messages that could overwhelm the reader"; then "keep the
 // GIFs"): his own messages at the bottom of the chat, nothing from anyone

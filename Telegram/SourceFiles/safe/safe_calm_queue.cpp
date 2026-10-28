@@ -79,6 +79,7 @@ struct Queues {
 	base::flat_map<uint64, Fn<Builder(const QString&)>> rebuilds;
 	std::deque<uint64> rebuildOrder;
 	base::flat_map<PeerId, std::unique_ptr<PeerQueue>> peers;
+	base::flat_map<PeerId, Fn<void()>> autoMerge; // QueueSetAutoMerge
 	rpl::event_stream<std::pair<PeerId, QueueEvent>> events;
 	uint64 nextTicket = 0;
 	bool releasing = false;
@@ -370,8 +371,26 @@ void CheckHold(PeerId peer, PeerQueue &queue) {
 	}
 	gate.pill = (texts >= Core::kHoldPillTexts);
 	const auto now = crl::now();
-	if (Core::HoldDue(gate, now)) {
+	const auto autoMerge = State().autoMerge.contains(peer);
+	switch (Core::DecideHoldEnd(gate, now, texts, autoMerge)) {
+	case Core::HoldEnd::Wait: break;
+	case Core::HoldEnd::Release:
 		OpenGate(peer, queue);
+		return;
+	case Core::HoldEnd::Merge:
+		// They wait while the one message is written and its Undo runs.
+		gate.card = true;
+		queue.holdTimer.cancel();
+		crl::on_main([=] {
+			const auto &hooks = State().autoMerge;
+			const auto i = hooks.find(peer);
+			if (i != end(hooks) && i->second) {
+				const auto due = i->second;
+				due();
+			} else {
+				QueueReleaseHeld(peer); // the chat closed meanwhile
+			}
+		});
 		return;
 	}
 	const auto at = Core::HoldReleaseAt(gate);
@@ -806,6 +825,15 @@ void QueueHoldForCard(PeerId peer, bool open) {
 	Pump(peer);
 }
 
+void QueueSetAutoMerge(PeerId peer, Fn<void()> due) {
+	auto &hooks = State().autoMerge;
+	if (due) {
+		hooks[peer] = std::move(due);
+	} else {
+		hooks.remove(peer);
+	}
+}
+
 bool QueueHeld(not_null<const HistoryItem*> item) {
 	const auto queue = QueueFor(item->history()->peer->id);
 	if (!queue || !queue->gate.active) {
@@ -834,6 +862,26 @@ HeldGroup QueueHeldGroup(PeerId peer) {
 		}
 	}
 	return result;
+}
+
+bool QueuePreviewHeld(
+		PeerId peer,
+		const std::vector<FullMsgId> &texts,
+		const QString &text) {
+	const auto queue = QueueFor(peer);
+	if (!queue || texts.empty()) {
+		return false;
+	} else if (!text.isEmpty() && QueueHeldGroup(peer).texts != texts) {
+		return false; // his words come back whatever changed
+	}
+	const auto first = FindEntry(texts.front());
+	const auto item = first ? Bubble(*queue, first->id) : nullptr;
+	if (!first || !item) {
+		return false;
+	}
+	ShowText(item, first->randomId, text.isEmpty() ? first->original : text);
+	Refresh(item);
+	return true;
 }
 
 bool QueueMergeHeld(

@@ -62,9 +62,9 @@ struct Marked {
 	return (i != end(marks)) ? &i->second : nullptr;
 }
 
+// The merge's Undo window: after-send, or the automatic merge of held texts.
 [[nodiscard]] bool Holding(const RunMark &mark) {
-	return (mark.kind == RunMark::Kind::Sent)
-		&& (mark.holdUntil > crl::now());
+	return (mark.holdUntil > crl::now());
 }
 
 [[nodiscard]] const style::font &TextFont() {
@@ -77,7 +77,9 @@ struct Marked {
 
 [[nodiscard]] QString Title(const RunMark &mark) {
 	if (Holding(mark)) {
-		return u"Making it one"_q;
+		return (mark.kind == RunMark::Kind::Held)
+			? u"Sent as one"_q
+			: u"Making it one"_q;
 	} else if (mark.kind == RunMark::Kind::Held) {
 		return u"Send these %1 as one"_q.arg(mark.count);
 	}

@@ -6,6 +6,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/timer.h"
 #include "base/weak_ptr.h"
 #include "data/data_msg_id.h"
 #include "safe/safe_calm_run.h"
@@ -27,7 +28,12 @@ class Panel;
 //   instead / Edit / Keep them. Send this instead edits his first text in
 //   place and removes the others after the Undo window (safe_calm_merge).
 // Edit puts the one message in his field; his next Send is the replace.
-// Nothing merges without his tap.
+// Nothing merges without his tap, unless "Merge automatically" is on (Zach
+// 10-27, off by default): then a hold that ends with 3+ texts gets its one
+// message written, shown in the first held bubble with "Sent as one", a
+// countdown ring and Undo for Core::kAutoMergeUndoMs, and it goes out in
+// their place; Undo, or no one message in time, sends them as typed. The
+// after-send offer stays tap-only.
 class RunCards final : public base::has_weak_ptr {
 public:
 	struct Args {
@@ -42,7 +48,7 @@ public:
 	~RunCards();
 
 	void setHistory(History *history);
-	void setModes(bool merge, bool hold);
+	void setModes(bool merge, bool hold, bool autoMerge);
 
 	// The composer's Send: true when this send was the replace he armed with
 	// Edit (the field is cleared).
@@ -66,6 +72,11 @@ private:
 		std::vector<FullMsgId> items;
 		std::vector<FullMsgId> texts;
 	};
+	struct AutoMerge {
+		std::vector<FullMsgId> items;
+		std::vector<FullMsgId> texts;
+		QString text; // the one message, once written
+	};
 
 	void scheduleMark();
 	void updateMark();
@@ -78,6 +89,18 @@ private:
 	void pill(const QString &text);
 	[[nodiscard]] PeerId peer() const;
 
+	// Merge automatically.
+	void syncAutoHook();
+	void startAuto();
+	void autoWritten(const QString &text);
+	void autoTimer();
+	void commitAuto();
+	void undoAuto();
+	void autoFailed(const QString &why);
+	// The automatic merge stops: his words come back in the first bubble;
+	// `resumeHold` = the hold goes on (his messages changed).
+	void cancelAuto(bool resumeHold);
+
 	const not_null<Panel*> _panel;
 	const Fn<TextWithTags()> _text;
 	const Fn<void(TextWithTags)> _setText;
@@ -88,6 +111,11 @@ private:
 	History *_history = nullptr;
 	bool _merge = false;
 	bool _hold = false;
+	bool _autoMerge = false;
+	PeerId _autoHook = 0; // the chat whose hold ends call startAuto()
+	std::optional<AutoMerge> _auto;
+	uint64 _autoCall = 0;
+	base::Timer _autoTimer; // the one message is late, or Undo ran out
 	bool _markQueued = false;
 	Card _card = Card::None;
 	std::optional<Armed> _armed;

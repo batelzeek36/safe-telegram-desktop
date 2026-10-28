@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "safe/safe_calm_files.h"
+#include "safe/safe_calm_core.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -18,6 +19,8 @@ namespace Safe::Calm {
 namespace {
 
 const auto kFileName = u"safe_calm.json"_q;
+
+static_assert(!Core::kAutoMergeDefault, "Settings::autoMerge starts off");
 
 struct State {
 	Settings settings;
@@ -84,6 +87,7 @@ void Save(const Settings &settings) {
 		{ u"ready"_q, settings.ready },
 		{ u"merge"_q, settings.merge },
 		{ u"hold"_q, settings.hold },
+		{ u"autoMerge"_q, settings.autoMerge },
 		{ u"chats"_q, chats },
 	}).toJson(QJsonDocument::Indented));
 }
@@ -110,6 +114,8 @@ void Load(State &state) {
 	settings.ready = object.value(u"ready"_q).toBool(false);
 	settings.merge = object.value(u"merge"_q).toBool(true);
 	settings.hold = object.value(u"hold"_q).toBool(true);
+	settings.autoMerge = object.value(u"autoMerge"_q).toBool(
+		Core::kAutoMergeDefault);
 	settings.incomingSince = TimeId(
 		object.value(u"incomingSince"_q).toDouble());
 	if (settings.incoming && settings.incomingSince <= 0) {
@@ -212,6 +218,7 @@ Modes ModesFor(not_null<PeerData*> peer) {
 		.ready = settings.suggest && settings.ready,
 		.merge = settings.merge,
 		.hold = settings.hold,
+		.autoMerge = settings.hold && settings.autoMerge,
 	};
 	case ChatRule::Default: break;
 	}
@@ -229,6 +236,7 @@ Modes ModesFor(not_null<PeerData*> peer) {
 		.ready = settings.suggest && settings.ready && peer->isUser(),
 		.merge = settings.merge,
 		.hold = settings.hold,
+		.autoMerge = settings.hold && settings.autoMerge,
 	};
 }
 

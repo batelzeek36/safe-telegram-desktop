@@ -414,7 +414,7 @@ void Composer::refreshModes() {
 	_suggest = modes.suggest;
 	_ready = modes.ready;
 	if (_runs) {
-		_runs->setModes(modes.merge, modes.hold);
+		_runs->setModes(modes.merge, modes.hold, modes.autoMerge);
 	}
 	if (!_suggest && _ideas->showing()) {
 		closeIdeas();

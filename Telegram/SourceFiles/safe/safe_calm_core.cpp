@@ -66,6 +66,20 @@ bool HoldDue(
 	return gate.active && (now >= HoldReleaseAt(gate, times));
 }
 
+HoldEnd DecideHoldEnd(
+		const HoldGate &gate,
+		std::int64_t now,
+		int heldTexts,
+		bool autoMerge,
+		const HoldTimes &times) {
+	if (!HoldDue(gate, now, times)) {
+		return HoldEnd::Wait;
+	}
+	return (autoMerge && heldTexts >= kHoldPillTexts)
+		? HoldEnd::Merge
+		: HoldEnd::Release;
+}
+
 RunScan ScanRun(const std::vector<RunEntry> &newestFirst, int max) {
 	auto result = RunScan();
 	for (const auto &entry : newestFirst) {

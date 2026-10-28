@@ -30,7 +30,9 @@ struct ChatPaintContext;
 // - Sent: a run that already went out, "Make these 13 one message"; while
 //   the merge's Undo window runs, the countdown ring, "Making it one" and
 //   Undo.
-// - Held: texts still held while he types, "Send these 4 as one".
+// - Held: texts still held while he types, "Send these 4 as one"; with
+//   Merge automatically, while its Undo window runs, the ring, "Sent as
+//   one" and Undo.
 // HistoryView::Message paints it through safe_calm_chip (no extra hooks).
 namespace Safe::Calm {
 
@@ -43,7 +45,7 @@ struct RunMark {
 	std::vector<FullMsgId> texts; // edged in jade
 	FullMsgId chip; // the pill goes under this one
 	int count = 0; // how many texts
-	crl::time holdUntil = 0; // Sent: the merge's Undo window ends
+	crl::time holdUntil = 0; // the merge's Undo window ends
 };
 
 // One mark per chat; nullopt clears it. `open` runs on a tap of the pill,
