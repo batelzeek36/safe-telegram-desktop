@@ -88,7 +88,7 @@ struct BadgeSpot {
 [[nodiscard]] BadgeSpot BadgeSpotOf(
 		const Dialogs::BadgesState &state,
 		const FacePlace &place) {
-	if (!HasBadge(state)) {
+	if (!HasBadge(state) || BadgeFade(place.alpha) <= 0.01) {
 		return {};
 	}
 	const auto r = place.size / 2.;
@@ -223,6 +223,7 @@ void PaintFace(
 	}
 	if (!badge.isEmpty()) {
 		// The background between the badge and the photo it sits on.
+		p.setOpacity(was * place.alpha * BadgeFade(place.alpha));
 		p.save();
 		auto face = QPainterPath();
 		face.addEllipse(rect);

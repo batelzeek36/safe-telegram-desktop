@@ -283,6 +283,14 @@ double BadgeAngle(double outward, double focus) {
 	return outward + turn * std::clamp(focus, 0., 1.);
 }
 
+double BadgeFade(double alpha) {
+	const auto t = std::clamp(
+		(alpha - kBadgeFadeFrom) / (1. - kBadgeFadeFrom),
+		0.,
+		1.);
+	return t * t * (3. - 2. * t);
+}
+
 double OrbitOutward(double angle, double rx, double ry, double named) {
 	if (rx <= 0. || ry <= 0.) {
 		return 0.;

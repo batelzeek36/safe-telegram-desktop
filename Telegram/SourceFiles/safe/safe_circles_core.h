@@ -205,6 +205,16 @@ inline constexpr double kOrbitBadgeLowest = 1.9198621771937625; // 110 degrees
 	double height,
 	double limit);
 
+// How much of its badge a face wears at `alpha` (the far slot of a turning
+// endless dial, where the chat leaving and the one arriving cross-fade,
+// their alphas adding up to one). The badge goes first: it is gone before
+// the arriving face is kBadgeFadeFrom of the way in, and the arriving face's
+// own badge comes in only once its face is past that, so a count never
+// floats over the other chat's photo (design-evaluator pass 5: the "3" of
+// the chat leaving at six o'clock sat on the one arriving). 1 at rest.
+inline constexpr double kBadgeFadeFrom = 0.75;
+[[nodiscard]] double BadgeFade(double alpha);
+
 // ---- The Crown's spacing ----
 //
 // The focused face is larger and wears a jade ring; on a full ring the
