@@ -80,6 +80,7 @@ struct Queues {
 	std::deque<uint64> rebuildOrder;
 	base::flat_map<PeerId, std::unique_ptr<PeerQueue>> peers;
 	base::flat_map<PeerId, Fn<void()>> autoMerge; // QueueSetAutoMerge
+	base::flat_map<PeerId, QueueRun> runs; // QueueSetRun
 	rpl::event_stream<std::pair<PeerId, QueueEvent>> events;
 	uint64 nextTicket = 0;
 	bool releasing = false;
@@ -369,10 +370,12 @@ void CheckHold(PeerId peer, PeerQueue &queue) {
 		OpenGate(peer, queue);
 		return;
 	}
-	gate.pill = (texts >= Core::kHoldPillTexts);
+	const auto &runs = State().runs;
+	const auto run = runs.contains(peer) ? runs.find(peer)->second : QueueRun();
+	gate.pill = run.pill;
 	const auto now = crl::now();
 	const auto autoMerge = State().autoMerge.contains(peer);
-	switch (Core::DecideHoldEnd(gate, now, texts, autoMerge)) {
+	switch (Core::DecideHoldEnd(gate, now, texts, run.sentTexts, autoMerge)) {
 	case Core::HoldEnd::Wait: break;
 	case Core::HoldEnd::Release:
 		OpenGate(peer, queue);
@@ -834,6 +837,23 @@ void QueueSetAutoMerge(PeerId peer, Fn<void()> due) {
 	}
 }
 
+void QueueSetRun(PeerId peer, QueueRun run) {
+	auto &runs = State().runs;
+	const auto i = runs.find(peer);
+	const auto was = (i != end(runs)) ? i->second : QueueRun();
+	if (was == run) {
+		return;
+	} else if (run == QueueRun()) {
+		runs.remove(peer);
+	} else {
+		runs[peer] = run;
+	}
+	const auto queue = QueueFor(peer);
+	if (queue && queue->gate.active) {
+		Pump(peer); // the pill's extra wait, or a merge that may not happen
+	}
+}
+
 bool QueueHeld(not_null<const HistoryItem*> item) {
 	const auto queue = QueueFor(item->history()->peer->id);
 	if (!queue || !queue->gate.active) {
@@ -871,7 +891,7 @@ bool QueuePreviewHeld(
 	const auto queue = QueueFor(peer);
 	if (!queue || texts.empty()) {
 		return false;
-	} else if (!text.isEmpty() && QueueHeldGroup(peer).texts != texts) {
+	} else if (!text.isEmpty() && !QueueStillHeld(peer, texts)) {
 		return false; // his words come back whatever changed
 	}
 	const auto first = FindEntry(texts.front());
@@ -889,8 +909,10 @@ bool QueueMergeHeld(
 		const std::vector<FullMsgId> &texts,
 		const QString &text) {
 	const auto queue = QueueFor(peer);
-	const auto now = QueueHeldGroup(peer);
-	if (!queue || texts.empty() || now.texts != texts || text.isEmpty()) {
+	if (!queue
+		|| texts.empty()
+		|| text.isEmpty()
+		|| !QueueStillHeld(peer, texts)) {
 		return false;
 	}
 	const auto first = FindEntry(texts.front());
@@ -899,7 +921,13 @@ bool QueueMergeHeld(
 		LOG(("Safe Calm: held messages could not be merged."));
 		return false;
 	}
-	MarkSentSoftened(item->history(), text, now.words.join(u"\n"_q));
+	auto words = QStringList();
+	for (const auto &id : texts) {
+		if (const auto entry = FindEntry(id)) {
+			words.push_back(entry->original);
+		}
+	}
+	MarkSentSoftened(item->history(), text, words.join(u"\n"_q));
 	RememberFine(peer, text);
 	ShowText(item, first->randomId, text);
 	first->calm = text;
@@ -921,6 +949,41 @@ bool QueueMergeHeld(
 		Emit(peer, id, QueueState::Dropped);
 	}
 	OpenGate(peer, *queue);
+	Pump(peer);
+	return true;
+}
+
+bool QueueStillHeld(PeerId peer, const std::vector<FullMsgId> &texts) {
+	const auto held = QueueHeldGroup(peer).texts;
+	return ranges::all_of(texts, [&](FullMsgId id) {
+		return ranges::contains(held, id);
+	});
+}
+
+bool QueueDropHeld(PeerId peer, const std::vector<FullMsgId> &texts) {
+	const auto queue = QueueFor(peer);
+	if (!queue || texts.empty() || !QueueStillHeld(peer, texts)) {
+		return false;
+	}
+	auto &entries = queue->entries;
+	for (const auto &id : texts) {
+		for (auto j = begin(entries); j != end(entries); ++j) {
+			if (j->id == id) {
+				const auto entry = std::move(*j);
+				entries.erase(j);
+				DestroyBubble(*queue, entry);
+				break;
+			}
+		}
+		Emit(peer, id, QueueState::Dropped);
+	}
+	if (!HeldTexts(*queue)) {
+		OpenGate(peer, *queue); // the media held among them go now
+	} else {
+		// He sent more meanwhile: those wait for the hold as usual.
+		queue->gate.card = false;
+		queue->gate.lastActivity = crl::now();
+	}
 	Pump(peer);
 	return true;
 }

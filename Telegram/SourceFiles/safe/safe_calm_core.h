@@ -39,11 +39,13 @@ struct CardEntry {
 // order. Times in milliseconds of a monotonic clock.
 struct HoldTimes {
 	std::int64_t stop = 12000; // after he stops: field empty, no keystrokes
-	std::int64_t pill = 8000; // more while "Send these N as one" is up
+	std::int64_t pill = 8000; // more while the run's pill is up
 	std::int64_t idleDraft = 45000; // a draft left alone stops holding
 	std::int64_t cap = 120000; // the first held message waits at most this
 };
-inline constexpr auto kHoldPillTexts = 3; // texts held together: the pill
+// Texts in one run (held, sent and unread, or both): the pill and the card
+// (Zach 10-27 16:08), and what Merge automatically needs held.
+inline constexpr auto kRunTexts = 3;
 inline constexpr auto kWaitsForCard = std::numeric_limits<std::int64_t>::max();
 
 struct HoldGate {
@@ -52,8 +54,8 @@ struct HoldGate {
 	std::int64_t lastActivity = 0; // the last send or keystroke
 	std::int64_t lastKey = 0;
 	bool fieldBusy = false; // his field has text
-	bool pill = false; // kHoldPillTexts or more texts held
-	bool card = false; // the one-message card is open: wait for his pick
+	bool pill = false; // the run's pill is up over held texts
+	bool card = false; // the one-message card (or its merge) is on them
 };
 
 // A text went into the hold (starts it when none was running).
@@ -72,10 +74,11 @@ void HoldTyped(HoldGate &gate, std::int64_t now, bool fieldBusy);
 
 // Merge automatically (Zach 10-27: "maybe there should be a toggle in the
 // settings for if i want the merge to be auto or not"), off unless he turns
-// it on: when the hold ends with kHoldPillTexts or more texts held, the one
-// message is written and goes out in their place after an Undo window; Undo,
-// or no one message within kAutoMergeWriteMs, sends them as typed. The
-// after-send offer stays tap-only (it changes messages already delivered).
+// it on: when the hold ends with kRunTexts or more texts held and none of
+// the run already sent, the one message is written and goes out in their
+// place after an Undo window; Undo, or no one message within
+// kAutoMergeWriteMs, sends them as typed. A run with sent texts always waits
+// for his tap: its merge changes messages already delivered.
 inline constexpr auto kAutoMergeDefault = false;
 inline constexpr auto kAutoMergeUndoMs = std::int64_t(4000);
 inline constexpr auto kAutoMergeWriteMs = std::int64_t(20000);
@@ -84,20 +87,25 @@ enum class HoldEnd : std::uint8_t {
 	Release, // they go out as typed
 	Merge, // they go as one, after the Undo window
 };
+// `sentTexts`: texts of the same run already sent (and unread).
 [[nodiscard]] HoldEnd DecideHoldEnd(
 	const HoldGate &gate,
 	std::int64_t now,
 	int heldTexts,
+	int sentTexts,
 	bool autoMerge,
 	const HoldTimes &times = {});
 
-// The run that already went out (Zach 10-27: "the AI should detect when im
-// mass-sending messages that could overwhelm the reader"; then "keep the
-// GIFs"): his own messages at the bottom of the chat, nothing from anyone
-// else between, all on the server and unread. Texts get merged; his GIFs,
-// stickers, photos and videos count toward the run and stay where they are.
-// Anything else (a forward, a reply to someone else, a file, a voice note,
-// a service message) ends the run.
+// One run (Zach 10-27 16:08: "she hasnt read these three yet so it should
+// offer to merge - it doesnt matter how far apart i sent them"): his own
+// messages in a row at the bottom of the chat since the other side's last
+// message, nobody has read any, the ones already sent and the ones the hold
+// still keeps on his side, one sequence in order, with no time limit between
+// them. Texts get merged; his GIFs, stickers, photos and videos count toward
+// the run and stay where they are. A reply, a forward, a file, a voice note
+// or a service message ends the run (replies stay out of runs, Zach 10-27).
+// A message that came out of a merge is one text of the next run (16:10: "i
+// merged and then sent 2 more, so it should offer again").
 enum class RunKind : std::uint8_t {
 	Text,
 	Media,
@@ -106,17 +114,25 @@ enum class RunKind : std::uint8_t {
 struct RunEntry {
 	RunKind kind = RunKind::Breaks;
 	bool own = false;
-	bool sent = true; // on the server; a local one at the bottom = no run
-	bool unread = false;
-	std::int64_t date = 0; // unixtime
+	bool sent = true; // on the server
+	bool held = false; // the hold keeps it on his side (never read)
+	bool unread = false; // sent and nobody has read it
+	// Telegram could not send it (the red mark): it ends the run, so a send
+	// that never landed does not keep the run waiting forever.
+	bool failed = false;
 	std::int64_t id = 0;
 };
 struct RunScan {
-	int count = 0; // texts and media
+	int count = 0; // texts and media, sent and held
 	int texts = 0;
-	std::int64_t first = 0; // the oldest message's id: which run it is
-	std::int64_t oldest = 0;
-	std::int64_t newest = 0;
+	int heldTexts = 0;
+	// The message just before the run (0: none loaded): with `texts`, which
+	// run it is. Ids of held bubbles change when they reach the server; this
+	// one does not.
+	std::int64_t anchor = 0;
+	// One of his is on its way (neither on the server nor held): look again
+	// once it lands, change nothing meanwhile.
+	bool settling = false;
 };
 inline constexpr auto kMaxRun = 60;
 
@@ -125,31 +141,43 @@ inline constexpr auto kMaxRun = 60;
 	const std::vector<RunEntry> &newestFirst,
 	int max = kMaxRun);
 
-struct RunRules {
-	int min = 5; // messages in a row
-	int minTexts = 2; // one text has nothing to merge
-	std::int64_t pause = 20; // seconds since his last message
-	std::int64_t fresh = 30 * 60; // the oldest under 30 minutes old
-	int regrow = 5; // after Keep them, this many more offer again
-};
+// He declined exactly this run (Keep them, Send as typed). Zach 10-27 16:10:
+// the pill comes back as soon as the run has any other set of texts (one
+// more, one fewer, or a new run), so Keep hides only the set he declined.
 struct Kept {
-	std::int64_t first = 0; // the run he kept
-	int count = 0; // how long it was then
+	std::int64_t anchor = 0;
+	int texts = 0;
 };
-enum class Offer : std::uint8_t {
+// The pill: kRunTexts or more texts, unless he declined exactly this run.
+[[nodiscard]] bool OfferRun(const RunScan &scan, const Kept *kept);
+
+// Send this instead on a run with sent texts, when its Undo window ends
+// (safe_calm_merge): what is true of the run now.
+struct MergeFacts {
+	int sentTexts = 0; // his sent texts of the run still in the chat
+	int heldTexts = 0; // held texts of the run
+	bool anyRead = false; // someone read one of its sent messages
+	bool heldLeft = false; // one of its held texts went out meanwhile
+	bool firstEditable = false; // Telegram lets him edit the first one
+	bool firstRemovable = false; // ... and delete it for everyone
+	bool othersRemovable = true; // every other sent text, for everyone
+};
+enum class MergeStep : std::uint8_t {
+	Abort, // nothing changes (the held texts wait for the hold again)
+	EditFirst, // the first sent text becomes the one message
+	SendAfter, // the sent texts go, the one message goes after the run
+};
+enum class MergeWhy : std::uint8_t {
 	None,
-	Later, // wait for his pause
-	Ask, // ask the runner for the one message, then offer it
+	Read, // "They read some of them first, so nothing changed."
+	Changed, // "Your messages changed, so nothing changed."
+	WontRemove, // "Telegram won't remove these for everyone, ..."
 };
-struct OfferDecision {
-	Offer offer = Offer::None;
-	std::int64_t retryIn = 0; // seconds, for Later
+struct MergeDecision {
+	MergeStep step = MergeStep::Abort;
+	MergeWhy why = MergeWhy::None;
 };
-[[nodiscard]] OfferDecision DecideOffer(
-	const RunScan &scan,
-	std::int64_t now,
-	const Kept *kept,
-	const RunRules &rules = {});
+[[nodiscard]] MergeDecision DecideMerge(const MergeFacts &facts);
 
 // Voice notes in reply ideas (Zach 10-27: "suggest a reply doesnt work for
 // voice messages"): before asking, Telegram's own transcription (Premium,

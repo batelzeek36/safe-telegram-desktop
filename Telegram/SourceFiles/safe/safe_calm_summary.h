@@ -13,8 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // offer to delete and summarize what i said in my voice"; then "my mother
 // is going to read what i just said as pressure": the one message is calmer
 // too, and his GIFs, stickers and photos stay where they are). The runner's
-// POST /v1/summarize only (calm-runner/summarize.py): never the paid API,
-// no answer = no offer (docs/desktop/STATE-SUMMARIZE.md).
+// POST /v1/summarize only (calm-runner/summarize.py): never the paid API;
+// written when he taps the pill, no answer = nothing changes
+// (docs/desktop/STATE-SUMMARIZE.md).
 namespace Safe::Calm {
 
 enum class RunMedia : uchar {

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "safe/safe_calm.h"
@@ -34,7 +35,7 @@ static_assert(Core::kAutoMergeUndoMs == kHoldMs);
 	return (count == 1) ? u"text"_q : u"%1 texts"_q.arg(count);
 }
 
-// "Your GIFs", "Your GIF and 2 photos": what stays in its place.
+// "GIFs", "GIF and photos": what stays in its place (no "your").
 [[nodiscard]] QString MediaWords(const std::vector<RunMedia> &media) {
 	auto counts = std::array<int, 4>{ 0, 0, 0, 0 };
 	auto order = std::vector<int>();
@@ -73,13 +74,43 @@ static_assert(Core::kAutoMergeUndoMs == kHoldMs);
 	if (!parts.isEmpty()) {
 		joined = parts.join(u", "_q) + u" and "_q + joined;
 	}
-	return u"Your "_q + joined;
+	return joined;
 }
 
 [[nodiscard]] int MediaCount(const std::vector<RunMedia> &media) {
 	return int(ranges::count_if(media, [](RunMedia kind) {
 		return kind != RunMedia::None;
 	}));
+}
+
+// "A", "A and B", "A, B and C".
+[[nodiscard]] QString JoinClauses(QStringList parts) {
+	if (parts.size() < 2) {
+		return parts.isEmpty() ? QString() : parts.front();
+	}
+	const auto last = parts.takeLast();
+	return parts.join(u", "_q) + u" and "_q + last;
+}
+
+// The media of the run, split by whether they already went out.
+struct RunMediaSplit {
+	std::vector<RunMedia> sent;
+	std::vector<RunMedia> held;
+};
+[[nodiscard]] RunMediaSplit SplitMedia(const Run &run) {
+	auto result = RunMediaSplit();
+	for (auto i = 0; i != int(run.items.size()); ++i) {
+		const auto kind = (i < int(run.media.size()))
+			? run.media[i]
+			: RunMedia::None;
+		if (kind == RunMedia::None) {
+			continue;
+		}
+		(ranges::contains(run.sentItems, run.items[i])
+			? result.sent
+			: result.held).push_back(kind);
+	}
+	return result;
 }
 
 } // namespace
@@ -103,9 +134,13 @@ RunCards::~RunCards() {
 	}
 	if (_history) {
 		const auto peer = this->peer();
-		QueueHoldForCard(peer, false);
-		// Never lose a held message: leaving releases them.
-		QueueReleaseHeld(peer);
+		QueueSetRun(peer, QueueRun());
+		if (!SentMerging(peer)) {
+			// Never lose a held message: leaving releases them (a merge in
+			// its Undo window keeps its own and lets them go when it ends).
+			QueueHoldForCard(peer, false);
+			QueueReleaseHeld(peer);
+		}
 		SetRunMark(_history, std::nullopt);
 	}
 }
@@ -122,14 +157,16 @@ void RunCards::setHistory(History *history) {
 	cancelAuto(false);
 	if (_history) {
 		const auto peer = this->peer();
-		QueueHoldForCard(peer, false);
-		QueueReleaseHeld(peer); // leaving the chat sends what was held
+		QueueSetRun(peer, QueueRun());
+		if (!SentMerging(peer)) {
+			QueueHoldForCard(peer, false);
+			QueueReleaseHeld(peer); // leaving the chat sends what was held
+		}
 		SetRunMark(_history, std::nullopt);
 	}
 	_card = Card::None;
+	_cardRun.reset();
 	_armed.reset();
-	_heldItems.clear();
-	_heldTexts.clear();
 	_historyLifetime.destroy();
 	_history = history;
 	_watcher.setHistory(history);
@@ -147,11 +184,13 @@ void RunCards::setModes(bool merge, bool hold, bool autoMerge) {
 	_merge = merge;
 	_hold = hold;
 	_autoMerge = autoMerge;
-	_watcher.setEnabled(merge);
+	// Merge automatically needs the run even with the offers off: a run with
+	// sent texts never merges by itself.
+	_watcher.setEnabled(merge, hold && autoMerge);
 	if (!hold || !autoMerge) {
 		cancelAuto(hold); // switched off: the hold goes on (or ends below)
 	}
-	if (wasHold && !hold && _history) {
+	if (wasHold && !hold && _history && !SentMerging(peer())) {
 		QueueReleaseHeld(peer());
 	}
 	syncAutoHook();
@@ -178,109 +217,287 @@ void RunCards::updateMark() {
 		return;
 	}
 	const auto peer = this->peer();
-	const auto group = _hold ? QueueHeldGroup(peer) : HeldGroup();
-	if ((_card == Card::Held || _card == Card::HeldWriting)
-		&& group.texts != _heldTexts) {
-		// He sent more (or one went) while the card was open.
-		closeCard();
-		pill(u"Your messages changed, so the card closed"_q);
+	const auto offer = _merge ? _watcher.offer() : nullptr;
+	if (_card != Card::None && _cardRun && !SentMerging(peer)) {
+		const auto now = _watcher.run();
+		if (!now || now->allTexts() != _cardRun->allTexts()) {
+			// She read some, or he sent more (or one went), while it was open.
+			const auto read = readSome(*_cardRun);
+			closeCard();
+			pill(read.isEmpty()
+				? u"Your messages changed, so the card closed"_q
+				: (read + u", so the card closed"_q));
+		}
 	}
-	if (_auto && group.texts != _auto->texts) {
-		// He sent more (or one went): the hold goes on with all of them.
-		cancelAuto(true);
+	if (_auto) {
+		const auto now = CurrentRun(_history);
+		if (now && (!now->allHeld() || now->heldTexts != _auto->texts)) {
+			// He sent more (or one went, or her message came): the hold goes
+			// on with all of them.
+			cancelAuto(true);
+		}
 	}
-	if (int(group.texts.size()) >= Core::kHoldPillTexts) {
-		auto mark = RunMark{
-			.kind = RunMark::Kind::Held,
-			.texts = group.texts,
-			.chip = group.items.back(),
-			.count = int(group.texts.size()),
-		};
+	const auto keepRing = [&](RunMark &mark) {
 		if (const auto now = RunMarkFor(peer)) {
 			if (now->kind == mark.kind && now->chip == mark.chip) {
 				mark.holdUntil = now->holdUntil; // the Undo ring keeps going
 			}
 		}
-		SetRunMark(_history, mark, [=] { openHeld(); }, [=] { undoAuto(); });
+	};
+	if (_auto) {
+		auto mark = RunMark{
+			.kind = RunMark::Kind::Held,
+			.texts = _auto->texts,
+			.chip = _auto->items.back(),
+			.count = int(_auto->texts.size()),
+		};
+		keepRing(mark);
+		SetRunMark(_history, mark, [=] { openRun(); }, [=] { undoAuto(); });
+		syncQueueRun();
 		return;
 	}
-	const auto offer = _merge ? _watcher.offer() : nullptr;
 	if (!offer) {
-		if (_card == Card::Sent) {
-			closeCard();
-		}
 		SetRunMark(_history, std::nullopt);
+		syncQueueRun();
 		return;
 	}
 	auto mark = RunMark{
-		.kind = RunMark::Kind::Sent,
-		.texts = offer->run.texts,
-		.chip = offer->run.items.back(),
-		.count = int(offer->run.texts.size()),
+		.kind = offer->allHeld() ? RunMark::Kind::Held : RunMark::Kind::Sent,
+		.texts = offer->allTexts(),
+		.chip = offer->items.back(),
+		.count = offer->texts(),
 	};
-	if (const auto now = RunMarkFor(peer)) {
-		if (now->kind == mark.kind && now->chip == mark.chip) {
-			mark.holdUntil = now->holdUntil; // the merge's ring keeps going
-		}
-	}
-	SetRunMark(_history, mark, [=] { openSent(); }, [=] {
+	keepRing(mark);
+	SetRunMark(_history, mark, [=] { openRun(); }, [=] {
 		UndoSentMerge(peer);
 	});
+	syncQueueRun();
 }
 
-void RunCards::openSent() {
-	const auto offer = _watcher.offer();
-	if (!_history || !offer || SentMerging(peer())) {
+void RunCards::syncQueueRun() {
+	if (!_history) {
 		return;
 	}
-	const auto run = offer->run;
-	const auto text = offer->text;
-	const auto first = _history->owner().message(run.texts.front());
-	const auto inPlace = first && CanEditInPlace(first);
-	const auto count = int(run.texts.size());
-	auto line = inPlace
-		? u"Edits your first message and removes the other %1."_q.arg(
-			Texts(count - 1))
-		: u"Removes your %1 and sends this after them."_q.arg(
-			Texts(count));
-	if (const auto media = MediaWords(run.media); !media.isEmpty()) {
-		line += u" %1 %2."_q.arg(
-			media,
-			(MediaCount(run.media) == 1) ? u"stays"_q : u"stay"_q);
-	}
-	line += u" Nobody has read them yet."_q;
-	_takePanel();
-	_card = Card::Sent;
-	_panel->showSummary(Title(count), text, line, {
-		{ u"Send this instead"_q, PanelButton::Look::Primary, [=] {
-			sendSent({ text }, false);
-		} },
-		{ u"Edit"_q, PanelButton::Look::Ghost, [=] {
-			editInField(
-				text,
-				Armed{ .items = run.items, .texts = run.texts },
-				u"Send it to replace the %1"_q.arg(Texts(count)));
-		} },
-		{ u"Keep them"_q, PanelButton::Look::Ghost, [=] {
-			_watcher.keep();
-			closeCard();
-		} },
+	const auto run = _watcher.run();
+	const auto offer = _merge ? _watcher.offer() : nullptr;
+	QueueSetRun(peer(), QueueRun{
+		.pill = (offer && !offer->heldTexts.empty()) || _auto.has_value(),
+		.sentTexts = run ? int(run->sentTexts.size()) : 0,
 	});
 }
 
-void RunCards::sendSent(const TextWithTags &text, bool fromField) {
-	const auto offer = _watcher.offer();
-	if (!_history || (!offer && !_armed)) {
+void RunCards::openRun() {
+	if (!_history) {
+		return;
+	} else if (_auto && !_auto->text.isEmpty()) {
+		return; // its Undo window runs: Undo is the pill's button
+	}
+	const auto peer = this->peer();
+	if (SentMerging(peer)) {
+		return;
+	}
+	// A tap while the automatic one is written: the card takes over.
+	cancelAuto(false);
+	const auto found = _watcher.run();
+	if (!found || found->texts() < Core::kRunTexts) {
+		return;
+	}
+	const auto run = *found;
+	_cardRun = run;
+	if (!run.heldTexts.empty()) {
+		QueueHoldForCard(peer, true);
+	}
+	_takePanel();
+	_card = Card::Writing;
+	_panel->showWriting(Title(run.texts()), {
+		{ u"Close"_q, PanelButton::Look::Ghost, [=] { closeCard(); } },
+		{
+			run.allHeld() ? u"Send as typed"_q : u"Keep them"_q,
+			PanelButton::Look::Ghost,
+			[=] { declineRun(); },
+		},
+	});
+	SharedClient().cancel(base::take(_summaryCall));
+	_summaryCall = SharedClient().summarize(
+		MakeSummaryRequest(_history, run.items),
+		crl::guard(this, [=](SummaryResult result) {
+			_summaryCall = 0;
+			if (_card != Card::Writing || this->peer() != peer) {
+				return;
+			} else if (result.text.isEmpty()) {
+				LOG(("Safe Calm: no one message for a run (%1)."
+					).arg(result.failure));
+				closeCard();
+				pill(u"Calm could not write one right now"_q);
+				return;
+			}
+			showRun(result.text);
+		}));
+}
+
+QString RunCards::readerLine(const Run &run) const {
+	const auto it = (run.sentItems.size() == 1) ? u"it"_q : u"them"_q;
+	const auto peer = _history ? _history->peer.get() : nullptr;
+	const auto user = peer ? peer->asUser() : nullptr;
+	if (user && !user->isSelf()) {
+		return u"%1 hasn't read %2 yet."_q.arg(user->shortName(), it);
+	}
+	return u"Nobody has read %1 yet."_q.arg(it);
+}
+
+QString RunCards::readSome(const Run &run) const {
+	if (!_history) {
+		return QString();
+	}
+	for (const auto &id : run.sentItems) {
+		const auto item = _history->owner().message(id);
+		if (item && !RunUnread(item)) {
+			const auto user = _history->peer->asUser();
+			return (user && !user->isSelf())
+				? u"%1 read some of them"_q.arg(user->shortName())
+				: u"Someone read some of them"_q;
+		}
+	}
+	return QString();
+}
+
+// Exactly what Send this instead will do (Zach 10-27 16:08: "Edits your
+// first message, removes the other sent one and sends nothing else. She
+// hasn't read them yet.").
+QString RunCards::cardLine(const Run &run) const {
+	const auto media = SplitMedia(run);
+	if (run.allHeld()) {
+		auto line = u"Goes out in place of your %1."_q.arg(
+			Texts(int(run.heldTexts.size())));
+		if (const auto words = MediaWords(media.held); !words.isEmpty()) {
+			line += (MediaCount(media.held) == 1)
+				? u" Your %1 goes out as it is, in its place."_q.arg(words)
+				: u" Your %1 go out as they are, in their place."_q.arg(words);
+		}
+		if (const auto words = MediaWords(media.sent); !words.isEmpty()) {
+			line += (MediaCount(media.sent) == 1)
+				? u" Your %1 stays."_q.arg(words)
+				: u" Your %1 stay."_q.arg(words);
+			return line + u" None of these texts has gone out yet."_q;
+		}
+		return line + u" Nothing has gone out yet."_q;
+	}
+	const auto sent = int(run.sentTexts.size());
+	const auto held = int(run.heldTexts.size());
+	const auto heldWords = MediaWords(media.held);
+	const auto first = _history
+		? _history->owner().message(run.sentTexts.front())
+		: nullptr;
+	const auto inPlace = first && CanEditInPlace(first);
+	auto line = QString();
+	if (inPlace) {
+		auto parts = QStringList{ u"Edits your first message"_q };
+		if (sent > 1) {
+			parts.push_back(!held
+				? u"removes the other %1"_q.arg(Texts(sent - 1))
+				: (sent == 2)
+				? u"removes the other sent one"_q
+				: u"removes the other %1 sent ones"_q.arg(sent - 1));
+		}
+		if (held) {
+			parts.push_back(heldWords.isEmpty()
+				? u"sends nothing else"_q
+				: u"sends only your %1"_q.arg(heldWords));
+		}
+		line = JoinClauses(parts) + QChar('.');
+	} else {
+		// Telegram will not edit it (the 48 h limit): a new message instead.
+		const auto them = (sent == 1) ? u"it"_q : u"them"_q;
+		const auto texts = held
+			? ((sent == 1) ? u"sent text"_q : u"%1 sent texts"_q.arg(sent))
+			: Texts(sent);
+		line = !held
+			? u"Removes your %1 and sends this after %2."_q.arg(texts, them)
+			: heldWords.isEmpty()
+			? u"Removes your %1 and sends only this, after %2."_q.arg(
+				texts,
+				them)
+			: u"Removes your %1 and sends your %2, then this."_q.arg(
+				texts,
+				heldWords);
+	}
+	if (const auto words = MediaWords(media.sent); !words.isEmpty()) {
+		line += (MediaCount(media.sent) == 1)
+			? u" Your %1 stays."_q.arg(words)
+			: u" Your %1 stay."_q.arg(words);
+	}
+	return line + QChar(' ') + readerLine(run);
+}
+
+void RunCards::showRun(const QString &text) {
+	if (!_cardRun) {
 		closeCard();
 		return;
 	}
-	const auto items = fromField ? _armed->items : offer->run.items;
-	const auto texts = fromField ? _armed->texts : offer->run.texts;
+	const auto peer = this->peer();
+	const auto run = *_cardRun;
+	const auto count = run.texts();
+	_card = Card::Shown;
+	auto send = Fn<void()>();
+	if (run.allHeld()) {
+		send = [=] {
+			const auto merged = QueueMergeHeld(peer, run.heldTexts, text);
+			closeCard();
+			if (!merged) {
+				pill(u"Your messages changed, so nothing was merged"_q);
+			}
+		};
+	} else {
+		send = [=] { sendSent({ text }, run, false); };
+	}
+	_panel->showSummary(Title(count), text, cardLine(run), {
+		{ u"Send this instead"_q, PanelButton::Look::Primary, send },
+		{ u"Edit"_q, PanelButton::Look::Ghost, [=] {
+			editInField(
+				text,
+				run,
+				run.allHeld()
+					? u"Send it to go in place of the %1"_q.arg(Texts(count))
+					: u"Send it to replace the %1"_q.arg(Texts(count)));
+		} },
+		{
+			run.allHeld() ? u"Send as typed"_q : u"Keep them"_q,
+			PanelButton::Look::Ghost,
+			[=] { declineRun(); },
+		},
+	});
+}
+
+// Keep them (some went out: the held ones wait for the hold as usual) or
+// Send as typed (all held: they go now). No pill for exactly this run.
+void RunCards::declineRun() {
+	const auto allHeld = _cardRun && _cardRun->allHeld();
+	_watcher.keep();
+	closeCard();
+	if (allHeld && _history) {
+		QueueReleaseHeld(peer());
+	}
+}
+
+void RunCards::sendSent(
+		const TextWithTags &text,
+		const Run &run,
+		bool fromField) {
+	if (!_history || run.sentTexts.empty()) {
+		closeCard();
+		return;
+	}
 	const auto weak = base::make_weak(this);
 	const auto peer = this->peer();
+	if (!run.heldTexts.empty()) {
+		// They wait through the Undo window; the merge lets them go (or
+		// drops them) when it ends.
+		QueueHoldForCard(peer, true);
+	}
 	StartSentMerge(_history, SentMerge{
-		.items = items,
-		.texts = texts,
+		.items = run.sentItems,
+		.texts = run.sentTexts,
+		.held = run.heldTexts,
 		.text = text,
 		.fromField = fromField,
 	}, MergeHooks{
@@ -305,104 +522,23 @@ void RunCards::sendSent(const TextWithTags &text, bool fromField) {
 			}
 		},
 	});
-	if (SentMerging(peer)) {
+	const auto merging = SentMerging(peer);
+	if (merging) {
 		_watcher.setMerging(true);
 	}
-	closeCard();
-}
-
-void RunCards::openHeld() {
-	if (!_history) {
-		return;
-	} else if (_auto && !_auto->text.isEmpty()) {
-		return; // its Undo window runs: Undo is the pill's button
-	}
-	// A tap while the automatic one is written: the card takes over.
-	cancelAuto(false);
-	const auto peer = this->peer();
-	const auto group = QueueHeldGroup(peer);
-	if (int(group.texts.size()) < Core::kHoldPillTexts) {
-		return;
-	}
-	_heldItems = group.items;
-	_heldTexts = group.texts;
-	QueueHoldForCard(peer, true);
-	_takePanel();
-	_card = Card::HeldWriting;
-	_panel->showWriting(Title(int(group.texts.size())), {
-		{ u"Close"_q, PanelButton::Look::Ghost, [=] { closeCard(); } },
-		{ u"Send as typed"_q, PanelButton::Look::Ghost, [=] {
-			closeCard();
-			QueueReleaseHeld(peer);
-		} },
-	});
-	SharedClient().cancel(base::take(_summaryCall));
-	_summaryCall = SharedClient().summarize(
-		MakeSummaryRequest(_history, group.items),
-		crl::guard(this, [=](SummaryResult result) {
-			_summaryCall = 0;
-			if (_card != Card::HeldWriting || this->peer() != peer) {
-				return;
-			} else if (result.text.isEmpty()) {
-				LOG(("Safe Calm: no one message for held texts (%1)."
-					).arg(result.failure));
-				closeCard();
-				pill(u"Calm could not write one right now"_q);
-				return;
-			}
-			showHeld(result.text);
-		}));
-}
-
-void RunCards::showHeld(const QString &text) {
-	const auto peer = this->peer();
-	const auto texts = _heldTexts;
-	const auto count = int(texts.size());
-	auto media = std::vector<RunMedia>();
-	if (_history) {
-		for (const auto &id : _heldItems) {
-			if (const auto item = _history->owner().message(id)) {
-				media.push_back(RunKindOf(item).value_or(RunMedia::None));
-			}
-		}
-	}
-	auto line = u"Goes out in place of your %1."_q.arg(Texts(count));
-	if (const auto words = MediaWords(media); !words.isEmpty()) {
-		line += u" %1 go out as they are, in their place."_q.arg(words);
-	}
-	line += u" Nothing has gone out yet."_q;
-	_card = Card::Held;
-	_panel->showSummary(Title(count), text, line, {
-		{ u"Send this instead"_q, PanelButton::Look::Primary, [=] {
-			const auto merged = QueueMergeHeld(peer, texts, text);
-			closeCard();
-			if (!merged) {
-				pill(u"Your messages changed, so nothing was merged"_q);
-			}
-		} },
-		{ u"Edit"_q, PanelButton::Look::Ghost, [=] {
-			editInField(
-				text,
-				Armed{ .held = true, .items = _heldItems, .texts = texts },
-				u"Send it to go in place of the %1"_q.arg(Texts(count)));
-		} },
-		{ u"Send as typed"_q, PanelButton::Look::Ghost, [=] {
-			closeCard();
-			QueueReleaseHeld(peer);
-		} },
-	});
+	closeCard(merging);
 }
 
 void RunCards::editInField(
 		const QString &text,
-		Armed armed,
+		Run run,
 		const QString &note) {
 	closeCard();
 	const auto current = _text().text;
 	_setText({ current.trimmed().isEmpty()
 		? text
 		: (text + QChar('\n') + current) });
-	_armed = std::move(armed);
+	_armed = std::move(run);
 	_focus();
 	pill(note);
 }
@@ -411,30 +547,27 @@ bool RunCards::interceptSend(const TextWithTags &draft) {
 	if (!_armed || !_history || draft.text.trimmed().isEmpty()) {
 		return false;
 	}
-	const auto armed = *base::take(_armed);
+	const auto run = *base::take(_armed);
 	const auto peer = this->peer();
-	if (armed.held) {
-		if (QueueHeldGroup(peer).texts == armed.texts
-			&& QueueMergeHeld(peer, armed.texts, draft.text)) {
+	if (run.allHeld()) {
+		if (QueueMergeHeld(peer, run.heldTexts, draft.text)) {
 			_setText({});
 			return true;
 		}
 		pill(u"Your messages changed, so this goes as a new one"_q);
 		return false;
 	}
-	for (const auto &id : armed.items) {
-		const auto item = _history->owner().message(id);
-		if (item && !RunUnread(item)) {
-			pill(u"They read some of them, so this goes as a new one"_q);
-			return false;
-		}
-	}
-	if (SentMerging(peer)) {
+	if (const auto read = readSome(run); !read.isEmpty()) {
+		pill(read + u", so this goes as a new one"_q);
+		return false;
+	} else if (!run.heldTexts.empty()
+		&& !QueueStillHeld(peer, run.heldTexts)) {
+		pill(u"Your messages changed, so this goes as a new one"_q);
+		return false;
+	} else if (SentMerging(peer)) {
 		return false;
 	}
-	_armed = armed; // sendSent reads its run from here
-	sendSent(draft, true);
-	_armed.reset();
+	sendSent(draft, run, true);
 	_setText({});
 	return true;
 }
@@ -459,8 +592,9 @@ bool RunCards::handleEscape() {
 void RunCards::panelChanged() {
 	if (_card != Card::None && !_panel->isSummary()) {
 		// Something else took the panel, or it closed.
-		const auto held = (_card == Card::Held || _card == Card::HeldWriting);
+		const auto held = _cardRun && !_cardRun->heldTexts.empty();
 		_card = Card::None;
+		_cardRun.reset();
 		SharedClient().cancel(base::take(_summaryCall));
 		if (held && _history) {
 			QueueHoldForCard(peer(), false);
@@ -468,11 +602,13 @@ void RunCards::panelChanged() {
 	}
 }
 
-void RunCards::closeCard() {
+void RunCards::closeCard(bool keepHeld) {
 	const auto was = _card;
+	const auto held = _cardRun && !_cardRun->heldTexts.empty();
 	_card = Card::None;
+	_cardRun.reset();
 	SharedClient().cancel(base::take(_summaryCall));
-	if ((was == Card::Held || was == Card::HeldWriting) && _history) {
+	if (held && !keepHeld && _history) {
 		QueueHoldForCard(peer(), false);
 	}
 	if (was != Card::None && _panel->isSummary()) {
@@ -512,18 +648,20 @@ void RunCards::startAuto() {
 		return;
 	}
 	const auto peer = this->peer();
-	const auto group = QueueHeldGroup(peer);
-	if (int(group.texts.size()) < Core::kHoldPillTexts) {
+	// Only the run: held texts from before her last message go as typed.
+	const auto run = CurrentRun(_history);
+	if (!run || !run->allHeld() || run->texts() < Core::kRunTexts) {
+		// A run with sent texts waits for his tap: as typed now.
 		QueueReleaseHeld(peer);
 		return;
-	} else if (_card == Card::Held || _card == Card::HeldWriting) {
+	} else if (_card != Card::None) {
 		return; // the card is on them already
 	}
 	cancelAuto(false);
-	_auto = AutoMerge{ .items = group.items, .texts = group.texts };
+	_auto = AutoMerge{ .items = run->items, .texts = run->heldTexts };
 	_autoTimer.callOnce(Core::kAutoMergeWriteMs);
 	_autoCall = SharedClient().summarize(
-		MakeSummaryRequest(_history, group.items),
+		MakeSummaryRequest(_history, run->items),
 		crl::guard(this, [=](SummaryResult result) {
 			_autoCall = 0;
 			if (!_auto || !_auto->text.isEmpty() || this->peer() != peer) {

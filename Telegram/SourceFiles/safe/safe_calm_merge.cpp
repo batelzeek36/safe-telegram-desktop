@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "main/main_session.h"
 #include "safe/safe_calm.h"
+#include "safe/safe_calm_core.h"
 #include "safe/safe_calm_queue.h"
 #include "safe/safe_calm_run.h"
 #include "safe/safe_calm_run_mark.h"
@@ -52,12 +53,21 @@ struct Pending {
 	return result;
 }
 
-void Finish(PeerId peer, MergeHooks hooks) {
+// Done, undone or aborted: held texts it kept for the window wait for the
+// hold again (nothing to do when they were dropped).
+void Finish(PeerId peer, const SentMerge &merge, MergeHooks hooks) {
 	Merges().remove(peer);
 	SetRunMarkHold(peer, 0);
+	if (!merge.held.empty()) {
+		QueueHoldForCard(peer, false);
+	}
 	if (hooks.finished) {
 		hooks.finished();
 	}
+}
+
+void Finish(PeerId peer, Pending pending) {
+	Finish(peer, pending.merge, std::move(pending.hooks));
 }
 
 void Abort(PeerId peer, Pending pending, const QString &why) {
@@ -68,7 +78,27 @@ void Abort(PeerId peer, Pending pending, const QString &why) {
 	if (pending.merge.fromField && pending.hooks.restore) {
 		pending.hooks.restore(pending.merge.text);
 	}
-	Finish(peer, std::move(pending.hooks));
+	Finish(peer, std::move(pending));
+}
+
+[[nodiscard]] QString WontRemove() {
+	return u"Telegram won't remove these for everyone, so nothing "
+		"changed."_q;
+}
+
+[[nodiscard]] QString Changed() {
+	return u"Your messages changed, so nothing changed."_q;
+}
+
+[[nodiscard]] QString WhyText(Core::MergeWhy why) {
+	switch (why) {
+	case Core::MergeWhy::Read:
+		return u"They read some of them first, so nothing changed."_q;
+	case Core::MergeWhy::Changed: return Changed();
+	case Core::MergeWhy::WontRemove: return WontRemove();
+	case Core::MergeWhy::None: break;
+	}
+	return QString();
 }
 
 [[nodiscard]] TextWithEntities Prepared(
@@ -99,35 +129,40 @@ void Remove(
 	session->data().sendHistoryChangeNotifications();
 }
 
-// The first text could not be edited: the texts go, the one message is sent
-// after the run.
+// The first text could not be edited: the sent texts go, the one message is
+// sent after the last item that stays (the media held among the run went
+// out already, in order). Once its held texts were dropped this never
+// aborts: a text Telegram keeps stays, the one message still goes.
 void SendInstead(PeerId peer, Pending pending) {
 	const auto session = pending.session.get();
 	const auto history = session ? session->data().historyLoaded(peer) : nullptr;
 	if (!history) {
-		Finish(peer, std::move(pending.hooks));
+		Finish(peer, std::move(pending));
 		return;
 	}
 	auto texts = std::vector<not_null<HistoryItem*>>();
+	auto stuck = false;
 	for (const auto &id : pending.merge.texts) {
 		if (const auto item = session->data().message(id)) {
-			if (!CanRemoveForAll(item)) {
-				Abort(
-					peer,
-					std::move(pending),
-					u"Telegram won't remove these for everyone, so nothing "
-					"changed."_q);
-				return;
+			if (CanRemoveForAll(item)) {
+				texts.push_back(item);
+			} else {
+				stuck = true;
 			}
-			texts.push_back(item);
 		}
+	}
+	if (stuck && pending.merge.held.empty()) {
+		Abort(peer, std::move(pending), WontRemove());
+		return;
+	} else if (stuck) {
+		LOG(("Safe Calm: a sent text stays, the one message goes after it."));
 	}
 	Remove(session, texts);
 	RememberFine(peer, pending.merge.text.text);
 	auto message = Api::MessageToSend(Api::SendAction(history));
 	message.textWithTags = pending.merge.text;
 	session->api().sendMessage(std::move(message));
-	Finish(peer, std::move(pending.hooks));
+	Finish(peer, std::move(pending));
 }
 
 void Execute(PeerId peer) {
@@ -141,50 +176,56 @@ void Execute(PeerId peer) {
 	SetRunMarkHold(peer, 0);
 	const auto session = i->second.session.get();
 	if (!session) {
-		Finish(peer, std::move(i->second.hooks));
+		Finish(peer, *Take(peer));
 		return;
 	}
-	const auto &merge = i->second.merge;
+	const auto merge = i->second.merge;
 	auto texts = std::vector<not_null<HistoryItem*>>();
-	auto read = false;
+	auto facts = Core::MergeFacts{
+		.heldTexts = int(merge.held.size()),
+		.heldLeft = !merge.held.empty() && !QueueStillHeld(peer, merge.held),
+	};
 	for (const auto &id : merge.items) {
 		if (const auto item = session->data().message(id)) {
 			if (!RunUnread(item)) {
-				read = true;
+				facts.anyRead = true;
 			}
 			if (ranges::contains(merge.texts, id)) {
 				texts.push_back(item);
 			}
 		}
 	}
-	if (read) {
-		Abort(
-			peer,
-			*Take(peer),
-			u"They read some of them first, so nothing changed."_q);
+	facts.sentTexts = int(texts.size());
+	if (!texts.empty()) {
+		facts.firstEditable = CanEditInPlace(texts.front());
+		facts.firstRemovable = CanRemoveForAll(texts.front());
+		facts.othersRemovable = ranges::all_of(
+			texts.begin() + 1,
+			texts.end(),
+			[](not_null<HistoryItem*> item) { return CanRemoveForAll(item); });
+	}
+	const auto decision = Core::DecideMerge(facts);
+	if (decision.step == Core::MergeStep::Abort) {
+		if (decision.why == Core::MergeWhy::None) {
+			Finish(peer, *Take(peer));
+		} else {
+			Abort(peer, *Take(peer), WhyText(decision.why));
+		}
 		return;
-	} else if (texts.empty()) {
-		Finish(peer, std::move(Take(peer)->hooks));
+	}
+	// From here on it happens: the held texts never leave the Mac.
+	if (!merge.held.empty() && !QueueDropHeld(peer, merge.held)) {
+		Abort(peer, *Take(peer), Changed());
+		return;
+	}
+	if (decision.step == Core::MergeStep::SendAfter) {
+		SendInstead(peer, *Take(peer));
 		return;
 	}
 	const auto first = texts.front();
 	const auto others = std::vector<not_null<HistoryItem*>>(
 		texts.begin() + 1,
 		texts.end());
-	for (const auto &item : others) {
-		if (!CanRemoveForAll(item)) {
-			Abort(
-				peer,
-				*Take(peer),
-				u"Telegram won't remove these for everyone, so nothing "
-				"changed."_q);
-			return;
-		}
-	}
-	if (!CanEditInPlace(first)) {
-		SendInstead(peer, *Take(peer));
-		return;
-	}
 	const auto history = first->history();
 	const auto weak = base::make_weak(session);
 	const auto otherIds = [&] {
@@ -207,7 +248,7 @@ void Execute(PeerId peer) {
 			}
 		}
 		Remove(session, items);
-		Finish(peer, std::move(pending->hooks));
+		Finish(peer, std::move(*pending));
 	};
 	RememberFine(peer, merge.text.text);
 	Api::EditTextMessage(
@@ -259,7 +300,7 @@ void UndoSentMerge(PeerId peer) {
 	if (pending->merge.fromField && pending->hooks.restore) {
 		pending->hooks.restore(pending->merge.text);
 	}
-	Finish(peer, std::move(pending->hooks));
+	Finish(peer, std::move(*pending));
 }
 
 bool SentMerging(PeerId peer) {

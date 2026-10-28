@@ -70,12 +70,13 @@ HoldEnd DecideHoldEnd(
 		const HoldGate &gate,
 		std::int64_t now,
 		int heldTexts,
+		int sentTexts,
 		bool autoMerge,
 		const HoldTimes &times) {
 	if (!HoldDue(gate, now, times)) {
 		return HoldEnd::Wait;
 	}
-	return (autoMerge && heldTexts >= kHoldPillTexts)
+	return (autoMerge && heldTexts >= kRunTexts && !sentTexts)
 		? HoldEnd::Merge
 		: HoldEnd::Release;
 }
@@ -83,47 +84,55 @@ HoldEnd DecideHoldEnd(
 RunScan ScanRun(const std::vector<RunEntry> &newestFirst, int max) {
 	auto result = RunScan();
 	for (const auto &entry : newestFirst) {
-		if (!entry.sent) {
-			// Something of his is still on its way at the bottom.
-			return result.count ? result : RunScan();
-		} else if (!entry.own
-			|| !entry.unread
+		const auto ends = !entry.own
 			|| entry.kind == RunKind::Breaks
-			|| result.count == max) {
+			|| entry.failed
+			|| (!entry.held && entry.sent && !entry.unread)
+			|| (result.count == max);
+		if (ends) {
+			result.anchor = entry.id;
 			break;
-		}
-		if (!result.count) {
-			result.newest = entry.date;
+		} else if (!entry.held && !entry.sent) {
+			return RunScan{ .settling = true };
 		}
 		++result.count;
 		if (entry.kind == RunKind::Text) {
 			++result.texts;
+			if (entry.held) {
+				++result.heldTexts;
+			}
 		}
-		result.first = entry.id;
-		result.oldest = entry.date;
 	}
 	return result;
 }
 
-OfferDecision DecideOffer(
-		const RunScan &scan,
-		std::int64_t now,
-		const Kept *kept,
-		const RunRules &rules) {
-	if (scan.count < rules.min || scan.texts < rules.minTexts) {
-		return {};
-	} else if (kept
-		&& kept->first == scan.first
-		&& scan.count < kept->count + rules.regrow) {
-		return {};
+bool OfferRun(const RunScan &scan, const Kept *kept) {
+	if (scan.settling || scan.texts < kRunTexts) {
+		return false;
 	}
-	const auto quiet = now - scan.newest;
-	if (quiet < rules.pause) {
-		return { .offer = Offer::Later, .retryIn = rules.pause - quiet };
-	} else if (now - scan.oldest >= rules.fresh) {
-		return {};
+	return !kept
+		|| (kept->anchor != scan.anchor)
+		|| (kept->texts != scan.texts);
+}
+
+MergeDecision DecideMerge(const MergeFacts &facts) {
+	using Step = MergeStep;
+	using Why = MergeWhy;
+	if (facts.anyRead) {
+		return { Step::Abort, Why::Read };
+	} else if (facts.heldLeft) {
+		return { Step::Abort, Why::Changed };
+	} else if (!facts.sentTexts) {
+		// Every sent text was deleted meanwhile.
+		return { Step::Abort, facts.heldTexts ? Why::Changed : Why::None };
+	} else if (!facts.othersRemovable) {
+		return { Step::Abort, Why::WontRemove };
+	} else if (facts.firstEditable) {
+		return { Step::EditFirst };
+	} else if (facts.firstRemovable) {
+		return { Step::SendAfter }; // the 48 h edit limit, say
 	}
-	return { .offer = Offer::Ask };
+	return { Step::Abort, Why::WontRemove };
 }
 
 HearPlan PlanHearing(const std::vector<VoiceSlot> &newestFirst, int max) {

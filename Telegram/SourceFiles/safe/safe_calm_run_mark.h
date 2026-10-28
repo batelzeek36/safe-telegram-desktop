@@ -27,12 +27,12 @@ struct ChatPaintContext;
 // get a quiet jade edge (the leaf's own jade, painted under the bubble),
 // and a leaf pill sits under the run's last message, in the C1 row's look
 // (a service pill like "Softened · Undo"). Tapping it opens the card.
-// - Sent: a run that already went out, "Make these 13 one message"; while
-//   the merge's Undo window runs, the countdown ring, "Making it one" and
-//   Undo.
-// - Held: texts still held while he types, "Send these 4 as one"; with
-//   Merge automatically, while its Undo window runs, the ring, "Sent as
-//   one" and Undo.
+// - Sent: a run with texts that already went out (held ones may follow),
+//   "Make these 3 one message"; while the merge's Undo window runs, the
+//   countdown ring, "Making it one" and Undo.
+// - Held: a run that is all still held while he types, "Send these 4 as
+//   one"; with Merge automatically, while its Undo window runs, the ring,
+//   "Sent as one" and Undo.
 // HistoryView::Message paints it through safe_calm_chip (no extra hooks).
 namespace Safe::Calm {
 

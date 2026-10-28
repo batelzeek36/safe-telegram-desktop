@@ -18,24 +18,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "main/main_session.h"
 #include "safe/safe_calm.h"
-#include "safe/safe_calm_client.h"
 #include "safe/safe_calm_core.h"
+#include "safe/safe_calm_queue.h"
 #include "safe/safe_calm_shared.h"
 
 namespace Safe::Calm {
 namespace {
 
-// Looks again this often while a chat is open (loads, the 30 min window).
+// Looks again this often while a chat is open (history loads at the bottom).
 constexpr auto kRecheck = crl::time(10000);
-
-struct Answered {
-	std::vector<FullMsgId> items;
-	QString text; // empty: the runner could not answer for this run
-};
 
 struct PeerRuns {
 	std::optional<Core::Kept> kept;
-	std::optional<Answered> answered;
 };
 
 [[nodiscard]] base::flat_map<PeerId, PeerRuns> &Runs() {
@@ -51,20 +45,30 @@ struct PeerRuns {
 		: Core::RunKind::Media;
 }
 
+[[nodiscard]] Core::RunScan ScanOf(const Run &run) {
+	return {
+		.count = int(run.items.size()),
+		.texts = run.texts(),
+		.heldTexts = int(run.heldTexts.size()),
+		.anchor = run.anchor.bare,
+	};
+}
+
 } // namespace
+
+std::vector<FullMsgId> Run::allTexts() const {
+	auto result = sentTexts;
+	result.insert(end(result), begin(heldTexts), end(heldTexts));
+	return result;
+}
 
 std::optional<RunMedia> RunKindOf(not_null<const HistoryItem*> item) {
 	if (item->isService()
 		|| item->Has<HistoryMessageForwarded>()
-		|| item->Has<HistoryMessageVia>()) {
+		|| item->Has<HistoryMessageVia>()
+		|| item->Has<HistoryMessageReply>()) {
+		// Replies stay out of runs (Zach 10-27): their quote stays attached.
 		return std::nullopt;
-	}
-	if (const auto reply = item->Get<HistoryMessageReply>()) {
-		// A reply to someone else's message is not part of a run.
-		const auto to = reply->resolvedMessage.get();
-		if (reply->externalPeerId() || !to || !IsOwn(to)) {
-			return std::nullopt;
-		}
 	}
 	const auto media = item->media();
 	if (!media || media->webpage()) {
@@ -91,55 +95,66 @@ bool RunUnread(not_null<const HistoryItem*> item) {
 	return history->peer->isSelf() || item->unread(history);
 }
 
-SentRun CurrentRun(not_null<History*> history) {
-	auto result = SentRun{ .peer = history->peer->id };
+std::optional<Run> CurrentRun(not_null<History*> history) {
 	if (!history->loadedAtBottom()) {
-		return result;
+		// The bottom is not in memory (he jumped far up): unknown, so the
+		// run stays as it was (and what he declined stays declined).
+		return std::nullopt;
 	}
+	auto result = Run{ .peer = history->peer->id };
 	auto entries = std::vector<Core::RunEntry>();
 	auto items = std::vector<not_null<HistoryItem*>>();
 	auto kinds = std::vector<RunMedia>();
 	const auto enough = Core::kMaxRun + 1;
-	for (auto b = history->blocks.rbegin(); b != history->blocks.rend(); ++b) {
+	// Everything the scan may need: up to the first message that ends it.
+	const auto ends = [](const Core::RunEntry &entry) {
+		return !entry.own
+			|| entry.kind == Core::RunKind::Breaks
+			|| entry.failed
+			|| (entry.sent && !entry.unread);
+	};
+	auto done = false;
+	for (auto b = history->blocks.rbegin(); !done && b != history->blocks.rend(); ++b) {
 		const auto &messages = (*b)->messages;
 		for (auto m = messages.rbegin(); m != messages.rend(); ++m) {
 			const auto item = (*m)->data();
 			const auto kind = RunKindOf(item);
+			const auto sent = item->isRegular();
+			const auto held = !sent && QueueHeld(item);
 			entries.push_back({
 				.kind = CoreKind(kind),
 				.own = IsOwn(item),
-				.sent = item->isRegular(),
-				.unread = RunUnread(item),
-				.date = item->date(),
+				.sent = sent,
+				.held = held,
+				.unread = sent && RunUnread(item),
+				.failed = !sent && !held && item->hasFailed(),
 				.id = item->id.bare,
 			});
 			items.push_back(item);
 			kinds.push_back(kind.value_or(RunMedia::None));
-			if (entries.back().kind == Core::RunKind::Breaks
-				|| !entries.back().own
-				|| int(entries.size()) >= enough) {
+			if (ends(entries.back()) || int(entries.size()) >= enough) {
+				done = true;
 				break;
 			}
 		}
-		if (!entries.empty()
-			&& (entries.back().kind == Core::RunKind::Breaks
-				|| !entries.back().own
-				|| int(entries.size()) >= enough)) {
-			break;
-		}
 	}
 	const auto scan = Core::ScanRun(entries);
+	if (scan.settling) {
+		return std::nullopt;
+	}
+	result.anchor = MsgId(scan.anchor);
 	for (auto i = scan.count; i != 0;) {
 		--i;
 		const auto id = items[i]->fullId();
+		const auto held = entries[i].held;
 		result.items.push_back(id);
 		result.media.push_back(kinds[i]);
-		if (kinds[i] == RunMedia::None) {
-			result.texts.push_back(id);
+		if (!held) {
+			result.sentItems.push_back(id);
 		}
-	}
-	if (scan.count) {
-		result.first = items[scan.count - 1]->id;
+		if (kinds[i] == RunMedia::None) {
+			(held ? result.heldTexts : result.sentTexts).push_back(id);
+		}
 	}
 	return result;
 }
@@ -199,25 +214,22 @@ RunWatcher::RunWatcher(Fn<void()> changed)
 , _timer([=] { recompute(); }) {
 }
 
-RunWatcher::~RunWatcher() {
-	SharedClient().cancel(base::take(_call));
-}
+RunWatcher::~RunWatcher() = default;
 
 void RunWatcher::setHistory(History *history) {
 	if (_history == history) {
 		return;
 	}
-	SharedClient().cancel(base::take(_call));
-	_asking = SentRun();
 	_historyLifetime.destroy();
 	_timer.cancel();
 	_merging = false;
 	_history = history;
-	setOffer(std::nullopt);
+	set(std::nullopt, false);
 	if (!_history) {
 		return;
 	}
 	const auto watched = _history;
+	const auto peer = watched->peer->id;
 	auto &owner = watched->owner();
 	owner.newItemAdded(
 	) | rpl::filter([=](not_null<HistoryItem*> item) {
@@ -227,14 +239,18 @@ void RunWatcher::setHistory(History *history) {
 	}, _historyLifetime);
 	owner.itemIdChanged(
 	) | rpl::filter([=](const Data::Session::IdChange &change) {
-		return (change.newId.peer == watched->peer->id);
+		return (change.newId.peer == peer);
 	}) | rpl::on_next([=] {
 		schedule();
 	}, _historyLifetime);
 	owner.itemRemoved(
 	) | rpl::filter([=](not_null<const HistoryItem*> item) {
 		return (item->history() == watched);
-	}) | rpl::on_next([=] {
+	}) | rpl::on_next([=](not_null<const HistoryItem*> item) {
+		if (IsOwn(item)) {
+			// One of his went: the set he declined is not there any more.
+			Runs()[peer].kept.reset();
+		}
 		schedule();
 	}, _historyLifetime);
 	watched->session().changes().historyUpdates(
@@ -243,37 +259,44 @@ void RunWatcher::setHistory(History *history) {
 	) | rpl::on_next([=] {
 		schedule();
 	}, _historyLifetime);
+	QueueEvents(peer) | rpl::on_next([=] {
+		schedule(); // held, released, merged or dropped
+	}, _historyLifetime);
 	schedule();
 }
 
-void RunWatcher::setEnabled(bool enabled) {
-	if (_enabled != enabled) {
-		_enabled = enabled;
+void RunWatcher::setEnabled(bool offers, bool watch) {
+	watch = watch || offers;
+	if (_offers != offers || _watch != watch) {
+		_offers = offers;
+		_watch = watch;
 		schedule();
 	}
 }
 
-const RunWatcher::Offer *RunWatcher::offer() const {
-	return _offer ? &*_offer : nullptr;
+const Run *RunWatcher::run() const {
+	return _run ? &*_run : nullptr;
+}
+
+const Run *RunWatcher::offer() const {
+	return (_run && _offered) ? &*_run : nullptr;
 }
 
 void RunWatcher::keep() {
-	if (!_offer || !_history) {
+	if (!_run) {
 		return;
 	}
-	auto &runs = Runs()[_offer->run.peer];
-	runs.kept = Core::Kept{
-		.first = _offer->run.first.bare,
-		.count = int(_offer->run.items.size()),
+	Runs()[_run->peer].kept = Core::Kept{
+		.anchor = _run->anchor.bare,
+		.texts = _run->texts(),
 	};
-	setOffer(std::nullopt);
+	set(_run, false);
 }
 
 void RunWatcher::setMerging(bool merging) {
 	if (_merging != merging) {
 		_merging = merging;
 		if (!merging) {
-			setOffer(std::nullopt);
 			schedule();
 		}
 	}
@@ -295,99 +318,37 @@ void RunWatcher::schedule() {
 }
 
 void RunWatcher::recompute() {
-	if (!_history || !_enabled) {
-		SharedClient().cancel(base::take(_call));
-		setOffer(std::nullopt);
+	if (!_history || !_watch) {
+		set(std::nullopt, false);
 		return;
 	} else if (_merging) {
-		return;
+		return; // the merge's Undo window: as it is
 	}
 	_timer.callOnce(kRecheck);
 	const auto run = CurrentRun(_history);
-	if (_offer && _offer->run == run) {
-		return; // shown: stays until the run breaks, Keep or the merge
+	if (!run) {
+		return; // one of his on its way, or no bottom: as it is for now
 	}
-	auto &runs = Runs()[run.peer];
-	if (runs.kept && (run.empty() || runs.kept->first != run.first.bare)) {
-		runs.kept.reset(); // the run he kept broke
+	const auto scan = ScanOf(*run);
+	auto &kept = Runs()[run->peer].kept;
+	if (kept && (kept->anchor != scan.anchor || kept->texts != scan.texts)) {
+		kept.reset(); // the run changed: what he declined is gone
 	}
-	auto scan = Core::RunScan{
-		.count = int(run.items.size()),
-		.texts = int(run.texts.size()),
-		.first = run.first.bare,
-	};
-	auto &owner = _history->owner();
-	if (!run.empty()) {
-		const auto oldest = owner.message(run.items.front());
-		const auto newest = owner.message(run.items.back());
-		scan.oldest = oldest ? oldest->date() : 0;
-		scan.newest = newest ? newest->date() : 0;
-	}
-	const auto kept = runs.kept ? &*runs.kept : nullptr;
-	const auto decision = Core::DecideOffer(
-		scan,
-		base::unixtime::now(),
-		kept);
-	switch (decision.offer) {
-	case Core::Offer::None:
-		SharedClient().cancel(base::take(_call));
-		setOffer(std::nullopt);
-		return;
-	case Core::Offer::Later:
-		setOffer(std::nullopt);
-		_timer.callOnce(std::clamp(
-			crl::time(decision.retryIn * 1000),
-			crl::time(500),
-			kRecheck));
-		return;
-	case Core::Offer::Ask:
-		break;
-	}
-	if (runs.answered && runs.answered->items == run.items) {
-		if (runs.answered->text.isEmpty()) {
-			setOffer(std::nullopt); // no answer for this run: no offer
-		} else {
-			setOffer(Offer{ .run = run, .text = runs.answered->text });
-		}
-		return;
-	}
-	setOffer(std::nullopt);
-	if (!_call || !(_asking == run)) {
-		ask(run);
-	}
+	const auto offered = _offers && Core::OfferRun(scan, kept ? &*kept : nullptr);
+	set(run->empty() ? std::nullopt : run, offered);
 }
 
-void RunWatcher::ask(const SentRun &run) {
-	SharedClient().cancel(base::take(_call));
-	_asking = run;
-	const auto peer = run.peer;
-	const auto items = run.items;
-	_call = SharedClient().summarize(
-		MakeSummaryRequest(_history, items),
-		crl::guard(this, [=](SummaryResult result) {
-			_call = 0;
-			if (result.text.isEmpty()) {
-				LOG(("Safe Calm: no one message for a run (%1)."
-					).arg(result.failure));
-			}
-			Runs()[peer].answered = Answered{
-				.items = items,
-				.text = result.text,
-			};
-			schedule();
-		}));
-}
-
-void RunWatcher::setOffer(std::optional<Offer> offer) {
-	if (!_offer && !offer) {
-		return;
-	} else if (_offer
-		&& offer
-		&& _offer->run == offer->run
-		&& _offer->text == offer->text) {
+void RunWatcher::set(std::optional<Run> run, bool offered) {
+	const auto same = (_run.has_value() == run.has_value())
+		&& (!run
+			|| ((*_run == *run)
+				&& (_run->anchor == run->anchor)
+				&& (_run->heldTexts == run->heldTexts)));
+	if (same && _offered == offered) {
 		return;
 	}
-	_offer = std::move(offer);
+	_run = std::move(run);
+	_offered = _run && offered;
 	if (_changed) {
 		_changed();
 	}

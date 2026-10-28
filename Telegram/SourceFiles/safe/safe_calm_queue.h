@@ -31,7 +31,10 @@ class HistoryItem;
 //   send each message ... so the recipient doesnt see a burst and then a
 //   massive edit"): with "Hold my messages while I'm typing" on, his texts
 //   also wait while he keeps typing in that chat and go out ~12 s after he
-//   stops (safe_calm_core.h); 3+ held texts can go as one (QueueMergeHeld).
+//   stops (safe_calm_core.h). A run of 3+ texts (held, or sent and unread,
+//   or both: safe_calm_run.h) can go as one: all held through
+//   QueueMergeHeld, a run with sent texts through safe_calm_merge, which
+//   drops its held texts with QueueDropHeld.
 namespace Safe::Calm {
 
 using Builder = Fn<Data::Histories::PreparedMessage(
@@ -125,10 +128,21 @@ void QueueReleaseHeld(PeerId peer);
 // The merge card is open: the held ones wait for his pick.
 void QueueHoldForCard(PeerId peer, bool open);
 // Merge automatically (Core::DecideHoldEnd): while `due` is set for a chat,
-// a hold that ends with 3+ texts keeps them waiting (as for the card) and
-// calls `due`, which ends with QueueMergeHeld, QueueReleaseHeld (Undo, no
-// one message) or QueueHoldForCard(peer, false) (his messages changed).
+// a hold that ends with 3+ texts held and none of the run sent keeps them
+// waiting (as for the card) and calls `due`, which ends with QueueMergeHeld,
+// QueueReleaseHeld (Undo, no one message) or QueueHoldForCard(peer, false)
+// (his messages changed).
 void QueueSetAutoMerge(PeerId peer, Fn<void()> due);
+// The open chat's run, from RunCards: its pill is up over held texts (the
+// hold gives him a little longer), and how many of its texts already went
+// out (such a run never merges by itself).
+struct QueueRun {
+	bool pill = false;
+	int sentTexts = 0;
+
+	friend inline bool operator==(const QueueRun&, const QueueRun&) = default;
+};
+void QueueSetRun(PeerId peer, QueueRun run);
 [[nodiscard]] bool QueueHeld(not_null<const HistoryItem*> item);
 
 // The held texts of this chat in order, with the media held among them.
@@ -138,20 +152,30 @@ struct HeldGroup {
 	QStringList words; // the texts' words (what he typed)
 };
 [[nodiscard]] HeldGroup QueueHeldGroup(PeerId peer);
-// The automatic merge's Undo window: the first held text shows `text`;
-// empty puts his own words back (even when the group changed). False when
-// the group changed under it.
+// The automatic merge's Undo window: the first of `texts` shows `text`;
+// empty puts his own words back (even when the run changed). False when one
+// of `texts` is no longer held.
 bool QueuePreviewHeld(
 	PeerId peer,
 	const std::vector<FullMsgId> &texts,
 	const QString &text);
-// Send this instead: the first held text becomes `text`, the other held
-// texts go before anything left the Mac, the media stay in their place,
-// and everything goes out now. False when the group changed under it.
+// Send this instead on a run that is all held: the first of `texts`
+// becomes `text`, the others go before anything left the Mac, the media stay
+// in their place, and everything held goes out now. False when one of them
+// is no longer held.
 bool QueueMergeHeld(
 	PeerId peer,
 	const std::vector<FullMsgId> &texts,
 	const QString &text);
+// True when every one of `texts` is a text the hold still keeps.
+[[nodiscard]] bool QueueStillHeld(
+	PeerId peer,
+	const std::vector<FullMsgId> &texts);
+// A run with sent texts went as one (its first sent text edited): these held
+// texts never leave the Mac. Media held among them go out as they are once
+// no held text is left; held texts sent after them keep waiting for the
+// hold. False (and nothing changed) when one of them is no longer held.
+bool QueueDropHeld(PeerId peer, const std::vector<FullMsgId> &texts);
 
 [[nodiscard]] rpl::producer<QueueEvent> QueueEvents(PeerId peer);
 // The current state of a queued bubble, for views built after the event.

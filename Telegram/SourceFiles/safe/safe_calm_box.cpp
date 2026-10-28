@@ -242,11 +242,12 @@ void AddManyRows(not_null<Ui::VerticalLayout*> container) {
 		container,
 		rpl::single(u"Your texts wait on your side while you keep typing, "
 			"and go out in order about 12 s after you stop. Three or more "
-			"waiting, or five or more sent that nobody has read yet, get a "
-			"leaf pill: tap it for one calm message in your voice that says "
-			"it all. Your GIFs and photos stay. Nothing changes until you "
-			"tap. With Merge automatically on, three or more waiting go as "
-			"one calm message by themselves, with 4 s to Undo."_q));
+			"in a row that nobody has read yet, waiting or already sent, "
+			"however far apart, get a leaf pill: tap it for one calm "
+			"message in your voice that says it all. Your GIFs and photos "
+			"stay. Nothing changes until you tap. With Merge automatically "
+			"on, three or more waiting, none sent yet, go as one calm "
+			"message by themselves, with 4 s to Undo."_q));
 }
 
 [[nodiscard]] QString RuleText(ChatRule rule) {

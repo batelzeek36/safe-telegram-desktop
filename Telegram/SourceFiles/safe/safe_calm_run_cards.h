@@ -18,22 +18,27 @@ namespace Safe::Calm {
 class Panel;
 
 // One message instead of many, on the main chat's composer (Zach 10-27,
-// docs/desktop/STATE-SUMMARIZE.md):
-// - the hold: his texts wait while he types (safe_calm_queue); 3+ held
-//   texts get the jade edge and "Send these N as one"; a tap opens the card
-//   (the one message comes on the tap): Send this instead / Edit / Send as
-//   typed. Ignored, they go out as typed when the hold ends.
-// - a run that already went out unread: the jade edge and "Make these N one
-//   message" once the runner wrote it; a tap opens the card: Send this
-//   instead / Edit / Keep them. Send this instead edits his first text in
-//   place and removes the others after the Undo window (safe_calm_merge).
-// Edit puts the one message in his field; his next Send is the replace.
-// Nothing merges without his tap, unless "Merge automatically" is on (Zach
-// 10-27, off by default): then a hold that ends with 3+ texts gets its one
-// message written, shown in the first held bubble with "Sent as one", a
-// countdown ring and Undo for Core::kAutoMergeUndoMs, and it goes out in
-// their place; Undo, or no one message in time, sends them as typed. The
-// after-send offer stays tap-only.
+// docs/desktop/STATE-SUMMARIZE.md). One run (safe_calm_run.h): his texts in
+// a row that nobody has read, the ones the hold keeps (safe_calm_queue) and
+// the ones already sent, with no time limit between them. With 3+ texts the
+// whole run gets the jade edge and the pill ("Send these N as one" while all
+// are held, "Make these N one message" once any went out); a tap writes the
+// one message and opens the card:
+// - all held: Send this instead (the first held text becomes the one
+//   message, the others never go out, at once) / Edit / Send as typed.
+// - with sent texts: Send this instead, after the Undo window
+//   (safe_calm_merge): his first sent text is edited in place, his other
+//   sent texts are deleted for everyone and the held texts never go out;
+//   anything read meanwhile and nothing changes / Edit / Keep them.
+// The card's quiet line says exactly that. Edit puts the one message in his
+// field; his next Send is the replace. Keep them (or Send as typed) hides
+// the pill for exactly that run; any other set brings it back. Nothing
+// merges without his tap, unless "Merge automatically" is on (Zach 10-27,
+// off by default): then a hold that ends with 3+ texts held and none of the
+// run sent gets its one message written, shown in the first held bubble
+// with "Sent as one", a countdown ring and Undo for Core::kAutoMergeUndoMs,
+// and it goes out in their place; Undo, or no one message in time, sends
+// them as typed. A run with sent texts always waits for his tap.
 class RunCards final : public base::has_weak_ptr {
 public:
 	struct Args {
@@ -63,14 +68,8 @@ public:
 private:
 	enum class Card : uchar {
 		None,
-		Sent,
-		HeldWriting,
-		Held,
-	};
-	struct Armed {
-		bool held = false;
-		std::vector<FullMsgId> items;
-		std::vector<FullMsgId> texts;
+		Writing,
+		Shown,
 	};
 	struct AutoMerge {
 		std::vector<FullMsgId> items;
@@ -80,14 +79,21 @@ private:
 
 	void scheduleMark();
 	void updateMark();
-	void openSent();
-	void openHeld();
-	void showHeld(const QString &text);
-	void sendSent(const TextWithTags &text, bool fromField);
-	void editInField(const QString &text, Armed armed, const QString &note);
-	void closeCard();
+	void syncQueueRun();
+	void openRun();
+	void showRun(const QString &text);
+	void sendSent(const TextWithTags &text, const Run &run, bool fromField);
+	void declineRun();
+	void editInField(const QString &text, Run run, const QString &note);
+	// `keepHeld`: the held texts stay held for the merge's Undo window.
+	void closeCard(bool keepHeld = false);
 	void pill(const QString &text);
 	[[nodiscard]] PeerId peer() const;
+	[[nodiscard]] QString cardLine(const Run &run) const;
+	// "Amberelle hasn't read them yet." (or "Nobody ..." in a group).
+	[[nodiscard]] QString readerLine(const Run &run) const;
+	// "Amberelle read some of them" when she did, else empty.
+	[[nodiscard]] QString readSome(const Run &run) const;
 
 	// Merge automatically.
 	void syncAutoHook();
@@ -118,9 +124,8 @@ private:
 	base::Timer _autoTimer; // the one message is late, or Undo ran out
 	bool _markQueued = false;
 	Card _card = Card::None;
-	std::optional<Armed> _armed;
-	std::vector<FullMsgId> _heldItems; // the held card's messages
-	std::vector<FullMsgId> _heldTexts;
+	std::optional<Run> _cardRun; // the run the card is about
+	std::optional<Run> _armed; // Edit: his next Send replaces this run
 	uint64 _summaryCall = 0;
 	rpl::lifetime _historyLifetime;
 
