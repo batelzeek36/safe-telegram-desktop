@@ -176,6 +176,12 @@ bool QueueMergeHeld(
 // no held text is left; held texts sent after them keep waiting for the
 // hold. False (and nothing changed) when one of them is no longer held.
 bool QueueDropHeld(PeerId peer, const std::vector<FullMsgId> &texts);
+// The merge's own steps (safe_calm_merge): while `step` runs, the hold
+// neither lets go of what it keeps (Api::EditTextMessage releases it for his
+// own edits) nor takes what is sent: the edit of his first text and the one
+// message sent instead go straight out, and texts he sent during the Undo
+// window keep waiting for the hold.
+void QueueOwnStep(FnMut<void()> step);
 
 [[nodiscard]] rpl::producer<QueueEvent> QueueEvents(PeerId peer);
 // The current state of a queued bubble, for views built after the event.

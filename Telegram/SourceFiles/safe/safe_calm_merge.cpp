@@ -132,8 +132,9 @@ void Remove(
 // The first text could not be edited: the sent texts go, the one message is
 // sent after the last item that stays (the media held among the run went
 // out already, in order). Once its held texts were dropped this never
-// aborts: a text Telegram keeps stays, the one message still goes.
-void SendInstead(PeerId peer, Pending pending) {
+// aborts: a text Telegram keeps stays, the one message still goes. `note`:
+// what changed from the card's line (the edit was refused).
+void SendInstead(PeerId peer, Pending pending, const QString &note = {}) {
 	const auto session = pending.session.get();
 	const auto history = session ? session->data().historyLoaded(peer) : nullptr;
 	if (!history) {
@@ -161,7 +162,13 @@ void SendInstead(PeerId peer, Pending pending) {
 	RememberFine(peer, pending.merge.text.text);
 	auto message = Api::MessageToSend(Api::SendAction(history));
 	message.textWithTags = pending.merge.text;
-	session->api().sendMessage(std::move(message));
+	QueueOwnStep([&] {
+		// Straight out, never held: it stands for texts already sent.
+		session->api().sendMessage(std::move(message));
+	});
+	if (!note.isEmpty() && pending.hooks.toast) {
+		pending.hooks.toast(note);
+	}
 	Finish(peer, std::move(pending));
 }
 
@@ -251,24 +258,31 @@ void Execute(PeerId peer) {
 		Finish(peer, std::move(*pending));
 	};
 	RememberFine(peer, merge.text.text);
-	Api::EditTextMessage(
-		first,
-		Prepared(history, merge.text),
-		Data::WebPageDraft(),
-		Api::SendOptions(),
-		[=](mtpRequestId) { removeOthers(); },
-		[=](const QString &error, mtpRequestId) {
-			if (error == u"MESSAGE_NOT_MODIFIED"_q) {
-				removeOthers();
-				return;
-			}
-			LOG(("Safe Calm: the first message would not edit (%1), "
-				"sending instead.").arg(error));
-			if (auto pending = Take(peer)) {
-				SendInstead(peer, std::move(*pending));
-			}
-		},
-		false);
+	// Our own edit: texts he sent during the Undo window keep their hold.
+	QueueOwnStep([&] {
+		Api::EditTextMessage(
+			first,
+			Prepared(history, merge.text),
+			Data::WebPageDraft(),
+			Api::SendOptions(),
+			[=](mtpRequestId) { removeOthers(); },
+			[=](const QString &error, mtpRequestId) {
+				if (error == u"MESSAGE_NOT_MODIFIED"_q) {
+					removeOthers();
+					return;
+				}
+				LOG(("Safe Calm: the first message would not edit (%1), "
+					"sending instead.").arg(error));
+				if (auto pending = Take(peer)) {
+					SendInstead(
+						peer,
+						std::move(*pending),
+						u"Telegram wouldn't edit your first message, so the "
+						"one message went as a new one"_q);
+				}
+			},
+			false);
+	});
 }
 
 } // namespace

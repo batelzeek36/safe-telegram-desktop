@@ -84,6 +84,7 @@ struct Queues {
 	rpl::event_stream<std::pair<PeerId, QueueEvent>> events;
 	uint64 nextTicket = 0;
 	bool releasing = false;
+	bool ownStep = false; // QueueOwnStep: the hold lets nothing go
 
 	// Quitting: released bubbles not yet on the server.
 	std::vector<std::pair<base::weak_ptr<Main::Session>, FullMsgId>> inflight;
@@ -447,9 +448,9 @@ void Pump(PeerId peer) {
 		const auto send = std::move(entry.send);
 		const auto id = entry.id;
 		entries.erase(begin(entries) + i);
-		state.releasing = true;
+		const auto wasReleasing = std::exchange(state.releasing, true);
 		send(builder);
-		state.releasing = false;
+		state.releasing = wasReleasing;
 		if (id && queue->session) {
 			PruneInflight();
 			state.inflight.emplace_back(queue->session, id);
@@ -808,7 +809,7 @@ void QueueTyping(PeerId peer, bool fieldBusy) {
 
 void QueueReleaseHeld(PeerId peer) {
 	const auto queue = QueueFor(peer);
-	if (!queue || !queue->gate.active) {
+	if (!queue || !queue->gate.active || State().ownStep) {
 		return;
 	}
 	OpenGate(peer, *queue);
@@ -986,6 +987,15 @@ bool QueueDropHeld(PeerId peer, const std::vector<FullMsgId> &texts) {
 	}
 	Pump(peer);
 	return true;
+}
+
+void QueueOwnStep(FnMut<void()> step) {
+	auto &state = State();
+	const auto wasReleasing = std::exchange(state.releasing, true);
+	const auto wasOwn = std::exchange(state.ownStep, true);
+	step();
+	state.ownStep = wasOwn;
+	state.releasing = wasReleasing;
 }
 
 rpl::producer<QueueEvent> QueueEvents(PeerId peer) {
