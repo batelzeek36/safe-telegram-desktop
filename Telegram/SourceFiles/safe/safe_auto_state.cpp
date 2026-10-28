@@ -131,6 +131,10 @@ QByteArray ChangeBody(int64 chat, const Change &change) {
 	if (change.unpause) {
 		result += ",\"unpause\":true";
 	}
+	if (change.pauseMinutes > 0) {
+		result += ",\"pause_min\":"
+			+ QByteArray::number(std::clamp(change.pauseMinutes, 1, 240));
+	}
 	return result + '}';
 }
 

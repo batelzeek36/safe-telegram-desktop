@@ -56,13 +56,13 @@ protected:
 private:
 	enum class Action : uchar {
 		None,
-		TurnOff,
-		Resume,
+		Pause, // 30 min (kPauseMinutes), then on again by itself
+		Resume, // a pause ends now
 		ReplyYourself,
 		LetItHandle,
 	};
 	enum class ButtonLook : uchar {
-		Text, // the one-line bar's action ("Turn off")
+		Text, // the one-line bar's action ("Pause 30 min")
 		Primary,
 		Ghost,
 	};

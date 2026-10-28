@@ -65,7 +65,7 @@ constexpr auto kClockMs = crl::time(15000);
 
 // The mock's colors (docs/previews/auto/css/auto-bar.css), on the theme's
 // own composer color.
-constexpr auto kTick = 0x8FF5C6; // the bar's action ("Turn off")
+constexpr auto kTick = 0x8FF5C6; // the bar's action ("Pause 30 min")
 constexpr auto kBarSub = 0x7FE0B4; // the ghost button's words
 constexpr auto kPrimaryFrom = 0x3AD596;
 constexpr auto kPrimaryTo = 0x22A873;
@@ -116,10 +116,8 @@ constexpr auto kPrimaryText = 0x04261A;
 		QLocale::ShortFormat);
 }
 
-[[nodiscard]] QString PausedLine(const ViewOutput &view, int64 until) {
-	return (view.minutesLeft < 60)
-		? u"Back on in %1 min."_q.arg(std::max(view.minutesLeft, 1))
-		: u"Back on at %1."_q.arg(TimeText(until));
+[[nodiscard]] QString PausedTitle(int64 until) {
+	return u"Paused · back at %1"_q.arg(TimeText(until));
 }
 
 [[nodiscard]] float64 EaseOut(float64 t) {
@@ -232,10 +230,11 @@ std::unique_ptr<Bar::Face> Bar::makeFace(
 	const auto unreachable = view.unreachable
 		? u"Not reachable since %1"_q.arg(TimeText(entry.lastAnswer))
 		: QString();
-	const auto turnOff = Button{
-		.text = u"Turn off"_q,
+	// Zach 10-27: the quick button pauses; Off lives in the chat menu.
+	const auto pause = Button{
+		.text = u"Pause %1 min"_q.arg(kPauseMinutes),
 		.look = ButtonLook::Text,
-		.action = Action::TurnOff,
+		.action = Action::Pause,
 	};
 	switch (view.kind) {
 	case BarKind::On:
@@ -245,7 +244,7 @@ std::unique_ptr<Bar::Face> Bar::makeFace(
 			: view.night
 			? (PaceLine(state.pace) + u", quiet for the night"_q)
 			: PaceLine(state.pace);
-		result->buttons.push_back(turnOff);
+		result->buttons.push_back(pause);
 		break;
 	case BarKind::Handling:
 		result->title = u"Full-auto on"_q;
@@ -254,13 +253,16 @@ std::unique_ptr<Bar::Face> Bar::makeFace(
 			: entry.handlingName.isEmpty()
 			? u"Answering lightly"_q
 			: u"Answering %1 lightly"_q.arg(entry.handlingName);
-		result->buttons.push_back(turnOff);
+		result->buttons.push_back(pause);
 		break;
 	case BarKind::Paused:
-		result->title = u"Full-auto paused"_q;
-		result->sub = PausedLine(view, state.pausedUntil);
+		// On again by itself at that time; what comes back is the pace.
+		result->title = PausedTitle(state.pausedUntil);
+		result->sub = !unreachable.isEmpty()
+			? unreachable
+			: PaceLine(state.pace);
 		result->buttons.push_back({
-			.text = u"Resume"_q,
+			.text = u"Resume now"_q,
 			.look = ButtonLook::Text,
 			.action = Action::Resume,
 		});
@@ -268,7 +270,7 @@ std::unique_ptr<Bar::Face> Bar::makeFace(
 	case BarKind::Quiet:
 		result->title = u"Quiet, nothing sends"_q;
 		result->sub = u"The Max login is out. Gists still come in."_q;
-		result->buttons.push_back(turnOff);
+		result->buttons.push_back(pause);
 		break;
 	case BarKind::Handback:
 		result->head = u"Handed back to you"_q;
@@ -701,7 +703,7 @@ void Bar::activate(Action action) {
 	}
 	auto change = Change();
 	switch (action) {
-	case Action::TurnOff: change.enabled = false; break;
+	case Action::Pause: change.pauseMinutes = kPauseMinutes; break;
 	case Action::Resume: change.unpause = true; break;
 	case Action::LetItHandle: change.resume = true; break;
 	case Action::ReplyYourself:

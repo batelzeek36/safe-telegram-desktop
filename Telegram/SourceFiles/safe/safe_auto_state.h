@@ -47,7 +47,8 @@ struct Change {
 	std::optional<bool> enabled;
 	std::optional<Pace> pace;
 	bool resume = false; // Let full-auto handle it
-	bool unpause = false; // Resume after a pause
+	bool unpause = false; // Resume now: a pause ends early
+	int pauseMinutes = 0; // Pause 30 min: on again by itself after that
 };
 
 // The answer for `chat`, or nothing when it is not a well formed state for

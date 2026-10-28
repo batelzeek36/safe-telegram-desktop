@@ -15,11 +15,11 @@ namespace Safe::Auto {
 
 enum class BarKind : unsigned char {
 	Hidden, // full-auto is off here, or nothing is known yet
-	On, // "Full-auto on" with the pace, Turn off
+	On, // "Full-auto on" with the pace, Pause 30 min
 	Handling, // on, answering the hand-back he let it handle
 	Handback, // the reason, Reply yourself / Let full-auto handle it
-	Paused, // a pause left over from before 10-26 (paused_until), Resume
-	Quiet, // the Max login is out: nothing sends, Turn off
+	Paused, // paused_until: "Paused · back at 2:45", Resume now
+	Quiet, // the Max login is out: nothing sends, Pause 30 min
 };
 
 enum class QuietKind : unsigned char {
@@ -48,6 +48,11 @@ struct ViewOutput {
 	bool night = false; // On and Handling during quiet hours
 	bool unreachable = false; // no word from the runner for a while
 };
+
+// The bar's quick button pauses, never switches off (Zach 10-27: "when i
+// shut full-auto off it should pause temporarily, not shut off forever.
+// Maybe a 30-min pause"); the chat menu's dialog keeps the real Off.
+inline constexpr int kPauseMinutes = 30;
 
 // How long "Answering <name> lightly" stays without his next message.
 inline constexpr std::int64_t kHandlingLimit = 30 * 60;
