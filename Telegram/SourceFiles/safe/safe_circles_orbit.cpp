@@ -331,7 +331,10 @@ void Orbit::paint(
 		p,
 		model,
 		frame,
-		{ cardBadge(frame.previewed), cardBadge(frame.previewedOld) });
+		{
+			!frame.previewFocus && cardBadge(frame.previewed),
+			cardBadge(frame.previewedOld),
+		});
 }
 
 // A neighbour's name under the face row, level with the front face's

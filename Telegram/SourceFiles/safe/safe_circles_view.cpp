@@ -1138,6 +1138,7 @@ void View::paintPage(Painter &p, int page, double shift) {
 		.loading = !count && !_model->fullyLoaded(id),
 	};
 	frame.previewed = previewed;
+	frame.previewFocus = !pointed;
 	frame.previewAlpha = current
 		? EaseOutCubic((now() - _previewAt) / kPreviewFade)
 		: 1.;

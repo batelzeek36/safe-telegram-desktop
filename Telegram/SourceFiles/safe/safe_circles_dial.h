@@ -41,6 +41,9 @@ struct DialFrame {
 	// the pointer moves onto a face or off it.
 	History *previewed = nullptr;
 	double previewAlpha = 1.;
+	// It is the chat at the focus, or the one a glide is bringing there:
+	// its face wears (or is about to wear) its unread count.
+	bool previewFocus = false;
 	// The chat the preview showed before, fading out under the new one
 	// (a crossfade, never an empty hub or card in between).
 	History *previewedOld = nullptr;
