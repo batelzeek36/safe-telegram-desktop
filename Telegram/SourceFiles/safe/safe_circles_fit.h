@@ -47,11 +47,22 @@ inline constexpr double kMessageFillShare = 0.6;
 [[nodiscard]] std::vector<std::pair<int, int>> SplitWords(
 	std::u16string_view text);
 
+// Where a separator kept on the word [from, till) begins (a lone dash, bar
+// or bullet after a space: "TRANSMIT -"), with the spaces before it; `till`
+// when the word has none. Where a line breaks after such a word the break
+// is the separator, as in display type: it is not drawn ("TRANSMIT" /
+// "STAY", the room it took goes to the line).
+[[nodiscard]] int SeparatorStart(
+	std::u16string_view text,
+	int from,
+	int till);
+
 struct FitWord {
 	int width = 0; // the word with its punctuation
 	int trimmed = 0; // without trailing punctuation (an ellipsis follows)
 	int space = 0; // the space between it and the next word
 	int letters = 0; // letters and digits, for the "never cut" rule
+	int bare = 0; // without its separator (SeparatorStart), 0 = none
 };
 
 struct FitLine {
@@ -59,6 +70,7 @@ struct FitLine {
 	int till = 0; // past the last word
 	bool ellipsis = false; // the text goes on: "…" ends the line
 	bool cutWord = false; // the last word itself is cut (a long word)
+	bool bare = false; // a line broken after a separator: it is not drawn
 };
 
 struct WordFit {

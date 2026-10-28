@@ -71,6 +71,15 @@ namespace {
 	return (c >= u'\u2010' && c <= u'\u2015'); // the dashes
 }
 
+// The marks that only separate (a line break can stand in for them).
+[[nodiscard]] bool IsSeparator(char16_t c) {
+	switch (c) {
+	case u'-': case u'|': case u'\u00B7': case u'\u2022': case u'\u2212':
+		return true;
+	}
+	return (c >= u'\u2010' && c <= u'\u2015');
+}
+
 struct Candidate {
 	HubPlan plan;
 	// Compared as a whole: the name whole first, then as much of it as
@@ -244,6 +253,21 @@ std::vector<std::pair<int, int>> SplitWords(std::u16string_view text) {
 	return result;
 }
 
+int SeparatorStart(std::u16string_view text, int from, int till) {
+	till = std::min(till, int(text.size()));
+	auto i = till;
+	while (i > from && IsSeparator(text[i - 1])) {
+		--i;
+	}
+	if (i == till || i == from || !IsSpace(text[i - 1])) {
+		return till;
+	}
+	while (i > from && IsSpace(text[i - 1])) {
+		--i;
+	}
+	return (i > from) ? i : till;
+}
+
 double ChordWidth(double radius, double top, double bottom) {
 	const auto far = std::max(std::abs(top), std::abs(bottom));
 	if (radius <= 0. || far >= radius) {
@@ -287,10 +311,22 @@ WordFit FitWords(
 			result.shown += index - from;
 			return result;
 		}
-		if (!last && index > from) {
-			result.lines.push_back({ from, index, false, false });
-			result.shown += index - from;
-			continue;
+		if (!last) {
+			// The line breaks here: a separator on its last word goes, and
+			// a word that fits without its separator ends the line.
+			const auto gap = (index > from) ? words[index - 1].space : 0;
+			if (words[index].bare > 0 && used + gap + words[index].bare <= width) {
+				++index;
+			}
+			if (index > from) {
+				const auto bare = (words[index - 1].bare > 0);
+				result.lines.push_back({ from, index, false, false, bare });
+				result.shown += index - from;
+				if (index == count) {
+					return result;
+				}
+				continue;
+			}
 		}
 		// The words stop here: on the last line, or at a word too wide for
 		// a line of its own. The next word may still fit with its trailing

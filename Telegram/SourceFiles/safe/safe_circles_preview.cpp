@@ -40,6 +40,12 @@ constexpr auto kCutLettersMin = 3;
 	return till;
 }
 
+[[nodiscard]] std::u16string_view Utf16(const QString &text) {
+	return std::u16string_view(
+		reinterpret_cast<const char16_t*>(text.utf16()),
+		std::size_t(text.size()));
+}
+
 [[nodiscard]] int Letters(const QString &text, int from, int till) {
 	auto result = 0;
 	for (auto i = from; i != till; ++i) {
@@ -111,12 +117,12 @@ MeasuredWords MeasureWords(
 	const auto &s = text.text;
 	const auto space = st.font->spacew;
 	const auto direction = result.direction;
-	result.ranges = SplitWords(std::u16string_view(
-		reinterpret_cast<const char16_t*>(s.utf16()),
-		std::size_t(s.size())));
+	const auto view = Utf16(s);
+	result.ranges = SplitWords(view);
 	for (const auto &[i, j] : result.ranges) {
 		const auto width = WidthOf(text, st, i, j, direction);
 		const auto end = TrimmedEnd(s, i, j);
+		const auto separator = SeparatorStart(view, i, j);
 		result.words.push_back({
 			.width = width,
 			.trimmed = (end == j)
@@ -124,6 +130,9 @@ MeasuredWords MeasureWords(
 				: WidthOf(text, st, i, end, direction),
 			.space = space,
 			.letters = Letters(s, i, j),
+			.bare = (separator < j)
+				? WidthOf(text, st, i, separator, direction)
+				: 0,
 		});
 	}
 	result.ellipsis = st.font->width(kEllipsis);
@@ -185,7 +194,10 @@ std::vector<Ui::Text::String> FittedLines(
 				measured.ranges[line.till - 1].second);
 			result.push_back(Line(st, Cut(text, from, end), direction));
 		} else {
-			const auto end = measured.ranges[line.till - 1].second;
+			const auto [wordFrom, wordTill] = measured.ranges[line.till - 1];
+			const auto end = line.bare
+				? SeparatorStart(Utf16(s), wordFrom, wordTill)
+				: wordTill;
 			result.push_back(Line(
 				st,
 				Ui::Text::Mid(text, from, end - from),
