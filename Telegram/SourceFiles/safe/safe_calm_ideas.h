@@ -21,7 +21,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // - Panel (S): "Reply ideas" with More over three bubbles, for one message
 //   he picked; it sits above Telegram's reply bar.
 // Loading is a shimmer of three ghosts; the ideas then unfurl from the
-// leaf's corner, one after another.
+// leaf's corner, one after another. While Telegram is still transcribing
+// voice notes for them, More's place says "listening…" with the leaf.
 namespace Safe::Calm {
 
 class Ideas final : public Ui::RpWidget {
@@ -38,6 +39,8 @@ public:
 	Ideas(QWidget *parent, Args &&args);
 
 	void showLoading(Look look);
+	// Voice notes Telegram is still transcribing for these ideas (0: none).
+	void setListening(int notes);
 	void showList(const std::vector<Suggestion> &list);
 	void hideAnimated();
 	void hideFast();
@@ -72,6 +75,8 @@ private:
 	void paintBox(QPainter &p);
 	void paintHead(QPainter &p);
 	void paintMore(QPainter &p);
+	[[nodiscard]] bool listening() const;
+	[[nodiscard]] QString slotText() const;
 	void paintIdea(QPainter &p, int index);
 	void paintGhost(QPainter &p, QRect rect);
 	[[nodiscard]] float64 landing(int index) const;
@@ -87,6 +92,7 @@ private:
 
 	Look _look = Look::Chips;
 	bool _loading = false;
+	int _listening = 0; // voice notes still being transcribed
 	bool _hiding = false;
 	bool _painting = false;
 	std::vector<Item> _items;

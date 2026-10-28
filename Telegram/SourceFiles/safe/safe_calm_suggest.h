@@ -16,12 +16,15 @@ namespace Safe::Calm {
 
 // Three replies Zach could send next in `history`, or to `replyTo` when he
 // picked one message. An answer for the same chat state comes from memory
-// unless `fresh` ("More"). `done` runs once on the main thread unless
-// CancelSuggest() comes first.
+// unless `fresh` ("More"); one made while a voice note was still being
+// transcribed is never remembered. `listening` gets how many voice notes
+// Telegram is still transcribing first (0 when that part is over). `done`
+// runs once on the main thread unless CancelSuggest() comes first.
 uint64 Suggest(
 	not_null<History*> history,
 	HistoryItem *replyTo,
 	bool fresh,
+	Fn<void(int)> listening,
 	Fn<void(const SuggestResult&)> done);
 void CancelSuggest(uint64 id);
 

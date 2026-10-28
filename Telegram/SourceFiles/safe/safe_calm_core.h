@@ -140,7 +140,8 @@ enum class Heard : std::uint8_t {
 	None, // never asked
 	Asking, // asked, not back yet (or still being transcribed)
 	Text,
-	Failed,
+	Failed, // refused for good: too long, no Premium, a local message
+	Lost, // failed for another reason (the network, a busy server)
 };
 struct VoiceSlot {
 	bool voice = false; // a voice note or a round video
@@ -149,8 +150,25 @@ struct VoiceSlot {
 };
 struct HearPlan {
 	std::vector<int> ask; // indexes of the notes to ask Telegram for now
+	std::vector<int> retry; // Lost: asked once more
 	bool waiting = false; // some of the notes are still on their way
 };
+
+// How long the ideas wait for Telegram (10-27: two real tries timed out at
+// 12 s). Telegram answers "pending" at once and sends the finished text
+// once, as an update (5-8 s for notes of 5-63 s, measured 10-27); the app
+// misses that update while it catches up on updates (Updates drops every
+// batch during getDifference), so a note still pending is asked again: the
+// same request returns the finished text once Telegram has it.
+inline constexpr auto kHearWaitMs = std::int64_t(45000);
+inline constexpr auto kHearAskAgainAfterMs = std::int64_t(4000);
+inline constexpr auto kHearAskAgainEveryMs = std::int64_t(3000);
+// `asked`: when Telegram was asked for it (0: before this hearing began),
+// `lastAgain`: the last time it was asked again (0: never).
+[[nodiscard]] bool HearAskAgain(
+	std::int64_t now,
+	std::int64_t asked,
+	std::int64_t lastAgain);
 // `newestFirst`: the context window from the bottom up.
 [[nodiscard]] HearPlan PlanHearing(
 	const std::vector<VoiceSlot> &newestFirst,

@@ -130,11 +130,24 @@ HearPlan PlanHearing(const std::vector<VoiceSlot> &newestFirst, int max) {
 		if (slot.heard == Heard::None) {
 			result.ask.push_back(i);
 			result.waiting = true;
+		} else if (slot.heard == Heard::Lost) {
+			result.retry.push_back(i);
+			result.waiting = true;
 		} else if (slot.heard == Heard::Asking) {
 			result.waiting = true;
 		}
 	}
 	return result;
+}
+
+bool HearAskAgain(
+		std::int64_t now,
+		std::int64_t asked,
+		std::int64_t lastAgain) {
+	if (lastAgain) {
+		return (now - lastAgain) >= kHearAskAgainEveryMs;
+	}
+	return !asked || (now - asked) >= kHearAskAgainAfterMs;
 }
 
 std::string VoiceLine(bool round, Heard heard, const std::string &text) {

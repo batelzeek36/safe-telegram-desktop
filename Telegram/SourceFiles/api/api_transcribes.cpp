@@ -151,9 +151,18 @@ const SummaryEntry &Transcribes::summary(
 
 void Transcribes::apply(const MTPDupdateTranscribedAudio &update) {
 	const auto id = update.vtranscription_id().v;
-	const auto i = _ids.find(id);
+	auto i = _ids.find(id);
 	if (i == _ids.end()) {
-		return;
+		// Safe Telegram (d34): a long or forwarded note's updates can
+		// carry another transcription id than the answer did; match
+		// those by their message.
+		const auto message = FullMsgId(
+			peerFromMTP(update.vpeer()),
+			MsgId(update.vmsg_id().v));
+		if (!_map.contains(message)) {
+			return;
+		}
+		i = _ids.emplace(id, message).first;
 	}
 	const auto j = _map.find(i->second);
 	if (j == _map.end()) {

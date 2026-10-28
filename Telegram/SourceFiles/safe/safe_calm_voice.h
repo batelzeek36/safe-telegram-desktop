@@ -22,14 +22,24 @@ namespace Safe::Calm {
 // already gave: "[voice note] <what was said>" or "[voice note, not heard]".
 [[nodiscard]] QString VoiceContextText(not_null<HistoryItem*> item);
 
+struct HearResult {
+	int notes = 0; // voice and video notes it waited for
+	int heard = 0; // of those, the ones with a transcript at the end
+	bool complete = true; // false: some were still being transcribed
+};
+
 // Asks Telegram to transcribe the newest voice notes of `history` that were
 // never transcribed (Core::kMaxHeard of them, newest first) and `picked` (the
-// message he wants ideas for), then calls `done` once all are back or after
-// kHearTimeoutMs. `done` runs on the main thread, at once when nothing waits.
-inline constexpr auto kHearTimeoutMs = crl::time(12000);
+// message he wants ideas for), all at once; a transcript Telegram already
+// gave is reused. A note still pending is asked again (Core::HearAskAgain),
+// since the app can miss the update that brings its text. `listening` gets
+// how many are still on their way whenever that changes (0 at the end);
+// `done` runs once all are back or after Core::kHearWaitMs, on the main
+// thread, at once when nothing waits.
 void HearVoices(
 	not_null<History*> history,
 	HistoryItem *picked,
-	Fn<void()> done);
+	Fn<void(int)> listening,
+	Fn<void(HearResult)> done);
 
 } // namespace Safe::Calm

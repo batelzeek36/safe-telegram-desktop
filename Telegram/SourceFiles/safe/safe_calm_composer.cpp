@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_calm_queue.h"
 #include "safe/safe_calm_run_cards.h"
 #include "safe/safe_calm_suggest.h"
+#include "safe/safe_calm_voice.h"
 #include "ui/abstract_button.h"
 #include "ui/effects/animations.h"
 #include "ui/painter.h"
@@ -830,6 +831,9 @@ void Composer::showIdeas(HistoryItem *replyTo, bool fresh, bool automatic) {
 		_history,
 		replyTo,
 		fresh,
+		crl::guard(this, [=](int waiting) {
+			_ideas->setListening(waiting);
+		}),
 		crl::guard(this, [=](const SuggestResult &result) {
 			_suggestCall = 0;
 			ideasAnswered(result);
@@ -903,7 +907,8 @@ void Composer::messageLanded(not_null<HistoryItem*> item) {
 		|| IsOwn(item)
 		|| !item->isRegular()
 		|| item->isService()
-		|| item->originalText().text.trimmed().isEmpty()) {
+		|| (item->originalText().text.trimmed().isEmpty()
+			&& !IsVoiceNote(item))) { // a voice note is heard first
 		return;
 	} else if (IsHeld(item)) {
 		// Their side is still softening it: ideas come once it shows.

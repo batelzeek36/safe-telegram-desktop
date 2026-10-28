@@ -65,6 +65,7 @@ void Ask(
 	Key key,
 	not_null<History*> history,
 	HistoryItem *replyTo,
+	bool remember,
 	Fn<void(const SuggestResult&)> done);
 
 } // namespace
@@ -73,6 +74,7 @@ uint64 Suggest(
 		not_null<History*> history,
 		HistoryItem *replyTo,
 		bool fresh,
+		Fn<void(int)> listening,
 		Fn<void(const SuggestResult&)> done) {
 	auto &state = State();
 	const auto id = ++state.nextId;
@@ -100,7 +102,7 @@ uint64 Suggest(
 	const auto weak = base::make_weak(&history->session());
 	const auto peer = history->peer->id;
 	const auto replyId = replyTo ? replyTo->fullId() : FullMsgId();
-	HearVoices(history, replyTo, [=, done = std::move(done)]() mutable {
+	auto heard = [=, done = std::move(done)](HearResult hearing) mutable {
 		const auto session = weak.get();
 		const auto history = session
 			? session->data().historyLoaded(peer)
@@ -115,8 +117,19 @@ uint64 Suggest(
 			done({ .failure = u"chat gone"_q });
 			return;
 		}
-		Ask(id, key, history, replyTo, std::move(done));
-	});
+		// Ideas made without a note still being transcribed are asked for
+		// again next time, when its words may be there.
+		Ask(id, key, history, replyTo, hearing.complete, std::move(done));
+	};
+	HearVoices(
+		history,
+		replyTo,
+		[=](int waiting) {
+			if (listening && State().calls.contains(id)) {
+				listening(waiting);
+			}
+		},
+		std::move(heard));
 	return id;
 }
 
@@ -127,6 +140,7 @@ void Ask(
 		Key key,
 		not_null<History*> history,
 		HistoryItem *replyTo,
+		bool remember,
 		Fn<void(const SuggestResult&)> done) {
 	auto &state = State();
 	auto request = SuggestRequest{
@@ -153,7 +167,7 @@ void Ask(
 			if (!State().calls.remove(id)) {
 				return;
 			}
-			if (!result.list.empty()) {
+			if (remember && !result.list.empty()) {
 				Remember(key, result);
 			}
 			done(result);

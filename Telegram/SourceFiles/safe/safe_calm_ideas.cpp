@@ -84,6 +84,10 @@ constexpr auto kPickMs = crl::time(140);
 	return u"More"_q;
 }
 
+[[nodiscard]] QString ListeningText() {
+	return u"listening…"_q;
+}
+
 // His outgoing bubble with its tail corner (bottom right) drawn small.
 [[nodiscard]] QPainterPath BubblePath(QRectF r, float64 radius) {
 	radius = std::min(radius, std::min(r.width(), r.height()) / 2.);
@@ -167,6 +171,7 @@ void Ideas::showLoading(Look look) {
 	const auto fresh = !showing() || (_look != look);
 	_look = look;
 	_loading = true;
+	_listening = 0;
 	_hiding = false;
 	_items.clear();
 	_landedAt = 0;
@@ -189,11 +194,36 @@ void Ideas::showLoading(Look look) {
 	notifyChanged();
 }
 
+void Ideas::setListening(int notes) {
+	notes = std::max(notes, 0);
+	if (!_loading || _hiding || isHidden() || _listening == notes) {
+		return;
+	}
+	const auto was = listening();
+	_listening = notes;
+	if (listening() != was) {
+		const auto reserved = _reserved;
+		relayout();
+		if (_reserved != reserved) {
+			notifyChanged();
+		}
+	}
+}
+
+bool Ideas::listening() const {
+	return _loading && (_listening > 0);
+}
+
+QString Ideas::slotText() const {
+	return listening() ? ListeningText() : MoreText();
+}
+
 void Ideas::showList(const std::vector<Suggestion> &list) {
 	if (isHidden() || _hiding) {
 		return;
 	}
 	_loading = false;
+	_listening = 0;
 	_items.clear();
 	for (const auto &suggestion : list) {
 		auto item = Item{ .raw = suggestion.text };
@@ -324,7 +354,7 @@ void Ideas::layoutPanel() {
 	const auto moreWidth = S(8)
 		+ S(kLeafHead)
 		+ S(5)
-		+ MoreFont()->width(MoreText())
+		+ MoreFont()->width(slotText())
 		+ S(4);
 	_moreRect = QRect(left + inner - moreWidth, _headTop, moreWidth, S(kHead));
 	_box = QRect(S(kShadow), S(kShadow), width, height);
@@ -354,15 +384,16 @@ void Ideas::layoutChips() {
 				+ item.text.maxWidth());
 		}
 	}
-	// More sits beside the shortest idea, where the row has the most room.
-	const auto moreRow = _loading
+	// More sits beside the shortest idea, where the row has the most room;
+	// "listening…" in the same place while voice notes are transcribed.
+	const auto moreRow = (_loading && !listening())
 		? -1
 		: int(std::min_element(begin(naturals), end(naturals))
 			- begin(naturals));
 	const auto moreWidth = S(kMorePadLeft)
 		+ S(15)
 		+ S(5)
-		+ MoreFont()->width(MoreText())
+		+ MoreFont()->width(slotText())
 		+ S(kMorePadRight);
 	auto rects = std::vector<QRect>();
 	auto textTops = std::vector<int>();
@@ -509,6 +540,7 @@ void Ideas::paintHead(QPainter &p) {
 
 void Ideas::paintMore(QPainter &p) {
 	const auto chip = (_look == Look::Chips);
+	const auto status = listening(); // "listening…": not a button
 	const auto enabled = !_loading && (_picked < 0);
 	const auto over = enabled && (_over == kMoreIndex);
 	const auto opacity = p.opacity();
@@ -524,7 +556,7 @@ void Ideas::paintMore(QPainter &p) {
 		p.scale(0.9 + 0.1 * e, 0.9 + 0.1 * e);
 		p.translate(-corner);
 	}
-	p.setOpacity(opacity * e * (enabled ? 1. : 0.4));
+	p.setOpacity(opacity * e * ((enabled || status) ? 1. : 0.4));
 	const auto rect = QRectF(_moreRect);
 	auto text = QColor();
 	if (chip) {
@@ -549,10 +581,16 @@ void Ideas::paintMore(QPainter &p) {
 	}
 	const auto icon = chip ? S(15) : S(kLeafHead);
 	auto x = rect.x() + (chip ? S(kMorePadLeft) : S(8));
-	PaintRefresh(
-		p,
-		QRectF(x, rect.y() + (rect.height() - icon) / 2., icon, icon),
-		text);
+	const auto iconRect = QRectF(
+		x,
+		rect.y() + (rect.height() - icon) / 2.,
+		icon,
+		icon);
+	if (status) {
+		PaintLeaf(p, iconRect, icon, JadeColor());
+	} else {
+		PaintRefresh(p, iconRect, text);
+	}
 	x += icon + S(5);
 	p.setFont(MoreFont());
 	p.setPen(text);
@@ -562,7 +600,7 @@ void Ideas::paintMore(QPainter &p) {
 			rect.y()
 				+ (rect.height() - MoreFont()->height) / 2.
 				+ MoreFont()->ascent),
-		MoreText());
+		slotText());
 	p.restore();
 }
 
