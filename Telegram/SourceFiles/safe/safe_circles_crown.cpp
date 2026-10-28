@@ -28,9 +28,11 @@ constexpr auto kHubPadding = 5; // the hub's words keep this far from its edge
 constexpr auto kFocusClear = 9; // a name keeps this far from the focus ring
 constexpr auto kTickClear = 3; // and the bezel's ticks this far from a name
 // The focus ring and the faces either side, a badge and the bezel's ticks:
-// this far apart at least (and half a point for the antialiased edges).
+// this far apart at least, plus their antialiased edges (two soft ones
+// between the ring and a photo, one beside a crisp badge).
 constexpr auto kClear = 2;
-constexpr auto kEdge = 0.5;
+constexpr auto kRingEdge = 1.;
+constexpr auto kBadgeEdge = 0.5;
 constexpr auto kMajorTick = 1.6; // line widths
 constexpr auto kTickPulse = 0.6; // the tick at twelve grows this much more
 
@@ -134,13 +136,13 @@ double Crown::spread(int count) const {
 		_ring,
 		_face * kGrow / 2. + FocusRingReach(),
 		_face / 2.,
-		S(kClear) + kEdge,
+		S(kClear) + kRingEdge,
 		SlotCount(count));
 }
 
 double Crown::badgeLimit() const {
 	const auto cap = st::lineWidth * kMajorTick * (1. + kTickPulse) / 2.;
-	return _tickRadius - cap - S(kClear) - kEdge;
+	return _tickRadius - cap - S(kClear) - kBadgeEdge;
 }
 
 double Crown::nearest(const QRectF &rect) const {
