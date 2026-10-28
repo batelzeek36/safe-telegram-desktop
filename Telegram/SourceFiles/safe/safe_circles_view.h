@@ -60,6 +60,7 @@ protected:
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void wheelEvent(QWheelEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
+	void hideEvent(QHideEvent *e) override;
 
 	QAccessible::Role accessibilityRole() override;
 	QString accessibilityName() override;
@@ -121,6 +122,10 @@ private:
 	// glide is bringing round by name, else the one at the focus.
 	[[nodiscard]] History *previewFocusOf(FilterId id);
 	void release(double velocity);
+	// A press ends: `released` = the button came up over this view (a
+	// click acts); else its release went elsewhere (a menu, another app,
+	// the view hid) and a drag lands where it is, nothing is clicked.
+	void endDrag(QPointF point, bool released);
 	void step(int delta);
 	void bringTo(int index, bool andOpen);
 	void openFocused();

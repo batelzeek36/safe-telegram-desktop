@@ -824,6 +824,12 @@ void View::mousePressEvent(QMouseEvent *e) {
 
 void View::mouseMoveEvent(QMouseEvent *e) {
 	const auto point = e->position();
+	if (_drag != Drag::None && !(e->buttons() & Qt::LeftButton)) {
+		// The button is up but this view never heard it: the dial must not
+		// follow a pointer nobody holds (nor keep animating for it).
+		endDrag(point, false);
+		return;
+	}
 	if (_drag == Drag::None) {
 		updateHover(point);
 		return;
@@ -868,9 +874,14 @@ void View::mouseReleaseEvent(QMouseEvent *e) {
 	if (e->button() != Qt::LeftButton) {
 		return;
 	}
+	endDrag(e->position(), true);
+}
+
+void View::endDrag(QPointF point, bool released) {
 	const auto drag = std::exchange(_drag, Drag::None);
-	const auto point = e->position();
-	if (drag == Drag::Pending) {
+	if (drag == Drag::Pending && !released) {
+		settle();
+	} else if (drag == Drag::Pending) {
 		if (_press.header >= 0 && _press.header == headerItemAt(point)) {
 			if (_press.header != currentPage()) {
 				goToPage(_press.header, 0.);
@@ -896,6 +907,18 @@ void View::mouseReleaseEvent(QMouseEvent *e) {
 		settle();
 	}
 	updateHover(point);
+}
+
+void View::hideEvent(QHideEvent *e) {
+	// Hidden mid-gesture (search, an opened folder): the release and the
+	// fingers' end go to whatever shows instead, so land the dial now.
+	if (_drag != Drag::None) {
+		endDrag(_last, false);
+	}
+	if (_scroll != Scroll::None && _scroll != Scroll::Released) {
+		scrollRelease();
+	}
+	_scroll = Scroll::None;
 }
 
 void View::leaveEventHook(QEvent *e) {
