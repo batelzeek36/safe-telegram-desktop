@@ -101,8 +101,9 @@ struct HubPlan {
 // stacked and centered as near the middle as the words allow, each line
 // as wide as the circle at its height. The name comes first (whole when
 // any layout shows it whole, else as much of it as can show), then the
-// message whole, then some of the message, then the time row; the block may
-// sit off center when that lets a longer line through the wide middle.
+// message whole, then some of the message, then the time row, then more of
+// the message, then the badge beside the time; the block may sit off
+// center when that lets a longer line through the wide middle.
 [[nodiscard]] HubPlan PlanHub(const HubInput &input);
 
 } // namespace Safe::Circles

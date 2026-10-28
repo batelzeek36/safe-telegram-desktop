@@ -54,8 +54,9 @@ struct Candidate {
 	HubPlan plan;
 	// Compared as a whole: the name whole first, then as much of it as
 	// can show, the message whole, some of the message, the time row, more
-	// of the message, the block nearer the middle.
-	std::tuple<bool, int, bool, bool, int, int, int> score;
+	// of the message, the badge beside the time (the face has it too), the
+	// block nearer the middle.
+	std::tuple<bool, int, bool, bool, bool, int, int, int> score;
 };
 
 [[nodiscard]] std::optional<Candidate> Best(
@@ -157,8 +158,9 @@ struct Candidate {
 						plan.name.shown,
 						plan.text.whole,
 						!plan.text.lines.empty(),
-						hasMeta ? (metaCount - meta) : 0,
+						hasMeta,
 						plan.text.shown,
+						hasMeta ? (metaCount - meta) : 0,
 						-std::abs(shift));
 					if (!result || score > result->score) {
 						result = Candidate{ std::move(plan), score };

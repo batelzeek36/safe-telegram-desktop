@@ -20,6 +20,8 @@ namespace Safe::Circles {
 namespace {
 
 const auto kEllipsis = QString(QChar(0x2026));
+// A one-line label cut between words keeps at least this share of its room.
+constexpr auto kWordCutShare = 0.6;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -178,6 +180,20 @@ const Ui::Text::String &LineCache::line(
 	auto fit = FitWords(measured.words, { width }, measured.ellipsis);
 	if (!fit.valid) {
 		fit = FitWords(measured.words, { width }, measured.ellipsis, 0);
+	} else if (!fit.lines.empty()
+		&& !fit.lines.front().cutWord
+		&& fit.lines.front().till < int(measured.words.size())) {
+		// A label cut after its first short word would say almost nothing
+		// (an emoji and the ellipsis): it is cut inside the next word.
+		const auto &line = fit.lines.front();
+		auto used = measured.ellipsis;
+		for (auto i = line.from; i != line.till; ++i) {
+			const auto &word = measured.words[i];
+			used += (i + 1 == line.till) ? word.trimmed : (word.width + word.space);
+		}
+		if (used < width * kWordCutShare) {
+			fit.lines = { FitLine{ line.from, line.till + 1, true, true } };
+		}
 	}
 	auto lines = FittedLines(measured, fit, { width }, st);
 	entry.line = lines.empty() ? Ui::Text::String() : std::move(lines.front());
