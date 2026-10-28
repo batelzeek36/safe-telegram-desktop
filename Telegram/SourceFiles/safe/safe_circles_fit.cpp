@@ -50,18 +50,45 @@ constexpr auto kBandInset = 0.125;
 	return result;
 }
 
+[[nodiscard]] bool IsSpace(char16_t c) {
+	switch (c) {
+	case u' ': case u'\t': case u'\n': case u'\r': case u'\f': case u'\v':
+	case u'\u0085': case u'\u00A0': case u'\u1680': case u'\u2028':
+	case u'\u2029': case u'\u202F': case u'\u205F': case u'\u3000':
+		return true;
+	}
+	return (c >= u'\u2000' && c <= u'\u200A');
+}
+
+// Marks that close or join a phrase: on a line of their own's start they
+// read as a stray ("- STAY").
+[[nodiscard]] bool IsMark(char16_t c) {
+	switch (c) {
+	case u'-': case u'|': case u'/': case u'\\': case u':': case u';':
+	case u',': case u'.': case u'!': case u'?': case u'&': case u'+':
+	case u'=': case u'~': case u'*': case u'>': case u')': case u']':
+	case u'}': case u'\u00B7': case u'\u00BB': case u'\u2022':
+	case u'\u2026': case u'\u203A': case u'\u2212':
+		return true;
+	}
+	return (c >= u'\u2010' && c <= u'\u2015'); // the dashes
+}
+
 struct Candidate {
 	HubPlan plan;
 	// Compared as a whole: the name whole first, then as much of it as
 	// can show, the message whole, some of the message, the time row, more
 	// of the message, the badge beside the time (the face has it too), the
-	// block nearer the middle.
-	std::tuple<bool, int, bool, bool, bool, int, int, int> score;
+	// block nearer the middle. For an unread chat the message's lines come
+	// before the time row.
+	std::tuple<bool, int, bool, bool, int, int, int, int, int> score;
 };
 
+// `strict`: each part keeps its words of HubPart::wholeLetters letters
+// whole; otherwise any word may be cut (the last resort).
 [[nodiscard]] std::optional<Candidate> Best(
 		const HubInput &input,
-		int wholeLetters) {
+		bool strict) {
 	auto result = std::optional<Candidate>();
 	const auto r = input.radius;
 	if (r <= 0.) {
@@ -111,7 +138,8 @@ struct Candidate {
 						name.words,
 						plan.nameWidths,
 						name.ellipsis,
-						wholeLetters);
+						strict ? name.wholeLetters : 0,
+						name.fillShare);
 					if (!plan.name.valid
 						|| int(plan.name.lines.size()) < nameLines) {
 						continue;
@@ -129,7 +157,8 @@ struct Candidate {
 							text.words,
 							plan.textWidths,
 							text.ellipsis,
-							wholeLetters)
+							strict ? text.wholeLetters : 0,
+							text.fillShare)
 						: WordFit{
 							.whole = text.words.empty(),
 							.valid = true,
@@ -153,12 +182,14 @@ struct Candidate {
 						}
 						plan.meta = meta;
 					}
+					const auto lines = int(plan.text.lines.size());
 					auto score = std::make_tuple(
 						plan.name.whole,
 						plan.name.shown,
 						plan.text.whole,
-						!plan.text.lines.empty(),
-						hasMeta,
+						lines > 0,
+						input.messageFirst ? lines : 0,
+						hasMeta ? 1 : 0,
 						plan.text.shown,
 						hasMeta ? (metaCount - meta) : 0,
 						-std::abs(shift));
@@ -174,6 +205,33 @@ struct Candidate {
 
 } // namespace
 
+std::vector<std::pair<int, int>> SplitWords(std::u16string_view text) {
+	auto result = std::vector<std::pair<int, int>>();
+	const auto size = int(text.size());
+	auto i = 0;
+	while (i < size) {
+		while (i < size && IsSpace(text[i])) {
+			++i;
+		}
+		if (i >= size) {
+			break;
+		}
+		auto j = i;
+		auto marks = true;
+		while (j < size && !IsSpace(text[j])) {
+			marks = marks && IsMark(text[j]);
+			++j;
+		}
+		if (marks && !result.empty()) {
+			result.back().second = j;
+		} else {
+			result.emplace_back(i, j);
+		}
+		i = j;
+	}
+	return result;
+}
+
 double ChordWidth(double radius, double top, double bottom) {
 	const auto far = std::max(std::abs(top), std::abs(bottom));
 	if (radius <= 0. || far >= radius) {
@@ -186,7 +244,8 @@ WordFit FitWords(
 		const std::vector<FitWord> &words,
 		const std::vector<int> &widths,
 		int ellipsis,
-		int wholeLetters) {
+		int wholeLetters,
+		double fillShare) {
 	auto result = WordFit();
 	const auto count = int(words.size());
 	if (!count) {
@@ -231,7 +290,14 @@ WordFit FitWords(
 			--keep;
 		}
 		if (keep > from) {
-			result.lines.push_back({ from, keep, true, false });
+			// Stopping a short way into the line says little ("Pele…"):
+			// the next word, when it may be cut, fills the line instead.
+			const auto fill = (fillShare > 0.)
+				&& (keep < count)
+				&& (words[keep].letters >= wholeLetters)
+				&& (Span(words, from, keep, true) + ellipsis
+					< width * fillShare);
+			result.lines.push_back({ from, fill ? (keep + 1) : keep, true, fill });
 			result.shown += keep - from;
 			return result;
 		}
@@ -246,11 +312,11 @@ WordFit FitWords(
 }
 
 HubPlan PlanHub(const HubInput &input) {
-	if (auto best = Best(input, kWholeWordLetters)) {
+	if (auto best = Best(input, true)) {
 		return std::move(best->plan);
 	}
 	// Nothing keeps every short word whole: cut words rather than show none.
-	if (auto best = Best(input, 0)) {
+	if (auto best = Best(input, false)) {
 		return std::move(best->plan);
 	}
 	return HubPlan();

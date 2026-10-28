@@ -277,6 +277,26 @@ double LeanFor(double velocity, int slots) {
 	return std::clamp(degreesPerSecond * kLeanPerSpeed, -kMaxLean, kMaxLean);
 }
 
+double BadgeAngle(double outward, double focus) {
+	constexpr auto kFullTurn = 8. * kBadgeShoulder; // 2 pi
+	const auto turn = std::remainder(kBadgeShoulder - outward, kFullTurn);
+	return outward + turn * std::clamp(focus, 0., 1.);
+}
+
+double OrbitOutward(double angle, double rx, double ry, double named) {
+	if (rx <= 0. || ry <= 0.) {
+		return 0.;
+	}
+	const auto x = std::cos(angle) / rx;
+	const auto y = std::sin(angle) / ry; // down
+	const auto normal = std::atan2(x, -y);
+	const auto lifted = std::clamp(
+		normal,
+		-kOrbitBadgeLowest,
+		kOrbitBadgeLowest);
+	return normal + (lifted - normal) * std::clamp(named, 0., 1.);
+}
+
 std::vector<std::int32_t> CircleIds(const std::vector<std::int32_t> &filters) {
 	auto result = std::vector<std::int32_t>();
 	result.reserve(filters.size() + 1);

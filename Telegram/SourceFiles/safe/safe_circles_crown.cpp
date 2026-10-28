@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_basic.h"
 #include "styles/style_chat.h"
 
+#include <optional>
+
 namespace Safe::Circles {
 namespace {
 
@@ -71,9 +73,10 @@ private:
 		const std::vector<Pill> &pills) const;
 	void paintHub(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF at(double angle, double radius) const;
+	void alignPills(std::vector<Pill> &pills) const;
 	[[nodiscard]] double nearest(const QRectF &rect) const;
 	[[nodiscard]] QRectF neighbourPill(
-		QSizeF size,
+		const PillSize &pill,
 		const FacePlace &face) const;
 
 	QSize _size;
@@ -146,6 +149,8 @@ std::vector<FacePlace> Crown::place(double position, int count) const {
 			.focus = focus,
 			.offset = visible.offset,
 			.nameAlpha = NameAlpha(visible.offset, kNameReach),
+			// Out toward the bezel, away from the faces either side.
+			.badgeAngle = BadgeAngle(visible.offset * slot, focus),
 		});
 	}
 	ranges::sort(result, ranges::less(), &FacePlace::depth);
@@ -230,6 +235,16 @@ void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
 			_hub * 1.3,
 			frame.lean,
 			JadeColor(kHubLeafOpacity));
+		if (const auto old = frame.previewedOld) {
+			// The chat shown before fades out under the new one.
+			_preview.paint(
+				p,
+				model,
+				not_null<History*>(old),
+				_center,
+				_hub - S(kHubPadding),
+				frame.previewOldAlpha);
+		}
 		_preview.paint(
 			p,
 			model,
@@ -261,8 +276,11 @@ void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
 // until it clears the ticks, inside the column by PageMargin, clear of the
 // focused face and the notch at twelve. Where the page is too small for
 // that it rests on the bezel and the ticks under it give way.
-QRectF Crown::neighbourPill(QSizeF size, const FacePlace &face) const {
-	const auto margin = double(PageMargin());
+QRectF Crown::neighbourPill(
+		const PillSize &pill,
+		const FacePlace &face) const {
+	const auto size = pill.size;
+	const auto margin = pill.margin;
 	const auto outside = _outer + S(kTickClear) + st::lineWidth;
 	const auto d = face.center - _center;
 	const auto length = std::hypot(d.x(), d.y());
@@ -299,6 +317,26 @@ QRectF Crown::neighbourPill(QSizeF size, const FacePlace &face) const {
 	return rect;
 }
 
+// The names of a pair read on one line: above the hub the lower one rises
+// to the other (further from the bezel, never nearer), below it the upper
+// one drops.
+void Crown::alignPills(std::vector<Pill> &pills) const {
+	auto upper = std::optional<double>();
+	auto lower = std::optional<double>();
+	for (const auto &pill : pills) {
+		const auto top = pill.rect.top();
+		if (pill.rect.center().y() < _center.y()) {
+			upper = upper ? std::min(*upper, top) : top;
+		} else {
+			lower = lower ? std::max(*lower, top) : top;
+		}
+	}
+	for (auto &pill : pills) {
+		const auto above = (pill.rect.center().y() < _center.y());
+		pill.rect.moveTop(above ? *upper : *lower);
+	}
+}
+
 void Crown::paint(
 		Painter &p,
 		Model &model,
@@ -309,7 +347,7 @@ void Crown::paint(
 
 	const auto faces = place(frame.position, frame.count);
 	auto pills = std::vector<Pill>();
-	const auto room = pillWidth() - 2 * S(7);
+	const auto maxWidth = pillWidth();
 	for (const auto &face : faces) {
 		const auto alpha = face.nameAlpha * face.alpha * frame.names;
 		if (face.index >= int(chats.size()) || alpha <= 0.01) {
@@ -320,17 +358,19 @@ void Crown::paint(
 			history,
 			{ model.shortName(history).toString() },
 			st::chatSimilarName,
-			room);
-		const auto rect = NamePillRect(name, QPointF(), pillWidth());
-		if (rect.isEmpty()) {
+			PillTextRoom(maxWidth),
+			PillSlack());
+		const auto size = NamePillSize(name, maxWidth);
+		if (size.size.isEmpty()) {
 			continue;
 		}
 		pills.push_back({
-			.rect = neighbourPill(rect.size(), face),
+			.rect = neighbourPill(size, face),
 			.alpha = alpha,
 			.name = &name,
 		});
 	}
+	alignPills(pills);
 	paintBezel(p, frame, pills);
 
 	for (const auto &face : faces) {

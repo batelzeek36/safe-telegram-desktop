@@ -164,6 +164,31 @@ inline constexpr double kPageFlick = 0.45;
 inline constexpr double kMaxLean = 24.;
 [[nodiscard]] double LeanFor(double velocity, int slots);
 
+// ---- Badges ----
+//
+// Where a face wears its unread badge (or a far face its dot), as an angle
+// clockwise from twelve o'clock in radians: on its outer side, away from
+// the ring's centre. The faces either side lie along the ring, so a badge
+// there keeps clear of them.
+//
+// Crown: `outward` is the face's own angle round the hub. The focus has the
+// notch straight above it, so a face coming into the focus (`focus` 0 .. 1)
+// turns its badge to the top-right shoulder, the shorter way round.
+inline constexpr double kBadgeShoulder = 0.7853981633974483; // 45 degrees
+[[nodiscard]] double BadgeAngle(double outward, double focus);
+
+// Orbit: the ellipse's outer normal at ellipse angle `angle` (x = rx cos,
+// y = ry sin, y down, so the front face, pi / 2, wears it underneath, in
+// its pool of light, between the names). A face whose name pill shows under
+// it (`named` 0 .. 1, the focus's neighbours) lifts it to at most
+// kOrbitBadgeLowest from twelve o'clock, above the name.
+inline constexpr double kOrbitBadgeLowest = 1.9198621771937625; // 110 degrees
+[[nodiscard]] double OrbitOutward(
+	double angle,
+	double rx,
+	double ry,
+	double named);
+
 // ---- Folders ----
 //
 // The circles are his chat folders in Telegram's order, plus the "All

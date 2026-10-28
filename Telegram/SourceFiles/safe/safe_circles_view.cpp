@@ -48,6 +48,9 @@ constexpr auto kNamesDelay = 0.15;
 constexpr auto kNamesFade = 0.2;
 // The hub or the card shows the chat under the pointer: its words fade in.
 constexpr auto kPreviewFade = 0.16;
+// After a turn the pointer did not drive, it wakes the hover again only
+// once it has moved this far (points): a still pointer names nothing.
+constexpr auto kHoverWake = 3.;
 constexpr auto kHintDuration = crl::time(150);
 constexpr auto kHintLift = 7;
 
@@ -156,7 +159,7 @@ void View::setLayout(Layout layout) {
 	_layout = layout;
 	_dial = (layout == Layout::Orbit) ? MakeOrbit() : MakeCrown();
 	_dial->resize(pageRect().size());
-	_hovered = -1;
+	blockHover();
 	accessibilityNameChanged();
 	update();
 }
@@ -176,6 +179,7 @@ void View::intro() {
 	spin.glide = GlideTo(spin.position, target, kIntroSpeed, kMaxGlide);
 	spin.glideStart = now();
 	spin.gliding = true;
+	blockHover();
 	startAnimation();
 }
 
@@ -254,6 +258,10 @@ void View::moveTo(double position) {
 	auto &spin = spinOf(id);
 	const auto was = spin.position;
 	spin.position = position;
+	if (_drag != Drag::Spin) {
+		// Two fingers on the trackpad turn it under a still pointer.
+		blockHover();
+	}
 	if (Passes(was, position) > 0) {
 		_tickAt = now();
 		noteFocus(id);
@@ -264,6 +272,9 @@ void View::moveTo(double position) {
 void View::glideTo(double target, double velocity, double maxDuration) {
 	const auto id = circleAt(currentPage());
 	auto &spin = spinOf(id);
+	// Every glide turns the dial under a pointer that is not dragging it:
+	// a click's, Next unread's, a key's, the wheel's, a release's.
+	blockHover();
 	spin.glide = GlideTo(spin.position, target, velocity, maxDuration);
 	spin.glideStart = now();
 	spin.gliding = !spin.glide.finished(0.);
@@ -402,7 +413,7 @@ void View::goToPage(int page, double velocity) {
 	if (_controller->activeChatsFilterCurrent() != id) {
 		_controller->setActiveChatsFilter(id);
 	}
-	_hovered = -1;
+	blockHover();
 	accessibilityNameChanged();
 	accessibilityValueChanged();
 	checkLoadMore(id);
@@ -574,6 +585,9 @@ void View::refreshOrder() {
 			spin.glide.from += moved;
 			spin.glide.to += moved;
 		}
+		if (id == circleAt(currentPage())) {
+			blockHover();
+		}
 	}
 	checkLoadMore(circleAt(currentPage()));
 }
@@ -676,8 +690,29 @@ int View::dotAt(QPointF point) const {
 	return (index >= 0 && index < count) ? index : -1;
 }
 
+void View::blockHover() {
+	_hoverBlocked = true;
+	_hoverBlockedAt = QCursor::pos();
+	if (_hovered >= 0) {
+		_hovered = -1;
+		_hoveredHistory = nullptr;
+		update();
+	}
+}
+
+bool View::hoverBlocked() {
+	if (_hoverBlocked) {
+		const auto moved = QCursor::pos() - _hoverBlockedAt;
+		if (std::hypot(double(moved.x()), double(moved.y())) >= kHoverWake) {
+			_hoverBlocked = false;
+		}
+	}
+	return _hoverBlocked;
+}
+
 void View::updateHover(QPointF point) {
 	auto hovered = -1;
+	auto hoveredHistory = (History*)nullptr;
 	auto clickable = false;
 	const auto page = pageRect();
 	const auto header = headerItemAt(point);
@@ -685,9 +720,14 @@ void View::updateHover(QPointF point) {
 	if (page.contains(point.toPoint()) && !_pageGliding) {
 		const auto inside = toPage(point);
 		const auto id = circleAt(currentPage());
-		const auto count = int(chatsOf(id).size());
-		hovered = _dial->faceAt(inside, spinOf(id).position, count);
-		clickable = (hovered >= 0) || (_dial->opens(inside) && count > 0);
+		const auto &chats = chatsOf(id);
+		const auto count = int(chats.size());
+		const auto under = _dial->faceAt(inside, spinOf(id).position, count);
+		clickable = (under >= 0) || (_dial->opens(inside) && count > 0);
+		if (under >= 0 && under < count && !hoverBlocked()) {
+			hovered = under;
+			hoveredHistory = chats[under];
+		}
 	}
 	if ((header >= 0 && header != currentPage())
 		|| (header >= 0 && header == currentPage() && nextUnread() >= 0)
@@ -696,8 +736,12 @@ void View::updateHover(QPointF point) {
 	}
 	setCursor(clickable ? style::cur_pointer : style::cur_default);
 	showHeaderHint(header >= 0 && header == currentPage() && nextUnread() >= 0);
-	if (_hovered != hovered || _hoveredHeader != header || _hoveredDot != dot) {
+	if (_hovered != hovered
+		|| _hoveredHistory != hoveredHistory
+		|| _hoveredHeader != header
+		|| _hoveredDot != dot) {
 		_hovered = hovered;
+		_hoveredHistory = hoveredHistory;
 		_hoveredHeader = header;
 		_hoveredDot = dot;
 		update();
@@ -773,6 +817,7 @@ void View::mouseMoveEvent(QMouseEvent *e) {
 		}
 		setCursor(style::cur_default);
 		_hovered = -1;
+		_hoveredHistory = nullptr;
 	}
 	if (_drag == Drag::Spin) {
 		const auto id = circleAt(currentPage());
@@ -826,6 +871,7 @@ void View::leaveEventHook(QEvent *e) {
 	showHeaderHint(false);
 	if (_hovered >= 0 || _hoveredHeader >= 0 || _hoveredDot >= 0) {
 		_hovered = _hoveredHeader = _hoveredDot = -1;
+		_hoveredHistory = nullptr;
 		update();
 	}
 }
@@ -1007,21 +1053,47 @@ void View::paintPage(Painter &p, int page, double shift) {
 	// The dial turns and resizes under a still pointer: name a face only
 	// while the pointer is still on the chat it last moved onto.
 	const auto hovered = [&] {
-		if (!current || _drag != Drag::None || _hovered < 0 || !underMouse()) {
+		if (!current
+			|| _drag != Drag::None
+			|| _hovered < 0
+			|| _hovered >= count
+			|| _hoverBlocked
+			|| !underMouse()) {
 			return -1;
 		}
 		const auto inside = toPage(QPointF(mapFromGlobal(QCursor::pos())));
 		const auto under = _dial->faceAt(inside, spin.position, count);
-		return (under == _hovered) ? under : -1;
+		return (under == _hovered && chats[under].get() == _hoveredHistory)
+			? under
+			: -1;
 	}();
 	const auto focusIndex = count ? FocusIndex(spin.position, count) : -1;
-	const auto pointed = (current && hovered >= 0 && hovered < count && hovered != focusIndex)
+	const auto pointed = (current && hovered >= 0 && hovered != focusIndex)
 		? chats[hovered].get()
 		: nullptr;
-	if (current && pointed != _previewHover) {
-		_previewHover = pointed;
-		_previewAt = now();
-		startAnimation();
+	const auto focusedHistory = count ? chats[focusIndex].get() : nullptr;
+	const auto previewed = pointed ? pointed : focusedHistory;
+	if (current) {
+		if (pointed != _previewHover) {
+			// The pointer moved onto a face or off it: the preview
+			// crossfades from what it showed to the new chat.
+			_previewHover = pointed;
+			if (previewed != _previewShown) {
+				const auto t = now();
+				const auto in = EaseOutCubic((t - _previewAt) / kPreviewFade);
+				const auto out = _previewOld ? (_previewOldFrom * (1. - in)) : 0.;
+				if (in >= out) {
+					_previewOld = _previewShown;
+					_previewOldFrom = in;
+				} else {
+					_previewOldFrom = out;
+				}
+				_previewAt = t;
+				startAnimation();
+			}
+		}
+		// The focus moving on during a spin swaps the words at once.
+		_previewShown = previewed;
 	}
 	auto frame = DialFrame{
 		.position = spin.position,
@@ -1035,13 +1107,17 @@ void View::paintPage(Painter &p, int page, double shift) {
 			(now() - _movedAt - kNamesDelay) / kNamesFade,
 			0.,
 			1.),
-		.focused = count ? chats[focusIndex].get() : nullptr,
+		.focused = focusedHistory,
 		.loading = !count && !_model->fullyLoaded(id),
 	};
-	frame.previewed = pointed ? pointed : frame.focused;
+	frame.previewed = previewed;
 	frame.previewAlpha = current
 		? EaseOutCubic((now() - _previewAt) / kPreviewFade)
 		: 1.;
+	if (current && _previewOld && _previewOld != previewed) {
+		frame.previewedOld = _previewOld;
+		frame.previewOldAlpha = _previewOldFrom * (1. - frame.previewAlpha);
+	}
 	const auto rect = pageRect();
 	p.save();
 	p.translate(rect.x() + shift, rect.y());

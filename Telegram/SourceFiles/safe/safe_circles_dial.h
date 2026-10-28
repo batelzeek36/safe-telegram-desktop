@@ -41,6 +41,10 @@ struct DialFrame {
 	// the pointer moves onto a face or off it.
 	History *previewed = nullptr;
 	double previewAlpha = 1.;
+	// The chat the preview showed before, fading out under the new one
+	// (a crossfade, never an empty hub or card in between).
+	History *previewedOld = nullptr;
+	double previewOldAlpha = 0.;
 	bool loading = false;
 	bool keyboard = false; // the chat list has the keyboard focus
 };

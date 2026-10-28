@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "dialogs/dialogs_common.h"
+#include "safe/safe_circles_core.h"
 
 class History;
 class Painter;
@@ -39,6 +40,8 @@ struct FacePlace {
 	double focus = 0.; // 0 .. 1, how far into the focus slot
 	double offset = 0.; // slots from the focus
 	double nameAlpha = 0.; // its name pill (the focus's neighbours)
+	// Where its badge sits, clockwise from twelve (BadgeAngle).
+	double badgeAngle = kBadgeShoulder;
 };
 
 [[nodiscard]] QColor Mix(const QColor &a, const QColor &b, double amount);
@@ -77,11 +80,19 @@ void PaintHoverRing(Painter &p, const FacePlace &place);
 // A soft light under the focused face.
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha);
 
-// A name pill's rectangle centered on `center`, at most `maxWidth` wide
-// (empty for an empty name), and the pill drawn in it.
-[[nodiscard]] QRectF NamePillRect(
+// A neighbour's name pill at most `maxWidth` wide: its line is cut to
+// PillTextRoom(maxWidth), except a name over by no more than PillSlack()
+// (less than an ellipsis and 2 pt), which stays whole and takes the room
+// from the pill's padding, then from the page's margin: `margin` is the
+// room the pill keeps from the page's edges then. Empty for an empty name.
+struct PillSize {
+	QSizeF size;
+	double margin = 0.;
+};
+[[nodiscard]] int PillTextRoom(int maxWidth);
+[[nodiscard]] int PillSlack();
+[[nodiscard]] PillSize NamePillSize(
 	const Ui::Text::String &name,
-	QPointF center,
 	int maxWidth);
 void PaintNamePillIn(
 	Painter &p,

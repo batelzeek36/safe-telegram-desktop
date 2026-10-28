@@ -22,6 +22,8 @@ namespace {
 const auto kEllipsis = QString(QChar(0x2026));
 // A one-line label cut between words keeps at least this share of its room.
 constexpr auto kWordCutShare = 0.6;
+// A word cut to fill a line after other words shows this many letters.
+constexpr auto kCutLettersMin = 3;
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -46,19 +48,45 @@ constexpr auto kWordCutShare = 0.6;
 	return result;
 }
 
+// A text with any left-to-right letters reads left to right, so a name
+// mixing Hebrew and English keeps its order and its ellipsis at the end
+// ("זְכַרְיָה, Michelle and…", never "…Michelle and ,זְכַרְיָה"); a text all in
+// a right-to-left script keeps its own direction. Decided once for a whole
+// text, so every line cut from it agrees.
+[[nodiscard]] Qt::LayoutDirection DirectionOf(const QString &text) {
+	const auto size = int(text.size());
+	for (auto i = 0; i != size; ++i) {
+		auto ucs4 = uint(text[i].unicode());
+		if (text[i].isHighSurrogate()
+			&& i + 1 < size
+			&& text[i + 1].isLowSurrogate()) {
+			ucs4 = QChar::surrogateToUcs4(text[i], text[i + 1]);
+			++i;
+		}
+		if (QChar::direction(ucs4) == QChar::DirL) {
+			return Qt::LeftToRight;
+		}
+	}
+	return Qt::LayoutDirectionAuto;
+}
+
 [[nodiscard]] Ui::Text::String Line(
 		const style::TextStyle &st,
-		const TextWithEntities &text) {
-	return Ui::Text::String(st, text, kMarkupTextOptions);
+		const TextWithEntities &text,
+		Qt::LayoutDirection direction) {
+	auto options = kMarkupTextOptions;
+	options.dir = direction;
+	return Ui::Text::String(st, text, options);
 }
 
 [[nodiscard]] int WidthOf(
 		const TextWithEntities &text,
 		const style::TextStyle &st,
 		int from,
-		int till) {
+		int till,
+		Qt::LayoutDirection direction) {
 	return (till > from)
-		? Line(st, Ui::Text::Mid(text, from, till - from)).maxWidth()
+		? Line(st, Ui::Text::Mid(text, from, till - from), direction).maxWidth()
 		: 0;
 }
 
@@ -76,32 +104,27 @@ constexpr auto kWordCutShare = 0.6;
 MeasuredWords MeasureWords(
 		const TextWithEntities &text,
 		const style::TextStyle &st) {
-	auto result = MeasuredWords{ .text = text };
+	auto result = MeasuredWords{
+		.text = text,
+		.direction = DirectionOf(text.text),
+	};
 	const auto &s = text.text;
-	const auto size = int(s.size());
 	const auto space = st.font->spacew;
-	auto i = 0;
-	while (i < size) {
-		while (i < size && s[i].isSpace()) {
-			++i;
-		}
-		if (i >= size) {
-			break;
-		}
-		auto j = i;
-		while (j < size && !s[j].isSpace()) {
-			++j;
-		}
-		const auto width = WidthOf(text, st, i, j);
+	const auto direction = result.direction;
+	result.ranges = SplitWords(std::u16string_view(
+		reinterpret_cast<const char16_t*>(s.utf16()),
+		std::size_t(s.size())));
+	for (const auto &[i, j] : result.ranges) {
+		const auto width = WidthOf(text, st, i, j, direction);
 		const auto end = TrimmedEnd(s, i, j);
-		result.ranges.emplace_back(i, j);
 		result.words.push_back({
 			.width = width,
-			.trimmed = (end == j) ? width : WidthOf(text, st, i, end),
+			.trimmed = (end == j)
+				? width
+				: WidthOf(text, st, i, end, direction),
 			.space = space,
 			.letters = Letters(s, i, j),
 		});
-		i = j;
 	}
 	result.ellipsis = st.font->width(kEllipsis);
 	return result;
@@ -115,6 +138,7 @@ std::vector<Ui::Text::String> FittedLines(
 	auto result = std::vector<Ui::Text::String>();
 	const auto &text = measured.text;
 	const auto &s = text.text;
+	const auto direction = measured.direction;
 	for (auto i = 0; i != int(fit.lines.size()); ++i) {
 		const auto &line = fit.lines[i];
 		if (line.till <= line.from
@@ -128,7 +152,8 @@ std::vector<Ui::Text::String> FittedLines(
 			const auto [wordFrom, wordTill] = measured.ranges[line.till - 1];
 			const auto fits = [&](int keep) {
 				const auto end = TrimmedEnd(s, from, wordFrom + keep);
-				return Line(st, Cut(text, from, end)).maxWidth() <= width;
+				return Line(st, Cut(text, from, end), direction).maxWidth()
+					<= width;
 			};
 			auto low = 0;
 			auto high = wordTill - wordFrom;
@@ -144,16 +169,27 @@ std::vector<Ui::Text::String> FittedLines(
 			if (end > wordFrom && end < int(s.size()) && s[end].isLowSurrogate()) {
 				--end;
 			}
-			result.push_back(Line(st, Cut(text, from, TrimmedEnd(s, from, end))));
+			if (wordFrom > from && Letters(s, wordFrom, end) < kCutLettersMin) {
+				// A word filling a line after others shows a few letters at
+				// least, else the line stops after the words before it.
+				end = wordFrom;
+			}
+			result.push_back(Line(
+				st,
+				Cut(text, from, TrimmedEnd(s, from, end)),
+				direction));
 		} else if (line.ellipsis) {
 			const auto end = TrimmedEnd(
 				s,
 				from,
 				measured.ranges[line.till - 1].second);
-			result.push_back(Line(st, Cut(text, from, end)));
+			result.push_back(Line(st, Cut(text, from, end), direction));
 		} else {
 			const auto end = measured.ranges[line.till - 1].second;
-			result.push_back(Line(st, Ui::Text::Mid(text, from, end - from)));
+			result.push_back(Line(
+				st,
+				Ui::Text::Mid(text, from, end - from),
+				direction));
 		}
 	}
 	return result;
@@ -163,16 +199,21 @@ const Ui::Text::String &LineCache::line(
 		not_null<History*> history,
 		const TextWithEntities &text,
 		const style::TextStyle &st,
-		int width) {
+		int width,
+		int slack) {
 	auto &entry = _entries[history];
-	if (entry.width == width && entry.st == &st && entry.text == text.text) {
+	if (entry.width == width
+		&& entry.slack == slack
+		&& entry.st == &st
+		&& entry.text == text.text) {
 		return entry.line;
 	}
 	entry.width = width;
+	entry.slack = slack;
 	entry.st = &st;
 	entry.text = text.text;
-	auto full = Line(st, text);
-	if (full.maxWidth() <= width) {
+	auto full = Line(st, text, DirectionOf(text.text));
+	if (full.maxWidth() <= width + std::max(slack, 0)) {
 		entry.line = std::move(full);
 		return entry.line;
 	}
@@ -200,7 +241,7 @@ const Ui::Text::String &LineCache::line(
 	return entry.line;
 }
 
-void HubPreview::prepare(
+int HubPreview::prepare(
 		Model &model,
 		not_null<History*> history,
 		int radius) {
@@ -208,27 +249,34 @@ void HubPreview::prepare(
 	const auto &marked = model.previewMarked(history);
 	const auto time = model.time(history);
 	const auto badges = model.badges(history);
-	if (_history == history
-		&& _radius == radius
-		&& _name == name
-		&& _text == marked.text
-		&& _time == time
-		&& _badges == badges) {
-		return;
+	// The slot used last, else the other one: it holds this chat or the
+	// one used longer ago (a fade paints the old chat, then the new).
+	const auto index = (_slots[_recent].history == history)
+		? _recent
+		: (1 - _recent);
+	_recent = index;
+	auto &slot = _slots[index];
+	if (slot.history == history
+		&& slot.radius == radius
+		&& slot.name == name
+		&& slot.text == marked.text
+		&& slot.time == time
+		&& slot.badges == badges) {
+		return index;
 	}
-	_history = history;
-	_radius = radius;
-	_name = name;
-	_text = marked.text;
-	_time = time;
-	_badges = badges;
+	slot.history = history;
+	slot.radius = radius;
+	slot.name = name;
+	slot.text = marked.text;
+	slot.time = time;
+	slot.badges = badges;
 
 	const auto &nameSt = st::circlesHubName;
 	const auto &textSt = st::circlesHubText;
 	const auto names = MeasureWords({ name }, nameSt);
 	const auto texts = MeasureWords(marked, textSt);
-	_timeWidth = time.isEmpty() ? 0 : st::circlesHubTimeFont->width(time);
-	_badge = BadgeSize(badges);
+	auto timeWidth = time.isEmpty() ? 0 : st::circlesHubTimeFont->width(time);
+	auto badge = BadgeSize(badges);
 
 	auto input = HubInput{
 		.radius = double(radius),
@@ -243,31 +291,38 @@ void HubPreview::prepare(
 			.lineHeight = LineHeightOf(textSt),
 			.ellipsis = texts.ellipsis,
 			.maxLines = 2,
+			.wholeLetters = kMessageCutLetters,
+			.fillShare = kMessageFillShare,
 		},
 		.gapText = S(2),
 		.gapMeta = S(4),
+		// Unread: the face wears the badge, the message comes first.
+		.messageFirst = !badge.isEmpty(),
 	};
 	const auto timeHeight = st::circlesHubTimeFont->height;
-	if (_timeWidth && !_badge.isEmpty()) {
+	if (timeWidth && !badge.isEmpty()) {
 		input.metas.push_back({
-			_timeWidth + S(6) + _badge.width(),
-			std::max(timeHeight, _badge.height()),
+			timeWidth + S(6) + badge.width(),
+			std::max(timeHeight, badge.height()),
 		});
-		input.metas.push_back({ _timeWidth, timeHeight });
-	} else if (_timeWidth) {
-		input.metas.push_back({ _timeWidth, timeHeight });
-	} else if (!_badge.isEmpty()) {
-		input.metas.push_back({ _badge.width(), _badge.height() });
+		input.metas.push_back({ timeWidth, timeHeight });
+	} else if (timeWidth) {
+		input.metas.push_back({ timeWidth, timeHeight });
+	} else if (!badge.isEmpty()) {
+		input.metas.push_back({ badge.width(), badge.height() });
 	}
-	_plan = PlanHub(input);
-	_nameLines = FittedLines(names, _plan.name, _plan.nameWidths, nameSt);
-	_textLines = FittedLines(texts, _plan.text, _plan.textWidths, textSt);
-	if (_plan.meta < 0) {
-		_timeWidth = 0;
-		_badge = QSize();
-	} else if (_timeWidth && !_badge.isEmpty() && _plan.meta == 1) {
-		_badge = QSize();
+	slot.plan = PlanHub(input);
+	slot.nameLines = FittedLines(names, slot.plan.name, slot.plan.nameWidths, nameSt);
+	slot.textLines = FittedLines(texts, slot.plan.text, slot.plan.textWidths, textSt);
+	if (slot.plan.meta < 0) {
+		timeWidth = 0;
+		badge = QSize();
+	} else if (timeWidth && !badge.isEmpty() && slot.plan.meta == 1) {
+		badge = QSize();
 	}
+	slot.timeWidth = timeWidth;
+	slot.badge = badge;
+	return index;
 }
 
 void HubPreview::paint(
@@ -277,7 +332,7 @@ void HubPreview::paint(
 		QPointF center,
 		double radius,
 		double alpha) {
-	prepare(model, history, int(std::floor(radius)));
+	const auto &slot = _slots[prepare(model, history, int(std::floor(radius)))];
 	if (alpha <= 0.01) {
 		return;
 	}
@@ -302,40 +357,43 @@ void HubPreview::paint(
 				style::al_center);
 		}
 	};
+	const auto &plan = slot.plan;
 	draw(
-		_nameLines,
-		_plan.nameWidths,
-		_plan.nameTop,
+		slot.nameLines,
+		plan.nameWidths,
+		plan.nameTop,
 		LineHeightOf(st::circlesHubName),
 		TextColor());
 	draw(
-		_textLines,
-		_plan.textWidths,
-		_plan.textTop,
+		slot.textLines,
+		plan.textWidths,
+		plan.textTop,
 		LineHeightOf(st::circlesHubText),
 		SubTextColor());
-	if (_plan.meta >= 0 && (_timeWidth || !_badge.isEmpty())) {
+	const auto timeWidth = slot.timeWidth;
+	const auto badge = slot.badge;
+	if (plan.meta >= 0 && (timeWidth || !badge.isEmpty())) {
 		const auto &font = st::circlesHubTimeFont;
 		const auto height = std::max(
-			_timeWidth ? font->height : 0,
-			_badge.height());
-		const auto between = (_timeWidth && !_badge.isEmpty()) ? S(6) : 0;
-		const auto full = _timeWidth + between + _badge.width();
+			timeWidth ? font->height : 0,
+			badge.height());
+		const auto between = (timeWidth && !badge.isEmpty()) ? S(6) : 0;
+		const auto full = timeWidth + between + badge.width();
 		auto x = center.x() - full / 2.;
-		const auto top = center.y() + _plan.metaTop;
-		if (_timeWidth) {
+		const auto top = center.y() + plan.metaTop;
+		if (timeWidth) {
 			p.setFont(font);
 			p.setPen(st::dialogsDateFg);
 			p.drawText(
 				QPointF(x, top + (height - font->height) / 2. + font->ascent),
-				_time);
-			x += _timeWidth + between;
+				slot.time);
+			x += timeWidth + between;
 		}
-		if (!_badge.isEmpty()) {
+		if (!badge.isEmpty()) {
 			PaintBadgeAt(
 				p,
-				_badges,
-				QPointF(x + _badge.width() / 2., top + height / 2.),
+				slot.badges,
+				QPointF(x + badge.width() / 2., top + height / 2.),
 				1.);
 		}
 	}

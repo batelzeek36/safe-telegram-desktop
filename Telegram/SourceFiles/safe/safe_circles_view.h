@@ -140,6 +140,11 @@ private:
 	void checkLoadMore(FilterId id);
 
 	void updateHover(QPointF point);
+	// The dial turned (or the circle or its order changed) without the
+	// pointer driving it: no face is hovered until the pointer itself moves
+	// kHoverWake pt, so a face that slid under a still pointer is not named.
+	void blockHover();
+	[[nodiscard]] bool hoverBlocked();
 	void showHeaderHint(bool shown);
 	[[nodiscard]] int headerItemAt(QPointF point) const;
 	[[nodiscard]] int dotAt(QPointF point) const;
@@ -188,11 +193,18 @@ private:
 	double _movedAt = -10.; // the last frame the dial or the page moved
 	double _lastFrame = 0.;
 	int _hovered = -1;
+	History *_hoveredHistory = nullptr; // the chat _hovered was
 	int _hoveredHeader = -1;
 	int _hoveredDot = -1;
+	bool _hoverBlocked = false;
+	QPoint _hoverBlockedAt; // the pointer, global, when it was blocked
 	// The chat under the pointer the hub or the card shows instead of the
-	// focused one, and when that last changed (its words fade in).
+	// focused one, and when that last changed (its words fade in while the
+	// ones shown before fade out from where they were).
 	History *_previewHover = nullptr;
+	History *_previewShown = nullptr;
+	History *_previewOld = nullptr;
+	double _previewOldFrom = 0.;
 	double _previewAt = -10.;
 	// "Next unread" under the circle's name while the pointer is on it.
 	bool _headerHintShown = false;

@@ -25,6 +25,8 @@ namespace {
 constexpr auto kRingGap = 3.;
 constexpr auto kRingWidth = 2.;
 constexpr auto kPillPadding = 7;
+// A name a little too long for its pill takes its padding down to this.
+constexpr auto kPillPaddingMin = 4;
 constexpr auto kBadgeGap = 2; // background between a badge and what it sits on
 constexpr auto kPageMargin = 16;
 // A face this share of its largest size or more wears the full badge; a
@@ -165,7 +167,10 @@ void PaintFace(
 	// size, a small solid dot on a far one, never a see-through disc.
 	const auto state = model.badges(history);
 	const auto full = (place.size / std::max(largest, 1.)) >= kFullBadge;
-	const auto at = place.center + QPointF(r * 0.72, -r * 0.72);
+	// On the face's rim, on its outer side (see BadgeAngle).
+	const auto at = place.center + QPointF(
+		std::sin(place.badgeAngle),
+		-std::cos(place.badgeAngle)) * (r * 1.018);
 	const auto dot = std::clamp(place.size * 0.26, double(S(6)), double(S(9)));
 	const auto badge = !HasBadge(state)
 		? QSizeF()
@@ -236,22 +241,36 @@ void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha) {
 	p.drawEllipse(center, radius, radius);
 }
 
-QRectF NamePillRect(
-		const Ui::Text::String &name,
-		QPointF center,
-		int maxWidth) {
+int PillTextRoom(int maxWidth) {
+	return maxWidth - 2 * S(kPillPadding);
+}
+
+int PillSlack() {
+	return st::chatSimilarName.font->width(QString(QChar(0x2026))) + S(2);
+}
+
+PillSize NamePillSize(const Ui::Text::String &name, int maxWidth) {
 	const auto padding = S(kPillPadding);
-	const auto textWidth = std::min(name.maxWidth(), maxWidth - 2 * padding);
-	if (name.isEmpty() || textWidth <= 0) {
-		return QRectF();
+	const auto least = S(kPillPaddingMin);
+	const auto room = PillTextRoom(maxWidth);
+	if (name.isEmpty() || room <= 0) {
+		return {};
 	}
 	const auto height = LineHeightOf(st::chatSimilarName) + S(5);
-	const auto width = textWidth + 2 * padding;
-	return QRectF(
-		center.x() - width / 2.,
-		center.y() - height / 2.,
-		width,
-		height);
+	const auto over = name.maxWidth() - room;
+	if (over <= 0 || over > PillSlack()) {
+		// Fits, or was not let run over (it elides in its pill).
+		const auto width = std::min(name.maxWidth(), room) + 2 * padding;
+		return { QSizeF(width, height), double(PageMargin()) };
+	}
+	// A name a little too long keeps whole: the pill's padding gives the
+	// room first, then the page's margin.
+	const auto fromPadding = std::min(over, 2 * (padding - least));
+	const auto fromMargin = over - fromPadding;
+	return {
+		QSizeF(maxWidth + fromMargin, height),
+		double(PageMargin() - fromMargin),
+	};
 }
 
 void PaintNamePillIn(
@@ -263,7 +282,8 @@ void PaintNamePillIn(
 		return;
 	}
 	const auto &st = st::chatSimilarName;
-	const auto padding = S(kPillPadding);
+	// Centered in the pill; it elides only past the least padding.
+	const auto padding = S(kPillPaddingMin);
 	const auto height = rect.height();
 	auto hq = PainterHighQualityEnabler(p);
 	p.setOpacity(alpha);

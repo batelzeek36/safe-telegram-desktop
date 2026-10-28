@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "safe/safe_circles_fit.h"
 #include "ui/text/text.h"
 
+#include <array>
 #include <map>
 
 class History;
@@ -27,6 +28,9 @@ class Model;
 // A text's words as FitWords measures them, in `st`.
 struct MeasuredWords {
 	TextWithEntities text;
+	// Left to right when the text has any left-to-right letters (a name
+	// mixing Hebrew and English), else the text's own.
+	Qt::LayoutDirection direction = Qt::LayoutDirectionAuto;
 	std::vector<std::pair<int, int>> ranges; // each word's [from, till)
 	std::vector<FitWord> words;
 	int ellipsis = 0;
@@ -45,21 +49,24 @@ struct MeasuredWords {
 	const style::TextStyle &st);
 
 // A chat's text on one line `width` wide, cut the same way, kept until
-// the text or the width changes. A returned line stays valid while other
-// chats' lines are added (a dial keeps several while it paints).
+// the text or the width changes; a text no more than `slack` too wide stays
+// whole (the caller finds the room). A returned line stays valid while
+// other chats' lines are added (a dial keeps several while it paints).
 class LineCache final {
 public:
 	[[nodiscard]] const Ui::Text::String &line(
 		not_null<History*> history,
 		const TextWithEntities &text,
 		const style::TextStyle &st,
-		int width);
+		int width,
+		int slack = 0);
 
 private:
 	struct Entry {
 		QString text;
 		const style::TextStyle *st = nullptr;
 		int width = -1;
+		int slack = 0;
 		Ui::Text::String line;
 	};
 	std::map<not_null<History*>, Entry> _entries;
@@ -68,7 +75,8 @@ private:
 
 // The Crown's hub: name (13 pt semibold, up to two lines), message (12 pt,
 // up to two) and time (11 pt) with the badge, each line as wide as the
-// circle `radius` round `center` is at its height.
+// circle `radius` round `center` is at its height. Two chats' layouts are
+// kept, so one can fade out while the next fades in.
 class HubPreview final {
 public:
 	void paint(
@@ -80,20 +88,29 @@ public:
 		double alpha);
 
 private:
-	void prepare(Model &model, not_null<History*> history, int radius);
+	struct Prepared {
+		History *history = nullptr;
+		QString name;
+		QString text;
+		QString time;
+		Dialogs::BadgesState badges;
+		int radius = -1;
 
-	History *_history = nullptr;
-	QString _name;
-	QString _text;
-	QString _time;
-	Dialogs::BadgesState _badges;
-	int _radius = -1;
+		HubPlan plan;
+		std::vector<Ui::Text::String> nameLines;
+		std::vector<Ui::Text::String> textLines;
+		int timeWidth = 0;
+		QSize badge;
+	};
 
-	HubPlan _plan;
-	std::vector<Ui::Text::String> _nameLines;
-	std::vector<Ui::Text::String> _textLines;
-	int _timeWidth = 0;
-	QSize _badge;
+	// The slot holding `history`'s layout, laid out again if it changed.
+	[[nodiscard]] int prepare(
+		Model &model,
+		not_null<History*> history,
+		int radius);
+
+	std::array<Prepared, 2> _slots;
+	int _recent = 0;
 
 };
 

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_calm_files.h"
 #include "safe/safe_calm_leaf.h"
+#include "safe/safe_circles_paint.h"
 #include "settings/settings_common.h"
 #include "ui/painter.h"
 #include "ui/vertical_list.h"
@@ -202,6 +203,36 @@ QString LayoutAbout(Layout layout) {
 	return QString();
 }
 
+namespace {
+
+// A hairline round the popup in the circles' raised-surface edge color: it
+// opens over the main menu, both paint the menu background, and a dark
+// theme's shadow barely shows, so without it the two run together.
+void AddPopupEdge(not_null<Ui::PopupMenu*> popup) {
+	const auto edge = Ui::CreateChild<Ui::RpWidget>(popup.get());
+	edge->setAttribute(Qt::WA_TransparentForMouseEvents);
+	popup->sizeValue(
+	) | rpl::on_next([=](QSize size) {
+		edge->setGeometry(QRect(QPoint(), size));
+	}, edge->lifetime());
+	edge->paintRequest(
+	) | rpl::on_next([=] {
+		auto p = QPainter(edge);
+		auto hq = PainterHighQualityEnabler(p);
+		const auto half = st::lineWidth / 2.;
+		const auto rect = QRectF(popup->inner()).marginsRemoved(
+			{ half, half, half, half });
+		const auto radius = st::popupMenuWithIcons.radius;
+		p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
+		p.setBrush(Qt::NoBrush);
+		p.drawRoundedRect(rect, radius, radius);
+	}, edge->lifetime());
+	edge->show();
+	edge->raise();
+}
+
+} // namespace
+
 void AddMainMenuRow(
 		not_null<Ui::VerticalLayout*> menu,
 		not_null<Window::SessionController*> controller) {
@@ -227,6 +258,7 @@ void AddMainMenuRow(
 				});
 			}, (layout == current) ? &st::mediaPlayerMenuCheck : nullptr);
 		}
+		AddPopupEdge(popup->get());
 		// Upward from the row's value, so it opens over the menu, inside
 		// the window, not hanging below it.
 		(*popup)->setForcedOrigin(Ui::PanelAnimation::Origin::BottomRight);

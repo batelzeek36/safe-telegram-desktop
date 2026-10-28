@@ -72,7 +72,7 @@ private:
 	void paintCard(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF frontCenter() const;
 	[[nodiscard]] QRectF besidePill(
-		const Ui::Text::String &name,
+		const PillSize &pill,
 		const FacePlace &face) const;
 
 	QSize _size;
@@ -161,6 +161,12 @@ std::vector<FacePlace> Orbit::place(double position, int count) const {
 			.focus = focus,
 			.offset = visible.offset,
 			.nameAlpha = NameAlpha(visible.offset, kNameReach),
+			// Away from the leaf, lifted above a name under the face.
+			.badgeAngle = OrbitOutward(
+				angle,
+				_rx,
+				_ry,
+				Smooth(1. - std::abs(std::abs(visible.offset) - 1.))),
 		});
 	}
 	ranges::sort(result, ranges::less(), &FacePlace::depth);
@@ -207,6 +213,15 @@ void Orbit::paintCard(
 	p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
 	p.drawRoundedRect(QRectF(_card), radius, radius);
 	if (const auto history = frame.previewed) {
+		if (const auto old = frame.previewedOld) {
+			// The chat shown before fades out under the new one.
+			_preview.paint(
+				p,
+				model,
+				not_null<History*>(old),
+				_card,
+				frame.previewOldAlpha);
+		}
 		_preview.paint(
 			p,
 			model,
@@ -267,7 +282,7 @@ void Orbit::paint(
 	if (!leafDrawn) {
 		drawLeaf();
 	}
-	const auto room = pillWidth() - 2 * S(7);
+	const auto maxWidth = pillWidth();
 	for (const auto &face : faces) {
 		const auto alpha = face.nameAlpha * face.alpha * frame.names;
 		if (face.index >= int(chats.size()) || alpha <= 0.01) {
@@ -278,8 +293,13 @@ void Orbit::paint(
 			history,
 			{ model.shortName(history).toString() },
 			st::chatSimilarName,
-			room);
-		PaintNamePillIn(p, name, besidePill(name, face), alpha);
+			PillTextRoom(maxWidth),
+			PillSlack());
+		PaintNamePillIn(
+			p,
+			name,
+			besidePill(NamePillSize(name, maxWidth), face),
+			alpha);
 	}
 	PaintNotch(
 		p,
@@ -293,16 +313,14 @@ void Orbit::paint(
 // bottom edge (below the neighbours, never on a face), pushed out to the side
 // clear of the front face, and kept inside the page.
 QRectF Orbit::besidePill(
-		const Ui::Text::String &name,
+		const PillSize &pill,
 		const FacePlace &face) const {
-	const auto frontBottom = frontCenter().y() + _face * kFocused / 2.;
-	auto rect = NamePillRect(
-		name,
-		QPointF(face.center.x(), frontBottom),
-		pillWidth());
-	if (rect.isEmpty()) {
-		return rect;
+	if (pill.size.isEmpty()) {
+		return QRectF();
 	}
+	const auto frontBottom = frontCenter().y() + _face * kFocused / 2.;
+	auto rect = QRectF(QPointF(), pill.size);
+	rect.moveCenter(QPointF(face.center.x(), frontBottom));
 	rect.translate(0., rect.height() * 0.15);
 	const auto clear = _face * kFocused / 2. + S(4);
 	if (face.center.x() > _center.x()) {
@@ -310,7 +328,7 @@ QRectF Orbit::besidePill(
 	} else {
 		rect.moveRight(std::min(rect.right(), _center.x() - clear));
 	}
-	const auto margin = double(PageMargin());
+	const auto margin = pill.margin;
 	rect.moveLeft(std::clamp(
 		rect.left(),
 		margin,
