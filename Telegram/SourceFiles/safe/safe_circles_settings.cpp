@@ -212,8 +212,11 @@ void AddMainMenuRow(
 		const auto current = CurrentLayout();
 		for (const auto layout : AllLayouts()) {
 			(*popup)->addAction(LayoutName(layout), [=] {
-				SetLayout(layout);
-				controller->window().hideSettingsAndLayer();
+				// The main menu (and this popup) closes; not from inside it.
+				crl::on_main(controller, [=] {
+					SetLayout(layout);
+					controller->window().hideSettingsAndLayer();
+				});
 			}, (layout == current) ? &st::mediaPlayerMenuCheck : nullptr);
 		}
 		const auto at = button->mapToGlobal(QPoint(
