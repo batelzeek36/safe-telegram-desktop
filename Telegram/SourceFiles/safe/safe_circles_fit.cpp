@@ -80,6 +80,17 @@ namespace {
 	return (c >= u'\u2010' && c <= u'\u2015');
 }
 
+// A word may be cut inside, its first part shown in `room` (the line less
+// the words before it and the ellipsis): one of `wholeLetters` letters or
+// more, or a run with no letters (emoji) whose first emoji fits there: it
+// is cut between its emoji (CutUnits).
+[[nodiscard]] bool MayCut(const FitWord &word, int wholeLetters, int room) {
+	if (word.letters <= 0 && word.unit > 0) {
+		return (word.unit <= room);
+	}
+	return (word.letters >= wholeLetters);
+}
+
 // A break before word `at` falls inside a label (its words either side).
 [[nodiscard]] bool InsideLabel(const std::vector<FitWord> &words, int at) {
 	return (at > 0)
@@ -337,6 +348,28 @@ int CutShown(int letters, int fits, bool lettersBefore) {
 	return std::max(std::min(fits, most), std::min(fits, 1));
 }
 
+int CutUnits(const std::vector<bool> &letter, int fits, bool lettersBefore) {
+	const auto count = int(letter.size());
+	fits = std::clamp(fits, 0, count);
+	const auto letters = int(std::count(begin(letter), end(letter), true));
+	const auto fitting = int(std::count(
+		begin(letter),
+		begin(letter) + fits,
+		true));
+	if (fitting == letters) {
+		// Past the last letter: whole emoji, every one that fits.
+		return fits;
+	}
+	const auto shown = CutShown(letters, fitting, lettersBefore);
+	auto seen = 0;
+	for (auto i = 0; i != fits && shown > 0; ++i) {
+		if (letter[i] && ++seen == shown) {
+			return i + 1;
+		}
+	}
+	return 0;
+}
+
 double ChordWidth(double radius, double top, double bottom) {
 	const auto far = std::max(std::abs(top), std::abs(bottom));
 	if (radius <= 0. || far >= radius) {
@@ -422,14 +455,20 @@ WordFit FitWords(
 			const auto fill = (fillShare > 0.)
 				&& (keep < count)
 				&& !words[keep].label
-				&& (words[keep].letters >= wholeLetters)
+				&& MayCut(
+					words[keep],
+					wholeLetters,
+					width - Span(words, from, keep, false)
+						- words[keep - 1].space
+						- ellipsis)
 				&& (Span(words, from, keep, true) + ellipsis
 					< width * fillShare);
 			result.lines.push_back({ from, fill ? (keep + 1) : keep, true, fill });
 			result.shown += keep - from;
 			return result;
 		}
-		if (words[from].label || words[from].letters < wholeLetters) {
+		if (words[from].label
+			|| !MayCut(words[from], wholeLetters, width - ellipsis)) {
 			result.valid = false;
 			return result;
 		}

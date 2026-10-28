@@ -9,12 +9,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "safe/safe_circles_model.h"
 #include "safe/safe_circles_paint.h"
+#include "ui/emoji_config.h"
 #include "ui/painter.h"
 #include "ui/text/text_utilities.h"
 
 #include "styles/style_basic.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_safe_circles.h"
+
+#include <QtCore/QTextBoundaryFinder>
 
 namespace Safe::Circles {
 namespace {
@@ -106,19 +109,42 @@ constexpr auto kHubTimeQuiet = 0.3;
 	return result;
 }
 
-// Where `shown` letters of the word starting at `from` end (before the
-// next letter), never between a surrogate pair.
-[[nodiscard]] int AfterLetters(const QString &text, int from, int till, int shown) {
+// Where each unit of the word [from, till) ends: its graphemes, an emoji as
+// Telegram draws it (one picture however many code points: "❤️", a flag, a
+// family, a keycap) being one, so a cut never splits one.
+[[nodiscard]] std::vector<int> UnitEnds(const QString &text, int from, int till) {
+	auto result = std::vector<int>();
+	auto graphemes = QTextBoundaryFinder(QTextBoundaryFinder::Grapheme, text);
+	const auto data = text.constData();
 	auto i = from;
-	auto counted = 0;
-	while (i < till && counted < shown) {
-		counted += text[i].isLetterOrNumber() ? 1 : 0;
-		++i;
+	while (i < till) {
+		auto length = 0;
+		auto next = i;
+		if (Ui::Emoji::Find(data + i, data + till, &length) && length > 0) {
+			next = i + length;
+		} else {
+			graphemes.setPosition(i);
+			next = int(graphemes.toNextBoundary());
+		}
+		i = (next > i) ? std::min(next, till) : till;
+		result.push_back(i);
 	}
-	if (i > from && i < int(text.size()) && text[i].isLowSurrogate()) {
-		++i;
+	return result;
+}
+
+// Whether each unit (UnitEnds) holds a letter or digit.
+[[nodiscard]] std::vector<bool> UnitLetters(
+		const QString &text,
+		int from,
+		const std::vector<int> &ends) {
+	auto result = std::vector<bool>();
+	result.reserve(ends.size());
+	auto start = from;
+	for (const auto end : ends) {
+		result.push_back(Letters(text, start, end) > 0);
+		start = end;
 	}
-	return i;
+	return result;
 }
 
 // The labels of a message line (IsLabelRun: "Voice message", "Photo"), each
@@ -171,17 +197,26 @@ MeasuredWords MeasureWords(
 		const auto width = WidthOf(text, st, i, j, direction);
 		const auto end = TrimmedEnd(s, i, j);
 		const auto separator = SeparatorStart(view, i, j);
+		const auto letters = Letters(s, i, j);
+		// A run with no letters may be cut between its emoji when its first
+		// one fits (FitWord::unit).
+		const auto unit = letters
+			? 0
+			: std::max(
+				WidthOf(text, st, i, UnitEnds(s, i, j).front(), direction),
+				1);
 		result.words.push_back({
 			.width = width,
 			.trimmed = (end == j)
 				? width
 				: WidthOf(text, st, i, end, direction),
 			.space = space,
-			.letters = Letters(s, i, j),
+			.letters = letters,
 			.bare = (separator < j)
 				? WidthOf(text, st, i, separator, direction)
 				: 0,
 			.label = labels[k],
+			.unit = unit,
 		});
 	}
 	result.ellipsis = st.font->width(kEllipsis);
@@ -205,16 +240,20 @@ std::vector<Ui::Text::String> FittedLines(
 		}
 		const auto from = measured.ranges[line.from].first;
 		if (line.cutWord) {
-			// The longest start of the long word that fits before "…".
+			// The most whole units of the long word that fit before "…".
 			const auto width = (i < int(widths.size())) ? widths[i] : 0;
 			const auto [wordFrom, wordTill] = measured.ranges[line.till - 1];
-			const auto fits = [&](int keep) {
-				const auto end = TrimmedEnd(s, from, wordFrom + keep);
+			const auto ends = UnitEnds(s, wordFrom, wordTill);
+			const auto endOf = [&](int units) {
+				return units ? ends[units - 1] : wordFrom;
+			};
+			const auto fits = [&](int units) {
+				const auto end = TrimmedEnd(s, from, endOf(units));
 				return Line(st, Cut(text, from, end), direction).maxWidth()
 					<= width;
 			};
 			auto low = 0;
-			auto high = wordTill - wordFrom;
+			auto high = int(ends.size());
 			while (low < high) {
 				const auto middle = (low + high + 1) / 2;
 				if (fits(middle)) {
@@ -223,19 +262,15 @@ std::vector<Ui::Text::String> FittedLines(
 					high = middle - 1;
 				}
 			}
-			auto end = wordFrom + low;
-			if (end > wordFrom && end < int(s.size()) && s[end].isLowSurrogate()) {
-				--end;
-			}
-			// The cut drops a few letters at least and, after other words,
-			// shows a few; else the line stops after the words before it.
-			const auto shown = CutShown(
-				Letters(s, wordFrom, wordTill),
-				Letters(s, wordFrom, end),
+			// Inside its letters the cut drops a few at least and, after
+			// other words, shows a few, else the line stops after the words
+			// before it; past its letters (a row of hearts) it shows every
+			// whole emoji that fits.
+			const auto shown = CutUnits(
+				UnitLetters(s, wordFrom, ends),
+				low,
 				Letters(s, from, wordFrom) > 0);
-			end = shown
-				? std::min(end, AfterLetters(s, wordFrom, wordTill, shown))
-				: wordFrom;
+			const auto end = endOf(shown);
 			result.push_back(Line(
 				st,
 				Cut(text, from, TrimmedEnd(s, from, end)),

@@ -83,6 +83,20 @@ inline constexpr int kCutLettersMin = 3;
 // Autopilot"), is cut deeper instead, to drop kCutDropMin ("🌿 Autopi…").
 [[nodiscard]] int CutShown(int letters, int fits, bool lettersBefore);
 
+// Where a word cut at the end of a line ends, counted in its units (its
+// graphemes, an emoji however many code points it takes being one, as
+// Telegram draws it): `letter[i]` = unit i is a letter or digit, `fits` =
+// how many units fit before the ellipsis. While the cut falls inside the
+// word's letters CutShown decides; once every letter fits (or the word has
+// none: a row of hearts) the cut falls between whole emoji and every unit
+// that fits shows ("❤️❤️❤️❤️…", "yes🎉🎉…"; design-evaluator pass 6: a row
+// of hearts counted no letters and its line was a bare "…"). 0 = none of it
+// (the line ends on the words before it).
+[[nodiscard]] int CutUnits(
+	const std::vector<bool> &letter,
+	int fits,
+	bool lettersBefore);
+
 struct FitWord {
 	int width = 0; // the word with its punctuation
 	int trimmed = 0; // without trailing punctuation (an ellipsis follows)
@@ -93,6 +107,10 @@ struct FitWord {
 	// words; 0 = none. A label is never cut inside, never ended inside with
 	// an ellipsis, and starts a new line rather than break across one.
 	int label = 0;
+	// A word with no letters (a row of hearts): its first emoji's width; it
+	// may be cut between its emoji when that one fits. 0 = not such a word
+	// (cut only by the letters rule).
+	int unit = 0;
 };
 
 struct FitLine {
@@ -118,7 +136,9 @@ struct WordFit {
 // a last line whose whole words and ellipsis take less than that share of
 // it is cut inside the next word instead, when that word may be cut.
 // A label's words (FitWord::label) are never cut and never split by the
-// ellipsis, whatever `wholeLetters` says.
+// ellipsis, whatever `wholeLetters` says. A word with no letters (a row of
+// hearts, FitWord::unit) may be cut between its emoji wherever its first
+// one fits (CutUnits): the "never cut a short word" rule is about letters.
 [[nodiscard]] WordFit FitWords(
 	const std::vector<FitWord> &words,
 	const std::vector<int> &widths,
