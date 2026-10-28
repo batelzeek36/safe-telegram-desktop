@@ -466,6 +466,7 @@ void View::refreshCircles() {
 		0,
 		std::max(pageCount() - 1, 0));
 	_pageGliding = false;
+	_dial->resize(pageRect().size());
 	accessibilityNameChanged();
 }
 
