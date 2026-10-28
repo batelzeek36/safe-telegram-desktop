@@ -261,9 +261,10 @@ void Model::refreshChats(FilterId id) {
 	}
 }
 
-bool Model::fullyLoaded(FilterId id) const {
-	return ListOf(_session, id)->loaded()
-		&& _session->data().chatsList()->loaded();
+bool Model::fullyLoaded(FilterId) const {
+	// A folder's chats come from the main list (its own list never says
+	// loaded): once every chat is known, every folder is complete.
+	return _session->data().chatsList()->loaded();
 }
 
 void Model::requestMore(FilterId id) {
