@@ -28,6 +28,9 @@ constexpr auto kPillPadding = 7;
 // A name a little too long for its pill takes its padding down to this.
 constexpr auto kPillPaddingMin = 4;
 constexpr auto kBadgeGap = 2; // background between a badge and what it sits on
+constexpr auto kHoverGap = 2; // between a face and its hover ring
+constexpr auto kClear = 2; // between a ring and a face it comes near
+constexpr auto kRingEdge = 1.; // their two soft edges
 constexpr auto kPageMargin = 16;
 // A face this share of its largest size or more wears the full badge; a
 // smaller one (far, behind the leaf) a small solid dot.
@@ -247,6 +250,49 @@ double FocusRingReach() {
 	return S(kRingGap) + S(kRingWidth);
 }
 
+double HoverRingReach() {
+	return S(kHoverGap) + st::lineWidth * 1.5;
+}
+
+double RingClear() {
+	return S(kClear) + kRingEdge;
+}
+
+QPainterPath RingDiscs(const std::vector<FacePlace> &faces, int hovered) {
+	auto result = QPainterPath();
+	for (auto i = 0; i != int(faces.size()); ++i) {
+		const auto &face = faces[i];
+		if (face.alpha <= 0.01) {
+			continue;
+		}
+		const auto r = face.size / 2.;
+		const auto reach = std::max(
+			(face.focus > 0.01) ? (FocusRingReach() * face.focus) : 0.,
+			(i == hovered) ? HoverRingReach() : 0.);
+		if (reach > 0.) {
+			result.addEllipse(face.center, r + reach, r + reach);
+		}
+	}
+	return result;
+}
+
+QPainterPath HoverHalo(const FacePlace &place) {
+	const auto r = place.size / 2. + HoverRingReach() + RingClear();
+	auto result = QPainterPath();
+	result.addEllipse(place.center, r, r);
+	return result;
+}
+
+void ClipOut(Painter &p, QSizeF size, const QPainterPath &cut) {
+	if (cut.isEmpty()) {
+		return;
+	}
+	const auto margin = std::max(size.width(), size.height());
+	auto keep = QPainterPath();
+	keep.addRect(QRectF(QPointF(), size).adjusted(-margin, -margin, margin, margin));
+	p.setClipPath(keep.subtracted(cut), Qt::IntersectClip);
+}
+
 bool WearsFullBadge(const FacePlace &place) {
 	const auto largest = std::max(place.size, place.maxSize);
 	return (place.size / std::max(largest, 1.)) >= kFullBadge;
@@ -256,20 +302,41 @@ void PaintHoverRing(
 		Painter &p,
 		Model &model,
 		not_null<History*> history,
-		const FacePlace &place) {
+		const std::vector<FacePlace> &faces,
+		int self) {
+	if (self < 0 || self >= int(faces.size())) {
+		return;
+	}
+	const auto &place = faces[self];
 	if (place.alpha <= 0.01) {
 		return;
 	}
 	auto hq = PainterHighQualityEnabler(p);
-	const auto outer = place.size / 2. + S(2) + st::lineWidth * 0.75;
+	const auto outer = place.size / 2. + S(kHoverGap) + st::lineWidth * 0.75;
+	const auto edge = place.size / 2. + HoverRingReach();
 	p.save();
+	auto cut = QPainterPath();
 	const auto spot = BadgeSpotOf(model.badges(history), place);
 	if (!spot.size.isEmpty()) {
+		cut.addPath(BadgeShape(spot.at, spot.size, S(kBadgeGap)));
+	}
+	for (auto i = 0; i != int(faces.size()); ++i) {
+		const auto &front = faces[i];
+		if (front.alpha <= 0.01 || front.depth <= place.depth) {
+			continue;
+		}
+		const auto r = front.size / 2.
+			+ ((front.focus > 0.01) ? FocusRingReach() : 0.)
+			+ RingClear();
+		const auto d = front.center - place.center;
+		if (std::hypot(d.x(), d.y()) < r + edge) {
+			cut.addEllipse(front.center, r, r);
+		}
+	}
+	if (!cut.isEmpty()) {
 		auto keep = QPainterPath();
 		keep.addEllipse(place.center, outer * 2., outer * 2.);
-		p.setClipPath(
-			keep.subtracted(BadgeShape(spot.at, spot.size, S(kBadgeGap))),
-			Qt::IntersectClip);
+		p.setClipPath(keep.subtracted(cut), Qt::IntersectClip);
 	}
 	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(

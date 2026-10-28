@@ -97,6 +97,18 @@ public:
 
 // Shared by both layouts.
 [[nodiscard]] double Smooth(double t);
+// Where in `faces` the face under the pointer is (`hovered` a chat of
+// `count`, not the focus), or -1.
+[[nodiscard]] int HoveredFace(
+	const std::vector<FacePlace> &faces,
+	int hovered,
+	int count);
+// Whether `faces[i]` lies behind the hovered `faces[hover]` (no deeper), so
+// it gives way round its ring (HoverHalo).
+[[nodiscard]] bool Behind(
+	const std::vector<FacePlace> &faces,
+	int i,
+	int hover);
 [[nodiscard]] double FocusAmount(double offset);
 [[nodiscard]] double NameAlpha(double offset, double reach);
 

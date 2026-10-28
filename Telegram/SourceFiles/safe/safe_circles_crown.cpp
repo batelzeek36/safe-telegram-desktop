@@ -36,6 +36,7 @@ constexpr auto kRingEdge = 1.;
 constexpr auto kBadgeEdge = 0.5;
 constexpr auto kMajorTick = 1.6; // line widths
 constexpr auto kTickPulse = 0.6; // the tick at twelve grows this much more
+constexpr auto kNotchSwell = 0.4; // the notch at a tick (PaintNotch)
 
 [[nodiscard]] int S(int value) {
 	return style::ConvertScale(value);
@@ -76,10 +77,12 @@ public:
 	[[nodiscard]] int pillWidth() const override;
 
 private:
+	// `rings`: the ring line under the faces stops at them (RingDiscs).
 	void paintBezel(
 		Painter &p,
 		const DialFrame &frame,
-		const std::vector<Pill> &pills) const;
+		const std::vector<Pill> &pills,
+		const QPainterPath &rings) const;
 	void paintHub(Painter &p, Model &model, const DialFrame &frame);
 	[[nodiscard]] QPointF at(double angle, double radius) const;
 	// Radians the faces either side of the focus are moved out by, so the
@@ -89,9 +92,22 @@ private:
 	[[nodiscard]] double badgeLimit() const;
 	void alignPills(std::vector<Pill> &pills) const;
 	[[nodiscard]] double nearest(const QRectF &rect) const;
+	// Where a neighbour's name goes; `clear` = how far from the middle of
+	// the column it keeps (the focused face's, or past the bezel only the
+	// notch's, see notchClear).
 	[[nodiscard]] QRectF neighbourPill(
 		const PillSize &pill,
-		const FacePlace &face) const;
+		const FacePlace &face,
+		double clear) const;
+	[[nodiscard]] double focusClear() const;
+	[[nodiscard]] double notchClear() const;
+	[[nodiscard]] bool outsideBezel(const QRectF &rect) const;
+	[[nodiscard]] int pillWidthClear(double clear) const;
+	[[nodiscard]] Pill neighbourName(
+		Model &model,
+		not_null<History*> history,
+		const FacePlace &face,
+		double alpha);
 
 	QSize _size;
 	QPointF _center;
@@ -105,6 +121,7 @@ private:
 
 	HubPreview _preview;
 	LineCache _pills;
+	LineCache _widePills;
 
 };
 
@@ -194,7 +211,8 @@ std::vector<FacePlace> Crown::place(double position, int count) const {
 void Crown::paintBezel(
 		Painter &p,
 		const DialFrame &frame,
-		const std::vector<Pill> &pills) const {
+		const std::vector<Pill> &pills,
+		const QPainterPath &rings) const {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto slots = std::max(SlotCount(frame.count), 1);
 	const auto apart = spread(frame.count);
@@ -247,9 +265,12 @@ void Crown::paintBezel(
 			Qt::RoundCap));
 		p.drawLine(from, till);
 	}
+	p.save();
+	ClipOut(p, _size, rings);
 	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(LineColor(), st::lineWidth));
 	p.drawEllipse(_center, _ring, _ring);
+	p.restore();
 }
 
 void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
@@ -316,7 +337,8 @@ void Crown::paintHub(Painter &p, Model &model, const DialFrame &frame) {
 // that it rests on the bezel and the ticks under it give way.
 QRectF Crown::neighbourPill(
 		const PillSize &pill,
-		const FacePlace &face) const {
+		const FacePlace &face,
+		double clear) const {
 	const auto size = pill.size;
 	const auto margin = pill.margin;
 	const auto outside = _outer + S(kTickClear) + st::lineWidth;
@@ -332,7 +354,6 @@ QRectF Crown::neighbourPill(
 		rect.translate(direction);
 	}
 	if (upper) {
-		const auto clear = _face * kGrow / 2. + S(kFocusClear);
 		if (right) {
 			rect.moveLeft(std::max(rect.left(), _center.x() + clear));
 		} else {
@@ -385,39 +406,37 @@ void Crown::paint(
 
 	const auto faces = place(frame.position, frame.count);
 	auto pills = std::vector<Pill>();
-	const auto maxWidth = pillWidth();
 	for (const auto &face : faces) {
 		const auto alpha = face.nameAlpha * face.alpha * frame.names;
 		if (face.index >= int(chats.size()) || alpha <= 0.01) {
 			continue;
 		}
-		const auto history = chats[face.index];
-		const auto &name = _pills.line(
-			history,
-			{ model.shortName(history).toString() },
-			st::chatSimilarName,
-			PillTextRoom(maxWidth),
-			PillSlack());
-		const auto size = NamePillSize(name, maxWidth);
-		if (size.size.isEmpty()) {
-			continue;
+		const auto pill = neighbourName(model, chats[face.index], face, alpha);
+		if (pill.name) {
+			pills.push_back(pill);
 		}
-		pills.push_back({
-			.rect = neighbourPill(size, face),
-			.alpha = alpha,
-			.name = &name,
-		});
 	}
 	alignPills(pills);
-	paintBezel(p, frame, pills);
+	const auto hover = HoveredFace(faces, frame.hovered, int(chats.size()));
+	paintBezel(p, frame, pills, RingDiscs(faces, hover));
 
-	for (const auto &face : faces) {
+	const auto halo = (hover >= 0) ? HoverHalo(faces[hover]) : QPainterPath();
+	for (auto i = 0; i != int(faces.size()); ++i) {
+		const auto &face = faces[i];
 		if (face.index >= int(chats.size())) {
 			continue;
 		}
-		PaintFace(p, model, chats[face.index], face, face.focus);
-		if (face.index == frame.hovered && face.focus < 0.5) {
-			PaintHoverRing(p, model, chats[face.index], face);
+		if (Behind(faces, i, hover)) {
+			// It gives way round the hover ring.
+			p.save();
+			ClipOut(p, _size, halo);
+			PaintFace(p, model, chats[face.index], face, face.focus);
+			p.restore();
+		} else {
+			PaintFace(p, model, chats[face.index], face, face.focus);
+		}
+		if (i == hover) {
+			PaintHoverRing(p, model, chats[face.index], faces, i);
 		}
 	}
 	for (const auto &pill : pills) {
@@ -460,12 +479,70 @@ double Crown::pixelsPerChat() const {
 }
 
 int Crown::pillWidth() const {
-	// From clear of the focused face to the column's margin.
-	const auto room = _size.width() / 2.
-		- _face * kGrow / 2.
-		- S(kFocusClear)
-		- PageMargin();
+	return pillWidthClear(focusClear());
+}
+
+int Crown::pillWidthClear(double clear) const {
+	// From `clear` of the middle to the column's margin.
+	const auto room = _size.width() / 2. - clear - PageMargin();
 	return int(std::max(room, double(S(56))));
+}
+
+double Crown::focusClear() const {
+	return _face * kGrow / 2. + S(kFocusClear);
+}
+
+double Crown::notchClear() const {
+	return _notch * (1. + kNotchSwell) / 2. + S(kFocusClear);
+}
+
+bool Crown::outsideBezel(const QRectF &rect) const {
+	return nearest(rect) >= _outer + S(kTickClear) + st::lineWidth - 0.5;
+}
+
+// A neighbour's name pill. The pills of the focus's pair sit past the bezel,
+// where the only thing between them is the notch: a name cut in the room
+// clear of the focused face may take the room up to clear of the notch (the
+// width the gap over the focus does not use), when it still sits past the
+// bezel there ("🌺 Amber's…", not "🌺 Amb…").
+Pill Crown::neighbourName(
+		Model &model,
+		not_null<History*> history,
+		const FacePlace &face,
+		double alpha) {
+	const auto text = TextWithEntities{ model.shortName(history).toString() };
+	const auto narrow = pillWidth();
+	const auto &name = _pills.line(
+		history,
+		text,
+		st::chatSimilarName,
+		PillTextRoom(narrow),
+		PillSlack());
+	const auto size = NamePillSize(name, narrow);
+	if (size.size.isEmpty()) {
+		return {};
+	}
+	if (name.toString() != text.text) {
+		const auto wide = pillWidthClear(notchClear());
+		const auto &roomy = _widePills.line(
+			history,
+			text,
+			st::chatSimilarName,
+			PillTextRoom(wide),
+			PillSlack());
+		const auto more = NamePillSize(roomy, wide);
+		if (!more.size.isEmpty() && more.size.width() > size.size.width()) {
+			const auto rect = neighbourPill(more, face, notchClear());
+			if (outsideBezel(rect)) {
+				return { .rect = rect, .alpha = alpha, .name = &roomy };
+			}
+		}
+	}
+	return {
+		.rect = neighbourPill(size, face, focusClear()),
+		.alpha = alpha,
+		.name = &name,
+	};
 }
 
 } // namespace

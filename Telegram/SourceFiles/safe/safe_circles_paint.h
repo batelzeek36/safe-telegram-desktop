@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_common.h"
 #include "safe/safe_circles_core.h"
 
+#include <QtGui/QPainterPath>
+
 class History;
 class Painter;
 
@@ -78,8 +80,28 @@ void PaintFace(
 	const FacePlace &place,
 	double ring);
 
-// How far past a face's edge the outer edge of its jade focus ring lies.
+// How far past a face's edge the outer edge of its jade focus ring lies,
+// and of the hover ring.
 [[nodiscard]] double FocusRingReach();
+[[nodiscard]] double HoverRingReach();
+// The clear background a ring keeps from a face it would come near: 2 pt
+// plus the two soft edges between them (the Crown's focus ring rule).
+[[nodiscard]] double RingClear();
+
+// The discs a rail or ring line drawn under the faces stops at (it never
+// shows in a ring's gap): each face's focus ring as far as it has come in,
+// and the hover ring of `faces[hovered]` (-1 = none).
+[[nodiscard]] QPainterPath RingDiscs(
+	const std::vector<FacePlace> &faces,
+	int hovered);
+
+// What lies behind the hovered face gives way round its ring: the disc
+// that keeps RingClear() between the ring and them.
+[[nodiscard]] QPainterPath HoverHalo(const FacePlace &place);
+
+// Clips `p` to all but `cut` (a page `size` large), for what is painted
+// next; p.save() / p.restore() round it.
+void ClipOut(Painter &p, QSizeF size, const QPainterPath &cut);
 
 // The face wears its full badge (with the count), not a far face's dot:
 // a preview beside it need not repeat the count.
@@ -87,12 +109,14 @@ void PaintFace(
 
 // A quiet ring round the face under the pointer (its chat shows in the
 // hub or the card meanwhile), stopping short of the face's badge as the
-// focus ring does.
+// focus ring does, and RingClear() short of the faces in front of it
+// (deeper than `faces[self]`, with their focus rings).
 void PaintHoverRing(
 	Painter &p,
 	Model &model,
 	not_null<History*> history,
-	const FacePlace &place);
+	const std::vector<FacePlace> &faces,
+	int self);
 
 // A soft light under the focused face.
 void PaintFocusLight(Painter &p, QPointF center, double radius, double alpha);

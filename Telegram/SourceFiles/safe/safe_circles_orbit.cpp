@@ -77,9 +77,24 @@ private:
 		const DialFrame &frame,
 		std::pair<bool, bool> badges);
 	[[nodiscard]] QPointF frontCenter() const;
+	// A neighbour's name under the face row, `clear` from the middle.
 	[[nodiscard]] QRectF besidePill(
 		const PillSize &pill,
-		const FacePlace &face) const;
+		const FacePlace &face,
+		double clear) const;
+	[[nodiscard]] double faceClear() const;
+	// How near the middle a pill `height` tall may come with its round end
+	// tucked under the front face's ring, RingClear() from it.
+	[[nodiscard]] double ringClear(double height) const;
+	[[nodiscard]] int pillWidthClear(double clear) const;
+	// A neighbour's name and where it goes: a name cut in the room clear
+	// of the front face may take the room under its ring's curve.
+	void paintName(
+		Painter &p,
+		Model &model,
+		not_null<History*> history,
+		const FacePlace &face,
+		double alpha);
 
 	QSize _size;
 	QPointF _center;
@@ -91,6 +106,7 @@ private:
 
 	CardPreview _preview;
 	LineCache _pills;
+	LineCache _widePills;
 
 };
 
@@ -267,48 +283,55 @@ void Orbit::paint(
 		p.drawEllipse(QPointF(), 1., 1.);
 		p.restore();
 	}
-	paintRail(p, frame);
-
 	const auto faces = place(frame.position, frame.count);
+	const auto hover = HoveredFace(faces, frame.hovered, int(chats.size()));
+	// The rail never shows in a ring's gap; the faces behind the hovered
+	// face give way round its ring (the leaf's soft glow is left whole).
+	p.save();
+	ClipOut(p, _size, RingDiscs(faces, hover));
+	paintRail(p, frame);
+	p.restore();
+	const auto halo = (hover >= 0) ? HoverHalo(faces[hover]) : QPainterPath();
+	const auto behind = [&](bool under, auto &&paint) {
+		if (under) {
+			p.save();
+			ClipOut(p, _size, halo);
+			paint();
+			p.restore();
+		} else {
+			paint();
+		}
+	};
 	const auto leafCenter = QPointF(_center.x(), _center.y() - _leaf * 0.12);
 	auto leafDrawn = false;
 	const auto drawLeaf = [&] {
 		PaintLeafAt(p, leafCenter, _leaf, frame.lean, kLeafGlow);
 		leafDrawn = true;
 	};
-	for (const auto &face : faces) {
+	for (auto i = 0; i != int(faces.size()); ++i) {
+		const auto &face = faces[i];
 		if (!leafDrawn && face.depth >= 0.) {
 			drawLeaf();
 		}
 		if (face.index >= int(chats.size())) {
 			continue;
 		}
-		PaintFace(p, model, chats[face.index], face, face.focus);
-		if (face.index == frame.hovered && face.focus < 0.5) {
-			PaintHoverRing(p, model, chats[face.index], face);
+		behind(Behind(faces, i, hover), [&] {
+			PaintFace(p, model, chats[face.index], face, face.focus);
+		});
+		if (i == hover) {
+			PaintHoverRing(p, model, chats[face.index], faces, i);
 		}
 	}
 	if (!leafDrawn) {
 		drawLeaf();
 	}
-	const auto maxWidth = pillWidth();
 	for (const auto &face : faces) {
 		const auto alpha = face.nameAlpha * face.alpha * frame.names;
 		if (face.index >= int(chats.size()) || alpha <= 0.01) {
 			continue;
 		}
-		const auto history = chats[face.index];
-		const auto &name = _pills.line(
-			history,
-			{ model.shortName(history).toString() },
-			st::chatSimilarName,
-			PillTextRoom(maxWidth),
-			PillSlack());
-		PaintNamePillIn(
-			p,
-			name,
-			besidePill(NamePillSize(name, maxWidth), face),
-			alpha);
+		paintName(p, model, chats[face.index], face, alpha);
 	}
 	PaintNotch(
 		p,
@@ -340,9 +363,69 @@ void Orbit::paint(
 // A neighbour's name under the face row, level with the front face's
 // bottom edge (below the neighbours, never on a face), pushed out to the side
 // clear of the front face, and kept inside the page.
+void Orbit::paintName(
+		Painter &p,
+		Model &model,
+		not_null<History*> history,
+		const FacePlace &face,
+		double alpha) {
+	const auto text = TextWithEntities{ model.shortName(history).toString() };
+	const auto narrow = pillWidth();
+	const auto &name = _pills.line(
+		history,
+		text,
+		st::chatSimilarName,
+		PillTextRoom(narrow),
+		PillSlack());
+	const auto size = NamePillSize(name, narrow);
+	if (size.size.isEmpty()) {
+		return;
+	}
+	if (name.toString() != text.text) {
+		const auto clear = ringClear(size.size.height());
+		const auto wide = pillWidthClear(clear);
+		if (wide > narrow) {
+			const auto &roomy = _widePills.line(
+				history,
+				text,
+				st::chatSimilarName,
+				PillTextRoom(wide),
+				PillSlack());
+			const auto more = NamePillSize(roomy, wide);
+			if (!more.size.isEmpty() && more.size.width() > size.size.width()) {
+				PaintNamePillIn(p, roomy, besidePill(more, face, clear), alpha);
+				return;
+			}
+		}
+	}
+	PaintNamePillIn(p, name, besidePill(size, face, faceClear()), alpha);
+}
+
+double Orbit::faceClear() const {
+	return _face * kFocused / 2. + S(4);
+}
+
+double Orbit::ringClear(double height) const {
+	// The pill's centre sits this far under the front face's centre
+	// (besidePill), its round end a circle height / 2 across.
+	const auto end = height / 2.;
+	const auto below = _face * kFocused / 2. + height * 0.15;
+	const auto reach = _face * kFocused / 2. + FocusRingReach() + RingClear() + end;
+	const auto across = (reach > below)
+		? std::sqrt(reach * reach - below * below)
+		: 0.;
+	return std::clamp(across - end, double(S(4)), faceClear());
+}
+
+int Orbit::pillWidthClear(double clear) const {
+	const auto room = _size.width() / 2. - clear - PageMargin();
+	return int(std::max(room, double(S(56))));
+}
+
 QRectF Orbit::besidePill(
 		const PillSize &pill,
-		const FacePlace &face) const {
+		const FacePlace &face,
+		double clear) const {
 	if (pill.size.isEmpty()) {
 		return QRectF();
 	}
@@ -350,7 +433,6 @@ QRectF Orbit::besidePill(
 	auto rect = QRectF(QPointF(), pill.size);
 	rect.moveCenter(QPointF(face.center.x(), frontBottom));
 	rect.translate(0., rect.height() * 0.15);
-	const auto clear = _face * kFocused / 2. + S(4);
 	if (face.center.x() > _center.x()) {
 		rect.moveLeft(std::max(rect.left(), _center.x() + clear));
 	} else {
@@ -392,11 +474,7 @@ double Orbit::pixelsPerChat() const {
 
 int Orbit::pillWidth() const {
 	// From clear of the front face to the column's margin.
-	const auto room = _size.width() / 2.
-		- _face * kFocused / 2.
-		- S(4)
-		- PageMargin();
-	return int(std::max(room, double(S(56))));
+	return pillWidthClear(faceClear());
 }
 
 } // namespace
