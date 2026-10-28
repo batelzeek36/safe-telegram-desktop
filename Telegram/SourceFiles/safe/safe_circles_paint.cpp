@@ -210,13 +210,19 @@ void PaintNamePill(
 		const Ui::Text::String &name,
 		QPointF faceBottom,
 		int maxWidth,
+		int pageWidth,
 		double alpha) {
-	const auto rect = NamePillRect(name, faceBottom, maxWidth);
-	PaintNamePillIn(
-		p,
-		name,
-		rect.translated(0., rect.height() * 0.15),
-		alpha);
+	auto rect = NamePillRect(name, faceBottom, maxWidth);
+	if (rect.isEmpty()) {
+		return;
+	}
+	rect.translate(0., rect.height() * 0.15);
+	const auto margin = double(S(6));
+	rect.moveLeft(std::clamp(
+		rect.left(),
+		margin,
+		std::max(pageWidth - margin - rect.width(), margin)));
+	PaintNamePillIn(p, name, rect, alpha);
 }
 
 QSize BadgeSize(const Dialogs::BadgesState &state) {
@@ -341,7 +347,7 @@ int PaintCenteredPreview(
 		time.isEmpty() ? 0 : timeFont->height,
 		badge.height());
 	const auto gapName = S(4);
-	const auto gapMeta = S(8);
+	const auto gapMeta = S(5);
 	const auto total = nameHeight
 		+ (lineHeight ? (gapName + lineHeight) : 0)
 		+ (metaHeight ? (gapMeta + metaHeight) : 0);

@@ -160,12 +160,15 @@ void Crown::paintHub(
 	p.setPen(QPen(SurfaceEdgeColor(), st::lineWidth));
 	p.drawEllipse(_center, _hub, _hub);
 
-	const auto leaf = double(S(22));
-	const auto leafGap = S(8);
+	// The leaf shrinks with the hub so the time line stays inside it.
+	const auto leaf = std::clamp(_hub * 0.3, double(S(14)), double(S(22)));
+	const auto leafGap = S(5);
+	// The name and message lines sit near the middle, where the hub is
+	// widest; the leaf above and the time below are short.
 	const auto textRect = QRect(
-		int(_center.x() - _hub * 0.78),
+		int(_center.x() - _hub * 0.86),
 		int(_center.y() - _hub * 0.82),
-		int(_hub * 1.56),
+		int(_hub * 1.72),
 		int(_hub * 1.64));
 	if (!frame.focused) {
 		PaintLeafAt(
@@ -269,6 +272,7 @@ void Crown::paint(
 				name,
 				face.center + QPointF(0., face.size / 2.),
 				pillWidth(),
+				_size.width(),
 				face.alpha);
 		}
 	}

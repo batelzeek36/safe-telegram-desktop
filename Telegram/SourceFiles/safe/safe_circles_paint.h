@@ -76,12 +76,14 @@ void PaintNamePillIn(
 	QRectF rect,
 	double alpha);
 
-// The short name in a small pill sitting on the bottom edge of a face.
+// The short name in a small pill sitting on the bottom edge of a face,
+// kept inside a page `pageWidth` wide.
 void PaintNamePill(
 	Painter &p,
 	const Ui::Text::String &name,
 	QPointF faceBottom,
 	int maxWidth,
+	int pageWidth,
 	double alpha);
 
 // The unread badge as the chat list draws it, centered on `center`, with

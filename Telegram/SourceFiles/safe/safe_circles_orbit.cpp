@@ -267,6 +267,7 @@ void Orbit::paint(
 				name,
 				face.center + QPointF(0., face.size / 2.),
 				pillWidth(),
+				_size.width(),
 				face.alpha);
 		}
 	}

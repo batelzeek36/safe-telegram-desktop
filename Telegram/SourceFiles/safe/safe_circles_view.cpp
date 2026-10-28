@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat.h"
 #include "styles/style_dialogs.h"
 
+#include <QtGui/QCursor>
 #include <QtGui/QWheelEvent>
 
 namespace Safe::Circles {
@@ -904,6 +905,16 @@ void View::paintPage(Painter &p, int page, double shift) {
 	const auto &spin = spinOf(id);
 	const auto current = (page == currentPage());
 	const auto count = int(chats.size());
+	// The dial turns and resizes under a still pointer: name a face only
+	// while the pointer is still on the chat it last moved onto.
+	const auto hovered = [&] {
+		if (!current || _drag != Drag::None || _hovered < 0 || !underMouse()) {
+			return -1;
+		}
+		const auto inside = toPage(QPointF(mapFromGlobal(QCursor::pos())));
+		const auto under = _dial->faceAt(inside, spin.position, count);
+		return (under == _hovered) ? under : -1;
+	}();
 	auto frame = DialFrame{
 		.position = spin.position,
 		.count = count,
@@ -911,7 +922,7 @@ void View::paintPage(Painter &p, int page, double shift) {
 		.pulse = current
 			? (1. - EaseOutCubic((now() - _tickAt) / kPulse))
 			: 0.,
-		.hovered = (current && _drag == Drag::None) ? _hovered : -1,
+		.hovered = hovered,
 		.focused = count ? chats[FocusIndex(spin.position, count)].get() : nullptr,
 		.loading = !count && !_model->fullyLoaded(id),
 	};
