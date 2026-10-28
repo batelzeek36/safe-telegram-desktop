@@ -299,25 +299,21 @@ int HubPreview::prepare(
 		// Unread: the face wears the badge, the message comes first.
 		.messageFirst = !badge.isEmpty(),
 	};
+	// The time row is the time alone: an unread chat's face wears its
+	// badge, so every unread hub reads name, message, time alike. A chat
+	// with no time shows its badge there instead.
 	const auto timeHeight = st::circlesHubTimeFont->height;
-	if (timeWidth && !badge.isEmpty()) {
-		input.metas.push_back({
-			timeWidth + S(6) + badge.width(),
-			std::max(timeHeight, badge.height()),
-		});
-		input.metas.push_back({ timeWidth, timeHeight });
-	} else if (timeWidth) {
-		input.metas.push_back({ timeWidth, timeHeight });
+	if (timeWidth) {
+		badge = QSize();
+		input.metas.push_back({ timeWidth, timeHeight, kTimeRowInset });
 	} else if (!badge.isEmpty()) {
-		input.metas.push_back({ badge.width(), badge.height() });
+		input.metas.push_back({ badge.width(), badge.height(), kTimeRowInset });
 	}
 	slot.plan = PlanHub(input);
 	slot.nameLines = FittedLines(names, slot.plan.name, slot.plan.nameWidths, nameSt);
 	slot.textLines = FittedLines(texts, slot.plan.text, slot.plan.textWidths, textSt);
 	if (slot.plan.meta < 0) {
 		timeWidth = 0;
-		badge = QSize();
-	} else if (timeWidth && !badge.isEmpty() && slot.plan.meta == 1) {
 		badge = QSize();
 	}
 	slot.timeWidth = timeWidth;

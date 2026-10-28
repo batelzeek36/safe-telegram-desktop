@@ -14,9 +14,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Safe::Circles {
 namespace {
 
-// Glyphs fill a line's middle, not its leading: a band is measured this
-// share in from each of its edges.
-constexpr auto kBandInset = 0.125;
 
 [[nodiscard]] int Span(
 		const std::vector<FitWord> &words,
@@ -172,7 +169,7 @@ struct Candidate {
 							+ textLines * text.lineHeight
 							+ input.gapMeta;
 						const auto &row = input.metas[meta];
-						const auto inset = row.height * kBandInset;
+						const auto inset = row.height * row.inset;
 						const auto room = ChordWidth(
 							r,
 							plan.metaTop + inset,

@@ -74,8 +74,8 @@ private:
 };
 
 // The Crown's hub: name (13 pt semibold, up to two lines), message (12 pt,
-// up to two) and time (11 pt) with the badge, each line as wide as the
-// circle `radius` round `center` is at its height. Two chats' layouts are
+// up to two) and time (11 pt; the unread badge stays on the face), each
+// line as wide as the circle `radius` round `center` is at its height. Two chats' layouts are
 // kept, so one can fade out while the next fades in.
 class HubPreview final {
 public:

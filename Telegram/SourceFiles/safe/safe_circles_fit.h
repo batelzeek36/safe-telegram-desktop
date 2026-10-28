@@ -92,9 +92,17 @@ struct HubPart {
 	double fillShare = 0.;
 };
 
+// Glyphs fill a line's middle, not its leading: a band is measured this
+// share of its height in from each edge.
+inline constexpr double kBandInset = 0.125;
+// The time row is digits and capitals beside a round-ended badge: they sit
+// in the middle half of the row.
+inline constexpr double kTimeRowInset = 0.25;
+
 struct HubMeta {
 	int width = 0;
 	int height = 0;
+	double inset = kBandInset; // see kBandInset
 };
 
 struct HubInput {
