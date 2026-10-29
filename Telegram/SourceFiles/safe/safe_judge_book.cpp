@@ -101,7 +101,7 @@ std::string Encode(const std::vector<Record> &records) {
 	result.reserve(result.size() + records.size() * 48);
 	result.push_back('\n');
 	for (const auto &record : records) {
-		if (!record.key.id || !JudgeNameValid(record.judge)) {
+		if (record.key.preview || !record.key.id || !JudgeNameValid(record.judge)) {
 			continue;
 		}
 		result.append(record.key.document ? "d " : "p ");
@@ -148,7 +148,7 @@ Book::Book(std::string judge, int maxInFlight)
 
 void Book::load(const std::vector<Record> &records) {
 	for (const auto &record : records) {
-		if (!record.key.id || !JudgeNameValid(record.judge)) {
+		if (record.key.preview || !record.key.id || !JudgeNameValid(record.judge)) {
 			continue;
 		} else if (record.answer == Answer::Clear && record.judge != _judge) {
 			continue;

@@ -6,6 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_webpage_processor.h"
+#include "safe/safe_media_covers.h"
 
 #include "base/unixtime.h"
 #include "data/data_chat_participant_status.h"
@@ -67,6 +68,9 @@ bool DrawWebPageDataPreview(
 		not_null<WebPageData*> webpage,
 		not_null<PeerData*> context,
 		QRect to) {
+	if (Safe::Covers::HoldsPreview(webpage)) {
+		return false;
+	}
 	const auto document = webpage->document;
 	const auto photo = webpage->photo;
 	if ((!photo || photo->isNull())
@@ -99,6 +103,9 @@ bool DrawWebPageDataPreview(
 }
 
 WebPageText ProcessWebPageData(WebPageData *page) {
+	if (!page || Safe::Covers::HoldsPreview(page)) {
+		return {};
+	}
 	auto previewText = TitleAndDescriptionFromWebPage(page);
 	if (previewText.title.isEmpty()) {
 		if (page->document) {
@@ -199,6 +206,9 @@ WebpageProcessor::WebpageProcessor(
 	}
 	_resolver->request(_link, true);
 }) {
+	Safe::VerdictChanges() | rpl::on_next([=](Safe::MediaKey) {
+		updateFromData();
+	}, _lifetime);
 	_history->session().downloaderTaskFinished(
 	) | rpl::filter([=] {
 		return _data && (_data->document || _data->photo);
@@ -302,7 +312,8 @@ void WebpageProcessor::apply(Data::WebPageDraft draft, bool reparse) {
 void WebpageProcessor::updateFromData() {
 	_timer.cancel();
 	auto parsed = WebpageParsed();
-	if (ShowWebPagePreview(_data)) {
+	if (ShowWebPagePreview(_data)
+		&& !Safe::Covers::HoldsPreview(_data)) {
 		if (const auto till = _data->pendingTill) {
 			parsed.drawPreview = [](QPainter &p, QRect to) {
 				return false;

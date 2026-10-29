@@ -12,8 +12,13 @@ class HistoryItem;
 class PeerData;
 class PhotoData;
 class DocumentData;
+struct WebPageData;
 
 namespace Safe::Covers {
+
+[[nodiscard]] MediaKey PreviewKey(not_null<WebPageData*> page);
+[[nodiscard]] bool HoldsPreview(not_null<WebPageData*> page);
+[[nodiscard]] bool HoldsPreviewItem(not_null<const HistoryItem*> item);
 
 // The media gate's side of the picture check: it fetches the small cover
 // Telegram decodes for the bubble anyway (never the full picture), queues

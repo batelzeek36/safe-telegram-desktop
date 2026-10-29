@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "overview/overview_layout.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_media_covers.h"
 
 #include "overview/overview_checkbox.h"
 #include "overview/overview_layout_delegate.h"
@@ -2118,7 +2119,8 @@ Link::Link(
 	}
 
 	const auto createHandler = MakeUrlHandler;
-	_page = media ? media->webpage() : nullptr;
+	_page = media && !Safe::Covers::HoldsPreviewItem(parent)
+		? media->webpage() : nullptr;
 	if (_page) {
 		mainUrl = _page->url;
 		if (_page->document) {
@@ -2326,6 +2328,9 @@ int32 Link::resizeGetHeight(int32 width) {
 }
 
 void Link::paint(Painter &p, const QRect &clip, TextSelection selection, const PaintContext *context) {
+	if (_page && Safe::Covers::HoldsPreviewItem(parent())) {
+		return;
+	}
 	auto selected = (selection == FullSelection);
 
 	const auto pixLeft = 0;
@@ -2520,6 +2525,9 @@ void Link::clearHeavyPart() {
 TextState Link::getState(
 		QPoint point,
 		StateRequest request) const {
+	if (_page && Safe::Covers::HoldsPreviewItem(parent())) {
+		return { parent() };
+	}
 	int32 left = st::linksPhotoSize + st::linksPhotoPadding, top = st::linksMargin.top() + st::linksBorder, w = _width - left;
 	if (style::rtlrect(0, top, st::linksPhotoSize, st::linksPhotoSize, _width).contains(point)) {
 		return { parent(), _photol };

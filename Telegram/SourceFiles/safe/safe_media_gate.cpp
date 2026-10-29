@@ -150,6 +150,9 @@ const auto kLaunchRefused = u"This picture or video is held, "
 MediaOutcome OutcomeOf(not_null<const HistoryItem*> item) {
 	const auto history = item->history();
 	const auto session = &history->session();
+	if (const auto media = item->media(); media && media->webpage()) {
+		return MediaOutcome::Judge;
+	}
 	if (item->isSponsored()) {
 		return MediaOutcome::Hide;
 	}
@@ -213,6 +216,8 @@ MediaKey KeyOf(not_null<const HistoryItem*> item) {
 	const auto media = item->media();
 	if (!media) {
 		return {};
+	} else if (const auto page = media->webpage()) {
+		return Covers::PreviewKey(page);
 	} else if (const auto document = media->document()) {
 		return KeyOf(document);
 	} else if (const auto photo = media->photo()) {
@@ -237,6 +242,9 @@ bool HidesItem(not_null<const HistoryItem*> item) {
 }
 
 bool HoldsItem(not_null<const HistoryItem*> item) {
+	if (const auto media = item->media(); media && media->webpage()) {
+		return Covers::HoldsPreviewItem(item);
+	}
 	return Quiet::HoldsItem(item)
 		|| !Shows(OutcomeOf(item), KeyOf(item));
 }
@@ -244,6 +252,9 @@ bool HoldsItem(not_null<const HistoryItem*> item) {
 bool Holds(
 		not_null<const HistoryItem*> item,
 		not_null<const PhotoData*> photo) {
+	if (const auto media = item->media(); media && media->webpage()) {
+		return Covers::HoldsPreviewItem(item);
+	}
 	return Quiet::Holds(item, photo)
 		|| !Shows(OutcomeOf(item), KeyOf(photo));
 }
@@ -251,6 +262,9 @@ bool Holds(
 bool Holds(
 		not_null<const HistoryItem*> item,
 		not_null<const DocumentData*> document) {
+	if (const auto media = item->media(); media && media->webpage()) {
+		return Covers::HoldsPreviewItem(item);
+	}
 	return Quiet::Holds(item, document)
 		|| !Shows(OutcomeOf(item), KeyOf(document));
 }
@@ -306,6 +320,13 @@ bool PaintHeld(
 		not_null<PhotoData*> photo,
 		QRect rect,
 		const HoldShape &shape) {
+	if (const auto media = item->media(); media && media->webpage()) {
+		if (!Covers::HoldsPreviewItem(item)) {
+			return false;
+		}
+		PaintFog(p, rect, shape);
+		return true;
+	}
 	if (Quiet::Holds(item, photo)) {
 		PaintQuiet(p, rect, shape, Quiet::Word(photo));
 		return true;
@@ -338,6 +359,13 @@ bool PaintHeld(
 		not_null<DocumentData*> document,
 		QRect rect,
 		const HoldShape &shape) {
+	if (const auto media = item->media(); media && media->webpage()) {
+		if (!Covers::HoldsPreviewItem(item)) {
+			return false;
+		}
+		PaintFog(p, rect, shape);
+		return true;
+	}
 	if (Quiet::Holds(item, document)) {
 		PaintQuiet(p, rect, shape, Quiet::Word(document));
 		return true;

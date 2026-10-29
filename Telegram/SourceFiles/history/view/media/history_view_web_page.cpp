@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_web_page.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_media_covers.h"
 #include "safe/safe_quiet_media.h"
 
 #include "base/unixtime.h"
@@ -986,6 +987,9 @@ void WebPage::unloadHeavyPart() {
 }
 
 void WebPage::draw(Painter &p, const PaintContext &context) const {
+	if (Safe::Covers::HoldsPreviewItem(_parent->data())) {
+		return;
+	}
 	if (width() < rect::m::sum::h(st::msgPadding) + 1) {
 		return;
 	}
@@ -1467,6 +1471,9 @@ WebPage::HintData *WebPage::hintData() const {
 
 TextState WebPage::textState(QPoint point, StateRequest request) const {
 	auto result = TextState(_parent);
+	if (Safe::Covers::HoldsPreviewItem(_parent->data())) {
+		return result;
+	}
 
 	if (width() < rect::m::sum::h(st::msgPadding) + 1) {
 		return result;

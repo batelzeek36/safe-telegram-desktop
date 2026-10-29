@@ -30,6 +30,7 @@ enum class MediaOutcome : uchar {
 struct MediaKey {
 	uint64 id = 0;
 	bool document = false; // false = photo id, true = document id.
+	bool preview = false;
 
 	friend inline constexpr auto operator<=>(MediaKey, MediaKey) = default;
 	friend inline constexpr bool operator==(MediaKey, MediaKey) = default;
@@ -51,6 +52,7 @@ enum class VerdictState : uchar {
 // A key is compiled in (an empty safe_judge_data.h = every Judge picture
 // stays Waiting and says it is waiting for the picture check).
 [[nodiscard]] bool JudgeAvailable();
+[[nodiscard]] bool PreviewCheckAvailable();
 
 // Cached answer only, cheap enough for the paint path. Never queues.
 [[nodiscard]] VerdictState Verdict(MediaKey key);

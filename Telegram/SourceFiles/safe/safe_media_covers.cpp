@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
+#include "data/data_web_page.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/stickers/data_stickers.h"
 #include "data/stickers/data_stickers_set.h"
@@ -31,6 +32,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/userpic_view.h"
 
 #include <QtCore/QFile>
+#include <QtCore/QCryptographicHash>
+#include <QtCore/QDataStream>
 #include <QtGui/QPainter>
 #include <QtWidgets/QApplication>
 
@@ -104,7 +107,7 @@ void RetryPending();
 		});
 		VerdictChanges(
 		) | rpl::on_next([=](MediaKey key) {
-			RefreshWatched(*result, key);
+			RefreshWatched(*result, key ? std::make_optional(key) : std::nullopt);
 			ScheduleRepaint(*result);
 		}, result->lifetime);
 		Changes(
@@ -505,6 +508,71 @@ void ResolveEmoji(State &state, not_null<DocumentData*> document) {
 }
 
 } // namespace
+
+MediaKey PreviewKey(not_null<WebPageData*> page) {
+	if (page->failed || page->pendingTill || !page->photo
+		|| page->photo->isNull() || page->photo->hasVideo()
+		|| page->document || !page->collage.items.empty()
+		|| page->stickerSet || page->storyId.valid()
+		|| page->uniqueGift || page->auction || page->composeToneEmojiId
+		|| ranges::any_of(page->description.entities, [](const auto &entity) {
+			return entity.type() == EntityType::CustomEmoji;
+		})) {
+		return {};
+	}
+	const auto caption = page->title + '\n' + page->description.text
+		+ '\n' + page->siteName + '\n' + page->author + '\n' + page->url;
+	if (caption.size() > 1024) {
+		return {};
+	}
+	auto bytes = QByteArray();
+	auto stream = QDataStream(&bytes, QIODevice::WriteOnly);
+	stream << quint32(1) << caption << quint64(page->photo->id)
+		<< quint32(page->type);
+	const auto hash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+	auto id = uint64(0);
+	for (auto i = 0; i != 8; ++i) {
+		id = (id << 8) | uchar(hash[i]);
+	}
+	return { .id = id ? id : 1, .preview = true };
+}
+
+bool HoldsPreview(not_null<WebPageData*> page) {
+	const auto key = PreviewKey(page);
+	if (!key || !JudgeAvailable()) {
+		return true;
+	} else if (Verdict(key) == VerdictState::Clear) {
+		return !PreviewCheckAvailable();
+	} else if (Verdict(key) != VerdictState::Waiting) {
+		return true;
+	}
+	auto &state = Instance();
+	if (!Known(state, key)) {
+		const auto session = &page->session();
+		auto entry = Pending{
+			.session = base::make_weak(session),
+			.key = key,
+			.photo = page->photo->createMediaView(),
+			.caption = page->title + '\n' + page->description.text
+				+ '\n' + page->siteName + '\n' + page->author + '\n' + page->url,
+			.mime = u"image/jpeg"_q,
+		};
+		page->photo->load(Data::PhotoSize::Thumbnail, Data::FileOrigin());
+		Queue(state, session, std::move(entry));
+	}
+	return true;
+}
+
+bool HoldsPreviewItem(not_null<const HistoryItem*> item) {
+	const auto media = item->media();
+	const auto page = media ? media->webpage() : nullptr;
+	if (!page) {
+		return false;
+	}
+	const auto held = HoldsPreview(page);
+	Remember(item, PreviewKey(page));
+	return held;
+}
 
 void Remember(not_null<const HistoryItem*> item, MediaKey key) {
 	if (!key) {

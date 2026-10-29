@@ -48,6 +48,7 @@ inline constexpr std::string_view kFileHeader = "safe-verdicts 1";
 struct Key {
 	std::uint64_t id = 0;
 	bool document = false;
+	bool preview = false;
 
 	friend inline auto operator<=>(const Key &, const Key &) = default;
 	friend inline bool operator==(const Key &, const Key &) = default;

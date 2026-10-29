@@ -9,10 +9,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_file_origin.h"
 #include "data/data_web_page.h"
+#include "safe/safe_media_covers.h"
 
 namespace HistoryView {
 
 WebPageText TitleAndDescriptionFromWebPage(not_null<WebPageData*> d) {
+	if (Safe::Covers::HoldsPreview(d)) {
+		return {};
+	}
 	QString resultTitle, resultDescription;
 	const auto document = d->document;
 	const auto author = d->author;
@@ -61,6 +65,9 @@ bool DrawWebPageDataPreview(
 		not_null<WebPageData*> webpage,
 		not_null<PeerData*> context,
 		QRect to) {
+	if (Safe::Covers::HoldsPreview(webpage)) {
+		return false;
+	}
 	const auto document = webpage->document;
 	const auto photo = webpage->photo;
 	if ((!photo || photo->isNull())

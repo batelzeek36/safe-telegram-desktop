@@ -26,11 +26,11 @@ constexpr auto kSaveDelay = crl::time(2000);
 constexpr auto kLogEvery = crl::time(60 * 1000);
 
 [[nodiscard]] JudgeBook::Key BookKey(MediaKey key) {
-	return { .id = key.id, .document = key.document };
+	return { .id = key.id, .document = key.document, .preview = key.preview };
 }
 
 [[nodiscard]] MediaKey FromBookKey(JudgeBook::Key key) {
-	return { .id = key.id, .document = key.document };
+	return { .id = key.id, .document = key.document, .preview = key.preview };
 }
 
 [[nodiscard]] QString Text(std::string_view text) {
@@ -44,6 +44,7 @@ public:
 	[[nodiscard]] static Judge *Instance();
 
 	[[nodiscard]] VerdictState verdict(MediaKey key) const;
+	[[nodiscard]] bool previewsAvailable() const { return _previewsAvailable; }
 	void request(
 		MediaKey key,
 		QImage cover,
@@ -66,6 +67,7 @@ private:
 	void retryDue();
 	void logFailure(const std::string &failure);
 
+	bool _previewsAvailable = true;
 	JudgeBook::Book _book;
 	JudgeClient _client;
 	QString _path;
@@ -219,6 +221,10 @@ void Judge::pump() {
 
 void Judge::finished(JudgeBook::Key key, JudgeProtocol::Result result) {
 	using JudgeProtocol::Verdict;
+	const auto available = (result.verdict == Verdict::Clear)
+		|| (result.verdict == Verdict::Flag);
+	const auto availabilityChanged = (_previewsAvailable != available);
+	_previewsAvailable = available;
 	if (result.verdict == Verdict::Clear || result.verdict == Verdict::Flag) {
 		const auto answer = (result.verdict == Verdict::Clear)
 			? JudgeBook::Answer::Clear
@@ -231,6 +237,9 @@ void Judge::finished(JudgeBook::Key key, JudgeProtocol::Result result) {
 		_book.fail(key, crl::now());
 		logFailure(result.failure);
 		scheduleRetry();
+	}
+	if (availabilityChanged) {
+		_changes.fire(MediaKey());
 	}
 	pump();
 }
@@ -269,6 +278,11 @@ rpl::producer<MediaKey> Judge::changes() const {
 
 bool JudgeAvailable() {
 	return JudgeProtocol::KeyLooksValid(std::string_view(kJudgeKey));
+}
+
+bool PreviewCheckAvailable() {
+	const auto judge = Judge::Instance();
+	return judge && judge->previewsAvailable();
 }
 
 VerdictState Verdict(MediaKey key) {

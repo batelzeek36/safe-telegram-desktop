@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_media_types.h"
 #include "safe/safe_media_gate.h"
+#include "safe/safe_media_covers.h"
 #include "safe/safe_quiet_media.h"
 
 #include "base/random.h"
@@ -1983,11 +1984,11 @@ std::unique_ptr<Media> MediaWebPage::clone(not_null<HistoryItem*> parent) {
 }
 
 DocumentData *MediaWebPage::document() const {
-	return _page->document;
+	return Safe::Covers::HoldsPreviewItem(parent()) ? nullptr : _page->document;
 }
 
 PhotoData *MediaWebPage::photo() const {
-	return _page->photo;
+	return Safe::Covers::HoldsPreviewItem(parent()) ? nullptr : _page->photo;
 }
 
 WebPageData *MediaWebPage::webpage() const {
@@ -2117,6 +2118,9 @@ std::unique_ptr<HistoryView::Media> MediaWebPage::createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent,
 		HistoryView::Element *replacing) {
+	if (Safe::Covers::HoldsPreviewItem(realParent)) {
+		return nullptr;
+	}
 	if (realParent->hideLinks()) {
 		realParent->setHasHiddenLinks(true);
 		return nullptr;
