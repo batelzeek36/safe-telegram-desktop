@@ -2693,7 +2693,7 @@ void HistoryWidget::setInnerFocus() {
 			} else {
 				_list->setFocus();
 			}
-		} else {
+		} else if (!_calm || !_calm->focusThought()) {
 			_field->setFocus();
 		}
 	} else if (_scroll->isHidden()) {

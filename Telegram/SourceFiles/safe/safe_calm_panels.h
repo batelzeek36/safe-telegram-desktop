@@ -61,6 +61,9 @@ public:
 		Fn<void()> keepEditing);
 	// A one-line note that hides itself.
 	void showPill(const QString &text);
+	// A pill floats above the bar and above what is open there (reply ideas),
+	// never over it.
+	void setPillLift(int lift);
 	// One message instead of a run: the title, the one message (selectable),
 	// a quiet line about what it does, then the buttons (the primary one
 	// takes its own row).
@@ -153,6 +156,7 @@ private:
 	int _laidWidth = 0;
 	int _relayoutFor = 0;
 	int _reserved = 0;
+	int _pillLift = 0;
 	bool _painting = false;
 	Fn<void()> _changed;
 

@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rp_widget.h"
 #include "ui/text/text.h"
 
+#include <memory>
+
 // Reply ideas above the composer (docs/previews/calm/css/next-suggest.css),
 // drawn as faint copies of Zach's own outgoing bubbles: things he could
 // say, not app buttons. Two looks (Zach 10-25):
@@ -23,7 +25,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // Loading is a shimmer of three ghosts; the ideas then unfurl from the
 // leaf's corner, one after another. While Telegram is still transcribing
 // voice notes for them, More's place says "listening…" with the leaf.
+// Ideas he asked for carry the note line under them (safe_calm_thought).
 namespace Safe::Calm {
+
+class Thought;
 
 class Ideas final : public Ui::RpWidget {
 public:
@@ -35,8 +40,13 @@ public:
 		Fn<void(QString)> pick;
 		Fn<void()> more;
 		Fn<void()> changed; // the room it takes above the composer changed
+		Fn<void()> ask; // the note's Ask, or Enter in it, with words in it
+		Fn<void()> thoughtCancelled; // Esc in the note's field
+		// The stack has gone; its room is released right after this returns.
+		Fn<void()> faded;
 	};
 	Ideas(QWidget *parent, Args &&args);
+	~Ideas();
 
 	void showLoading(Look look);
 	// Voice notes Telegram is still transcribing for these ideas (0: none).
@@ -52,6 +62,17 @@ public:
 
 	// Where the composer is, in the parent's coordinates.
 	void setAnchor(QRect compose);
+
+	// A new stack: the quiet line when he asked for it, nothing on Ready
+	// ideas. The note of the stack before is gone.
+	void setThoughtOffered(bool offered);
+	// What the next request carries; empty when he wrote nothing.
+	[[nodiscard]] QString thought() const;
+	[[nodiscard]] bool thoughtOpen() const;
+	[[nodiscard]] bool thoughtFocused() const;
+	void openThought();
+	void foldThought();
+	bool focusThought();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -85,10 +106,14 @@ private:
 	void pick(int index);
 	void finishHiding();
 	void notifyChanged();
+	void thoughtResized();
 
 	const Fn<void(QString)> _pick;
 	const Fn<void()> _more;
 	const Fn<void()> _changed;
+	const Fn<void()> _ask;
+	const Fn<void()> _thoughtCancelled;
+	const Fn<void()> _faded;
 
 	Look _look = Look::Chips;
 	bool _loading = false;
@@ -110,6 +135,7 @@ private:
 	Ui::Animations::Basic _ticker; // the shimmer and the ideas landing
 	crl::time _landedAt = 0;
 	base::Timer _pickTimer;
+	std::unique_ptr<Thought> _thought;
 
 };
 

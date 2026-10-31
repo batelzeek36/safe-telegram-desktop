@@ -72,6 +72,10 @@ public:
 	// Reply ideas for one message; the host put it in the reply slot.
 	void suggestFor(not_null<HistoryItem*> item);
 
+	// The note under the ideas is open: focus goes back to it, not the field,
+	// so what he was typing for Claude cannot land in the message field.
+	bool focusThought();
+
 	// True when Calm took this send; `resend` runs again (and passes) once
 	// Zach chose. Second look and Autopilot never take it: the send goes out
 	// as a bubble at once and its network send waits in the queue
@@ -103,10 +107,12 @@ private:
 	void closePanel();
 	[[nodiscard]] QString currentText() const;
 
+	void askAgain();
 	void showIdeas(HistoryItem *replyTo, bool fresh, bool automatic);
 	void ideasAnswered(const SuggestResult &result);
 	void closeIdeas();
 	void pickIdea(const QString &text);
+	void ideasFaded();
 	void watchLandings();
 	void messageLanded(not_null<HistoryItem*> item);
 	void readyCheck();
@@ -145,6 +151,8 @@ private:
 	uint64 _suggestCall = 0;
 	FullMsgId _ideasFor; // the message the panel answers; empty for chips
 	bool _ideasAuto = false; // Ready ideas, not asked for
+	std::vector<Suggestion> _ideasShown; // back on screen when an ask fails
+	std::optional<QString> _picked; // goes in the field once the ideas faded
 	base::Timer _readyTimer;
 	FullMsgId _readyWaitFor; // landed, still held by their side
 	rpl::lifetime _historyLifetime;

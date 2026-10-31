@@ -66,6 +66,7 @@ void Ask(
 	not_null<History*> history,
 	HistoryItem *replyTo,
 	bool remember,
+	QString thought,
 	Fn<void(const SuggestResult&)> done);
 
 } // namespace
@@ -74,6 +75,7 @@ uint64 Suggest(
 		not_null<History*> history,
 		HistoryItem *replyTo,
 		bool fresh,
+		QString thought,
 		Fn<void(int)> listening,
 		Fn<void(const SuggestResult&)> done) {
 	auto &state = State();
@@ -83,7 +85,7 @@ uint64 Suggest(
 		.last = LastId(history),
 		.replyTo = replyTo ? replyTo->id : MsgId(),
 	};
-	if (!fresh) {
+	if (!fresh && thought.isEmpty()) {
 		if (const auto i = state.answers.find(key); i != end(state.answers)) {
 			auto result = i->second;
 			state.calls.emplace(id, 0);
@@ -119,7 +121,14 @@ uint64 Suggest(
 		}
 		// Ideas made without a note still being transcribed are asked for
 		// again next time, when its words may be there.
-		Ask(id, key, history, replyTo, hearing.complete, std::move(done));
+		Ask(
+			id,
+			key,
+			history,
+			replyTo,
+			hearing.complete && thought.isEmpty(),
+			thought,
+			std::move(done));
 	};
 	HearVoices(
 		history,
@@ -141,12 +150,14 @@ void Ask(
 		not_null<History*> history,
 		HistoryItem *replyTo,
 		bool remember,
+		QString thought,
 		Fn<void(const SuggestResult&)> done) {
 	auto &state = State();
 	auto request = SuggestRequest{
 		.recipient = DisplayName(history->peer),
 		.context = MakeRequest(history, Direction::Out, QString()).context,
 		.chat = ChatKey(history->peer),
+		.thought = std::move(thought),
 	};
 	if (replyTo) {
 		auto text = replyTo->originalText().text;

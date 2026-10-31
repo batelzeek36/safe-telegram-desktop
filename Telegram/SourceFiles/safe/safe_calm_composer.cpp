@@ -209,17 +209,14 @@ Composer::Composer(Args &&args)
 , _panel(base::make_unique_q<Panel>(args.parent))
 , _ideas(base::make_unique_q<Ideas>(args.parent, Ideas::Args{
 	.pick = [=](QString text) { pickIdea(text); },
-	.more = [=] {
-		const auto item = (_history && _ideasFor)
-			? _history->owner().message(_ideasFor)
-			: nullptr;
-		if (_ideasFor && !item) {
-			closeIdeas();
-		} else {
-			showIdeas(item, true, false);
-		}
+	.more = [=] { askAgain(); },
+	.changed = [=] {
+		_panel->setPillLift(_ideas->reservedHeight());
+		reserveChanged();
 	},
-	.changed = [=] { reserveChanged(); },
+	.ask = [=] { askAgain(); },
+	.thoughtCancelled = [=] { handleEscape(); },
+	.faded = [=] { ideasFaded(); },
 }))
 , _readyTimer([=] { readyCheck(); })
 , _typingTimer([=] { checkTyping(); }) {
@@ -388,6 +385,8 @@ void Composer::setHistory(History *history) {
 	CancelSuggest(base::take(_suggestCall));
 	_ideasFor = FullMsgId();
 	_ideasAuto = false;
+	_ideasShown.clear();
+	_picked = std::nullopt;
 	_leaf->setLit(false);
 	_ideas->hideFast();
 	_cardFor = FullMsgId();
@@ -739,7 +738,12 @@ void Composer::sendCalm(
 
 bool Composer::handleEscape() {
 	if (_ideas->showing()) {
-		closeIdeas();
+		if (_ideas->thoughtOpen()) {
+			_ideas->foldThought();
+			_field->setFocus();
+		} else {
+			closeIdeas();
+		}
 		return true;
 	} else if (_runs && _runs->handleEscape()) {
 		return true;
@@ -812,6 +816,22 @@ void Composer::suggestFor(not_null<HistoryItem*> item) {
 	_field->setFocus();
 }
 
+bool Composer::focusThought() {
+	return _ideas->focusThought();
+}
+
+// More, and the note's Ask: three new ones with whatever the note says now.
+void Composer::askAgain() {
+	const auto item = (_history && _ideasFor)
+		? _history->owner().message(_ideasFor)
+		: nullptr;
+	if (_ideasFor && !item) {
+		closeIdeas();
+	} else {
+		showIdeas(item, true, false);
+	}
+}
+
 void Composer::showIdeas(HistoryItem *replyTo, bool fresh, bool automatic) {
 	if (!_history) {
 		return;
@@ -826,11 +846,23 @@ void Composer::showIdeas(HistoryItem *replyTo, bool fresh, bool automatic) {
 	_ideasFor = replyTo ? replyTo->fullId() : FullMsgId();
 	_ideasAuto = automatic;
 	_leaf->setLit(true);
+	if (!fresh) {
+		// A new stack. Ready ideas appear unasked: no line under them, and
+		// their More does not add one.
+		_ideas->setThoughtOffered(!automatic);
+	}
+	const auto thought = _ideas->thought();
+	const auto hadFocus = _ideas->thoughtFocused();
+	_ideas->foldThought();
 	_ideas->showLoading(replyTo ? Ideas::Look::Panel : Ideas::Look::Chips);
+	if (hadFocus) {
+		_field->setFocus();
+	}
 	_suggestCall = Suggest(
 		_history,
 		replyTo,
 		fresh,
+		thought,
 		crl::guard(this, [=](int waiting) {
 			_ideas->setListening(waiting);
 		}),
@@ -845,6 +877,14 @@ void Composer::ideasAnswered(const SuggestResult &result) {
 		return;
 	} else if (result.list.empty()) {
 		LOG(("Safe Calm: no reply ideas (%1).").arg(result.failure));
+		if (!_ideas->thought().isEmpty()) {
+			// His note stays, open and ready for Enter or Ask again; the
+			// ideas he had come back (none if the first ones never came).
+			_ideas->showList(_ideasShown);
+			_ideas->openThought();
+			_panel->showPill(u"Calm could not get ideas right now"_q);
+			return;
+		}
 		const auto automatic = _ideasAuto;
 		closeIdeas();
 		if (!automatic) {
@@ -852,6 +892,7 @@ void Composer::ideasAnswered(const SuggestResult &result) {
 		}
 		return;
 	}
+	_ideasShown = result.list;
 	_ideas->showList(result.list);
 }
 
@@ -859,6 +900,7 @@ void Composer::closeIdeas() {
 	CancelSuggest(base::take(_suggestCall));
 	_ideasFor = FullMsgId();
 	_ideasAuto = false;
+	_ideasShown.clear();
 	_leaf->setLit(false);
 	_ideas->hideAnimated();
 	queueCardSync();
@@ -870,10 +912,19 @@ void Composer::pickIdea(const QString &text) {
 	}
 	// A pick is his to send: the typing check reads it as fine.
 	RememberFine(_history->peer->id, text);
+	// The words land when the ideas have faded, in the same layout pass that
+	// gives their room back: the chat drops once, by what is left after the
+	// field grew. Filling the field first made it hop up and then drop.
+	_picked = text;
 	closeIdeas();
-	_setText({ text });
-	_field->setFocus();
-	_field->rawTextEdit()->moveCursor(QTextCursor::End);
+}
+
+void Composer::ideasFaded() {
+	if (const auto picked = base::take(_picked); picked && _history) {
+		_setText({ *picked });
+		_field->setFocus();
+		_field->rawTextEdit()->moveCursor(QTextCursor::End);
+	}
 }
 
 void Composer::watchLandings() {

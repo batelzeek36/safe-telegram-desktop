@@ -35,6 +35,11 @@ void PaintClock(QPainter &p, QRectF rect, const QColor &color);
 // cached per size and color.
 void PaintRefresh(QPainter &p, QRectF rect, const QColor &color);
 
+// The note's thought bubble and pencil (thought-ui.js T.cloud and PENCIL),
+// filled in `color`, cached the same way.
+void PaintCloud(QPainter &p, QRectF rect, const QColor &color);
+void PaintPencil(QPainter &p, QRectF rect, const QColor &color);
+
 // A skeleton bar with the moving shimmer (calm.css .sk): `base` at 10 %
 // with a 30 % band sweeping left to right every 1.1 s.
 void PaintShimmerBar(QPainter &p, QRectF bar, const QColor &base);

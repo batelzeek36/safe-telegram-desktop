@@ -1940,6 +1940,8 @@ PRIVATE
     safe/safe_calm_suggest_prompt.h
     safe/safe_calm_summary.cpp
     safe/safe_calm_summary.h
+    safe/safe_calm_thought.cpp
+    safe/safe_calm_thought.h
     safe/safe_calm_voice.cpp
     safe/safe_calm_voice.h
     safe/safe_circles.cpp

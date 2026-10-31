@@ -216,6 +216,15 @@ void Panel::showSheet(
 	});
 }
 
+void Panel::setPillLift(int lift) {
+	if (_pillLift != lift) {
+		_pillLift = lift;
+		if (isPill()) {
+			relayout();
+		}
+	}
+}
+
 void Panel::showPill(const QString &text) {
 	_head = text;
 	_hint = QString();
@@ -450,7 +459,10 @@ void Panel::relayout() {
 	const auto x = centered
 		? (_anchor.x() + (_anchor.width() - width) / 2)
 		: (_anchor.x() + _anchor.width() - S(kSide) - width);
-	const auto y = _anchor.y() - S(kGap) - height;
+	const auto y = _anchor.y()
+		- S(kGap)
+		- height
+		- (centered ? _pillLift : 0);
 	setGeometry(QRect(QPoint(x - S(kShadow), y - S(kShadow)), full));
 	_reserved = S(kGap) + height;
 	updateLabel();

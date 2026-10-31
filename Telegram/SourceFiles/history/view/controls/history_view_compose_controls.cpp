@@ -2106,6 +2106,9 @@ bool ComposeControls::focus() {
 		_wrap->setFocus();
 		return true;
 	}
+	if (_calm && _calm->focusThought()) {
+		return true;
+	}
 	_field->setFocus();
 	return true;
 }

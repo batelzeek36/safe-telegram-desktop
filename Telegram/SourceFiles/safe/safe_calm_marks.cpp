@@ -22,6 +22,21 @@ constexpr auto kRefreshSvg = ""
 	"7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 "
 	"2.35z\"/></svg>";
 
+// thought-ui.js T.cloud and PENCIL, on a 24-unit canvas.
+constexpr auto kCloudSvg = ""
+	"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\">"
+	"<path fill=\"#000\" transform=\"translate(2.6 .6) scale(.8)\" "
+	"d=\"M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 "
+	"5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 "
+	"0-2.64-2.05-4.78-4.65-4.96z\"/>"
+	"<circle fill=\"#000\" cx=\"7.4\" cy=\"19.4\" r=\"1.9\"/>"
+	"<circle fill=\"#000\" cx=\"3.7\" cy=\"22.2\" r=\"1.1\"/></svg>";
+constexpr auto kPencilSvg = ""
+	"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\">"
+	"<path fill=\"#000\" d=\"M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 "
+	"17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39"
+	"-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z\"/></svg>";
+
 constexpr auto kShimmerPeriod = crl::time(1100);
 constexpr auto kMaxCachedArrows = 8;
 
@@ -29,7 +44,10 @@ constexpr auto kMaxCachedArrows = 8;
 	return color.toHsl().lightnessF();
 }
 
-[[nodiscard]] QImage RenderRefresh(int pixels, const QColor &color) {
+[[nodiscard]] QImage RenderSvg(
+		const char *svgText,
+		int pixels,
+		const QColor &color) {
 	auto result = QImage(
 		QSize(pixels, pixels),
 		QImage::Format_ARGB32_Premultiplied);
@@ -37,7 +55,7 @@ constexpr auto kMaxCachedArrows = 8;
 	{
 		auto p = QPainter(&result);
 		p.setRenderHint(QPainter::Antialiasing);
-		auto svg = QSvgRenderer(QByteArray(kRefreshSvg));
+		auto svg = QSvgRenderer(QByteArray(svgText));
 		svg.render(&p, QRectF(0, 0, pixels, pixels));
 		p.setCompositionMode(QPainter::CompositionMode_SourceIn);
 		p.fillRect(QRect(0, 0, pixels, pixels), color);
@@ -131,8 +149,14 @@ void PaintClock(QPainter &p, QRectF rect, const QColor &color) {
 	p.drawPolyline(hand, 3);
 }
 
-void PaintRefresh(QPainter &p, QRectF rect, const QColor &color) {
-	static auto cache = base::flat_map<std::pair<int, QRgb>, QImage>();
+namespace {
+
+void PaintCachedSvg(
+		base::flat_map<std::pair<int, QRgb>, QImage> &cache,
+		const char *svgText,
+		QPainter &p,
+		QRectF rect,
+		const QColor &color) {
 	const auto ratio = style::DevicePixelRatio();
 	const auto pixels = int(std::ceil(
 		std::min(rect.width(), rect.height()) * ratio));
@@ -145,7 +169,7 @@ void PaintRefresh(QPainter &p, QRectF rect, const QColor &color) {
 		if (int(cache.size()) >= kMaxCachedArrows) {
 			cache.clear();
 		}
-		auto image = RenderRefresh(pixels, color);
+		auto image = RenderSvg(svgText, pixels, color);
 		image.setDevicePixelRatio(ratio);
 		i = cache.emplace(key, std::move(image)).first;
 	}
@@ -157,6 +181,23 @@ void PaintRefresh(QPainter &p, QRectF rect, const QColor &color) {
 			size,
 			size),
 		i->second);
+}
+
+} // namespace
+
+void PaintRefresh(QPainter &p, QRectF rect, const QColor &color) {
+	static auto cache = base::flat_map<std::pair<int, QRgb>, QImage>();
+	PaintCachedSvg(cache, kRefreshSvg, p, rect, color);
+}
+
+void PaintCloud(QPainter &p, QRectF rect, const QColor &color) {
+	static auto cache = base::flat_map<std::pair<int, QRgb>, QImage>();
+	PaintCachedSvg(cache, kCloudSvg, p, rect, color);
+}
+
+void PaintPencil(QPainter &p, QRectF rect, const QColor &color) {
+	static auto cache = base::flat_map<std::pair<int, QRgb>, QImage>();
+	PaintCachedSvg(cache, kPencilSvg, p, rect, color);
 }
 
 void PaintShimmerBar(QPainter &p, QRectF bar, const QColor &base) {

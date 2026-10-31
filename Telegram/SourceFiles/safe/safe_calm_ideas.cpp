@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "safe/safe_calm_leaf.h"
 #include "safe/safe_calm_marks.h"
+#include "safe/safe_calm_thought.h"
 #include "ui/painter.h"
 #include "styles/style_chat.h"
 #include "styles/style_layers.h"
@@ -53,6 +54,8 @@ constexpr auto kMorePadLeft = 9;
 constexpr auto kMorePadRight = 11;
 constexpr auto kMoreGap = 8;
 constexpr auto kMoreIndex = -2;
+constexpr auto kThoughtIndex = -3;
+constexpr auto kMinChat = 96; // never pushed below this by a long note
 
 constexpr auto kShowPanelMs = crl::time(220);
 constexpr auto kShowChipsMs = crl::time(280);
@@ -142,6 +145,9 @@ Ideas::Ideas(QWidget *parent, Args &&args)
 , _pick(std::move(args.pick))
 , _more(std::move(args.more))
 , _changed(std::move(args.changed))
+, _ask(std::move(args.ask))
+, _thoughtCancelled(std::move(args.thoughtCancelled))
+, _faded(std::move(args.faded))
 , _ticker([=](crl::time) {
 	update();
 	return true;
@@ -153,6 +159,59 @@ Ideas::Ideas(QWidget *parent, Args &&args)
 }) {
 	setMouseTracking(true);
 	hide();
+}
+
+Ideas::~Ideas() = default;
+
+void Ideas::setThoughtOffered(bool offered) {
+	_thought = nullptr;
+	if (offered) {
+		_thought = std::make_unique<Thought>(Thought::Args{
+			.parent = this,
+			.ask = _ask,
+			.resized = [=] { thoughtResized(); },
+			.cancelled = _thoughtCancelled,
+		});
+	}
+}
+
+QString Ideas::thought() const {
+	return _thought ? _thought->words() : QString();
+}
+
+bool Ideas::thoughtOpen() const {
+	return _thought && _thought->opened();
+}
+
+bool Ideas::thoughtFocused() const {
+	return _thought && _thought->focused();
+}
+
+void Ideas::openThought() {
+	if (_thought) {
+		_thought->open();
+	}
+}
+
+void Ideas::foldThought() {
+	if (_thought) {
+		_thought->fold();
+	}
+}
+
+bool Ideas::focusThought() {
+	return showing() && _thought && _thought->focus();
+}
+
+void Ideas::thoughtResized() {
+	if (isHidden()) {
+		return;
+	}
+	const auto was = _reserved;
+	relayout();
+	if (_reserved != was) {
+		notifyChanged();
+	}
 }
 
 bool Ideas::showing() const {
@@ -250,6 +309,9 @@ void Ideas::hideAnimated() {
 	_hiding = true;
 	_pickTimer.cancel();
 	setOver(-1);
+	if (_thought) {
+		_thought->freeze();
+	}
 	_shown.start([=] {
 		update();
 		if (!_shown.animating()) {
@@ -273,7 +335,11 @@ void Ideas::finishHiding() {
 	_picked = _pressed = -1;
 	_ticker.stop();
 	_pickTimer.cancel();
+	_thought = nullptr; // his note goes with the ideas
 	hide();
+	if (_faded) {
+		_faded();
+	}
 	notifyChanged();
 }
 
@@ -348,6 +414,15 @@ void Ideas::layoutPanel() {
 				+ S(kLabelGap);
 			top += h + S(kIdeaGap);
 		}
+	}
+	if (_thought) {
+		_thought->setRowLimit(_anchor.y()
+			- S(kMinChat)
+			- S(kGap)
+			- (top + S(kPadBottom) - S(kShadow)));
+		const auto row = _thought->height();
+		_thought->moveTo(QRect(left, top, inner, row));
+		top += row + S(kIdeaGap);
 	}
 	top += S(kPadBottom) - S(kIdeaGap);
 	const auto height = top - S(kShadow);
@@ -435,6 +510,17 @@ void Ideas::layoutChips() {
 		}
 		top += h + S(kRowGap);
 	}
+	auto thoughtTop = 0;
+	if (_thought) {
+		// Its own place on the controls side, at the column's left edge, so
+		// it does not move when the chips under the shimmer land.
+		minLeft = std::min(minLeft, right - cap);
+		thoughtTop = top;
+		_thought->setRowLimit(_anchor.y()
+			- S(kMinChat)
+			- (top + S(kStackBottom)));
+		top += _thought->height() + S(kRowGap);
+	}
 	top += S(kStackBottom) - S(kRowGap);
 	const auto height = top;
 	const auto shift = QPoint(-minLeft, 0);
@@ -453,6 +539,13 @@ void Ideas::layoutChips() {
 	_box = QRect();
 	_reserved = height;
 	setGeometry(minLeft, _anchor.y() - height, right - minLeft, height);
+	if (_thought) {
+		_thought->moveTo(QRect(
+			right - cap - minLeft,
+			thoughtTop,
+			cap,
+			_thought->height()));
+	}
 }
 
 float64 Ideas::landing(int index) const {
@@ -464,7 +557,7 @@ float64 Ideas::landing(int index) const {
 }
 
 void Ideas::paintEvent(QPaintEvent *e) {
-	if (_items.empty() && _ghosts.empty()) {
+	if (_items.empty() && _ghosts.empty() && !_thought) {
 		return;
 	}
 	_painting = true;
@@ -496,6 +589,9 @@ void Ideas::paintEvent(QPaintEvent *e) {
 	}
 	if (!_moreRect.isEmpty()) {
 		paintMore(p);
+	}
+	if (_thought) {
+		_thought->paint(p);
 	}
 	const auto landed = (landing(int(_items.size())) >= 1.);
 	if (!_loading && landed) {
@@ -704,6 +800,8 @@ int Ideas::hit(QPoint point) const {
 		return -1;
 	} else if (!_loading && _moreRect.contains(point)) {
 		return kMoreIndex;
+	} else if (_thought && _thought->hits(point)) {
+		return kThoughtIndex;
 	}
 	for (auto i = 0; i != int(_items.size()); ++i) {
 		if (_items[i].rect.contains(point)) {
@@ -718,6 +816,9 @@ void Ideas::setOver(int over) {
 		return;
 	}
 	_over = over;
+	if (_thought) {
+		_thought->setOver(over == kThoughtIndex);
+	}
 	setCursor((over == -1) ? style::cur_default : style::cur_pointer);
 	update();
 }
@@ -748,6 +849,11 @@ void Ideas::mouseReleaseEvent(QMouseEvent *e) {
 	} else if (pressed == kMoreIndex) {
 		if (_more) {
 			_more();
+		}
+	} else if (pressed == kThoughtIndex) {
+		if (_thought) {
+			setOver(-1);
+			_thought->open();
 		}
 	} else {
 		pick(pressed);
