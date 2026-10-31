@@ -20,6 +20,7 @@ struct SuggestRequest {
 	std::vector<ContextLine> context;
 	std::optional<ContextLine> replyTo; // the message he picked to answer
 	QString chat; // Telegram's marked chat id, for the runner's per-chat voice profile
+	QString thought; // his private note for the model; memory only, never logged
 };
 
 struct Suggestion {
