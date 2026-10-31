@@ -31,6 +31,7 @@ constexpr auto kPencil = 14;
 constexpr auto kOpenPadLeft = 11;
 constexpr auto kOpenPad = 5;
 constexpr auto kOpenMin = 42;
+constexpr auto kOpenRadius = 21;
 constexpr auto kFieldMin = 32;
 constexpr auto kFieldMargin = 6;
 constexpr auto kFieldMax = 132;
@@ -453,7 +454,7 @@ void Thought::paint(QPainter &p) {
 	auto hq = PainterHighQualityEnabler(p);
 	const auto open = _surface.value((_state == State::Open) ? 1. : 0.);
 	const auto rect = QRectF(pillRect());
-	const auto radius = rect.height() / 2.;
+	const auto radius = std::min(rect.height() / 2., float64(S(kOpenRadius)));
 	const auto folded = (_state == State::Folded)
 		|| (_state == State::Open && !_kept.trimmed().isEmpty());
 

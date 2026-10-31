@@ -55,7 +55,7 @@ constexpr auto kMorePadRight = 11;
 constexpr auto kMoreGap = 8;
 constexpr auto kMoreIndex = -2;
 constexpr auto kThoughtIndex = -3;
-constexpr auto kMinChat = 96; // never pushed below this by a long note
+constexpr auto kMinChat = 200; // never pushed below this by a long note
 
 constexpr auto kShowPanelMs = crl::time(220);
 constexpr auto kShowChipsMs = crl::time(280);
